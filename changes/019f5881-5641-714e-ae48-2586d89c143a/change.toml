@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-5641-714e-ae48-2586d89c143a'
+slug = 'clickable-worklog'
+kind = 'feature'
+canonical_branch = 'clickable-worklog'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-5641-7285-a59c-ac69349e76ea'
+created_at = '2026-07-12T22:44:59.073882Z'
