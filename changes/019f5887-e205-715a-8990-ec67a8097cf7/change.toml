@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5887-e205-715a-8990-ec67a8097cf7'
+slug = 'git-update-pr-action'
+kind = 'feature'
+canonical_branch = 'update-pr-action'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5887-e205-75e5-84d6-788344c15d45'
+created_at = '2026-07-12T22:52:08.069243Z'
