@@ -15,3 +15,11 @@ kind = 'history'
 rationale = 'Linha antiga de porting anterior ao rebase; preservada como evidencia de evolucao, nao como Change ativa da integracao atual.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:54:03.071464Z
+
+[[classification]]
+ref = 'refs/heads/feature/environment-label-override'
+head_oid = '1e18101850bed4ecc6177df370c7b35c6b71bb8f'
+kind = 'history'
+rationale = 'Implementacao de ambiente baseada em snapshot anterior e nao integrada na linha marucs-code atual; manter para rastreabilidade.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:54:33.374584Z
