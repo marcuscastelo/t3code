@@ -1,0 +1,49 @@
+schema_version = 1
+
+[repository]
+upstream_remote = 'upstream'
+upstream_ref = 'main'
+fork_remote = 'origin'
+fork_mirror_ref = 'main'
+publish_fork_mirror = true
+integration_branch = 'forksmith/integration'
+metadata_branch = 'forksmith/meta'
+
+[revision_archive]
+remote_enabled = true
+strategy = 'auto'
+
+[composition_version]
+fork_label = 'marucs'
+format = '{upstream_version}-{fork_label}.{generation}'
+
+[artifacts]
+output_globs = ['apps/web/dist/index.html']
+
+[[artifacts.build]]
+argv = ['pnpm', 'exec', 'vp', 'run', '--filter', '@t3tools/web', 'build']
+working_directory = '.'
+timeout = '10m'
+inherit_environment = true
+required = true
+
+[[artifacts.smoke]]
+argv = ['/bin/test', '-s', 'apps/web/dist/index.html']
+working_directory = '.'
+timeout = '30s'
+inherit_environment = false
+required = true
+
+[artifacts.version]
+argv = ['git', 'describe', '--tags', '--always', 'HEAD']
+working_directory = '.'
+timeout = '30s'
+inherit_environment = false
+required = false
+
+[artifacts.upstream_version]
+argv = ['git', 'describe', '--tags', '--always', 'upstream/main']
+working_directory = '.'
+timeout = '30s'
+inherit_environment = false
+required = false

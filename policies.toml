@@ -1,0 +1,10 @@
+schema_version = 1
+
+[risk]
+
+[publication]
+auto_publish_unattended = false
+require_atomic_when_supported = true
+
+[security]
+deny_context_globs = ['.env', '.env.*', '**/credentials.*', '**/*secret*']
