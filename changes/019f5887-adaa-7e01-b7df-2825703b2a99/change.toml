@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5887-adaa-7e01-b7df-2825703b2a99'
+slug = 'background-work-indicator'
+kind = 'feature'
+canonical_branch = 't3code/background-work-indicator'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5887-adaa-7d10-9097-84400922707e'
+created_at = '2026-07-12T22:51:54.666412Z'
