@@ -23,3 +23,11 @@ kind = 'history'
 rationale = 'Implementacao de ambiente baseada em snapshot anterior e nao integrada na linha marucs-code atual; manter para rastreabilidade.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:54:33.374584Z
+
+[[classification]]
+ref = 'refs/heads/fix/desktop-tray-recursion'
+head_oid = '8e3e0756ab4e1ca6c83a56a03ea0bbbe96eb469f'
+kind = 'history'
+rationale = 'Correcao em pilha de porting antiga, substituida pela linha de tray integrada; manter como evidencia historica.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:54:57.43866Z
