@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5888-2036-75ab-9f6b-c55fd756a088'
+slug = 'project-delete-force-retry'
+kind = 'fix'
+canonical_branch = 'fix/project-delete-force-retry'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5888-2036-7b49-870c-a61c3dee8c7c'
+created_at = '2026-07-12T22:52:23.990017Z'
