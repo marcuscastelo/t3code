@@ -5,11 +5,11 @@ kind = 'feature'
 canonical_branch = 't3code/multi-device-thread-sync'
 upstreamability = 'stacked'
 status = 'active'
-active_revision_id = '019f890f-0a18-7397-a20c-920e3e1b2021'
+active_revision_id = '019fa0ed-a16d-7f77-8b72-98dfcd206f00'
 active_intent_revision_id = '019f5887-9ad6-721e-a7a2-d89e247c08a8'
 created_at = '2026-07-12T22:51:49.846957Z'
 
 [[dependencies]]
 change_id = '019f5881-41a5-7807-a581-8c7044b4655d'
-revision_id = '019f890e-7f66-7016-8ff1-2d831534b8a9'
+revision_id = '019fa0ed-239d-7955-9a7c-61599933dcbc'
 kind = 'requires'

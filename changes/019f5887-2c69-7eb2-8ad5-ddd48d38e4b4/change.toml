@@ -5,11 +5,11 @@ kind = 'feature'
 canonical_branch = 't3code/pp-hours'
 upstreamability = 'stacked'
 status = 'active'
-active_revision_id = '019f890e-e4e9-70f6-bfb9-c981591039ca'
+active_revision_id = '019fa0ed-8213-7b8f-9a2e-47d2ddc33afd'
 active_intent_revision_id = '019f5887-2c69-7499-8977-12e1c8929f7b'
 created_at = '2026-07-12T22:51:21.577113Z'
 
 [[dependencies]]
 change_id = '019f5881-3182-75f8-b724-7b4db708a38b'
-revision_id = '019f890e-6ce6-7d5c-a6e3-43a28ae40e11'
+revision_id = '019fa0ed-154d-77d9-8567-1e3dfebf3976'
 kind = 'requires'
