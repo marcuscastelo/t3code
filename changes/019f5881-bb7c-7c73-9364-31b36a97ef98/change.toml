@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-bb7c-7c73-9364-31b36a97ef98'
+slug = 'appearance-settings'
+kind = 'feature'
+canonical_branch = 'personal/pr-1550-appearance'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-bb7c-75a3-9b2b-31ca959bb7b2'
+created_at = '2026-07-12T22:45:24.988343Z'
