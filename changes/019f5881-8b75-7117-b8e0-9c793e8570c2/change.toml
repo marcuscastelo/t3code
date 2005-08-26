@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-8b75-7117-b8e0-9c793e8570c2'
+slug = 'turn-lifecycle-hooks'
+kind = 'feature'
+canonical_branch = 'feature/more-action-hooks'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-8b76-713f-8d95-f9b9909df774'
+created_at = '2026-07-12T22:45:12.694004Z'
