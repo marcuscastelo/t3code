@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-3182-75f8-b724-7b4db708a38b'
+slug = 'provider-limits-ui'
+kind = 'feature'
+canonical_branch = 'provider-limits-ui'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-3182-755c-b3bf-a07517ad533a'
+created_at = '2026-07-12T22:44:49.666293Z'
