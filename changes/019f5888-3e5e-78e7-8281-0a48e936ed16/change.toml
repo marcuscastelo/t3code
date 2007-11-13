@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5888-3e5e-78e7-8281-0a48e936ed16'
+slug = 'reconnect-ui-stale'
+kind = 'fix'
+canonical_branch = 'fix/reconnect-ui-stale'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5888-3e5e-7693-a57a-ab6d3fd334b2'
+created_at = '2026-07-12T22:52:31.710027Z'
