@@ -47,3 +47,11 @@ kind = 'history'
 rationale = 'Product Change removido: manter a branch como historico, sem reincorpora-la automaticamente.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:55:40.927039Z
+
+[[classification]]
+ref = 'refs/heads/t3code/1d3f372b'
+head_oid = '8a96f09e0affa0413923816656fbf5fd3daeebc8'
+kind = 'history'
+rationale = 'Snapshot de merge historico anterior ao rebase; preservado apenas para rastreabilidade de linhagem.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:56:01.380652Z
