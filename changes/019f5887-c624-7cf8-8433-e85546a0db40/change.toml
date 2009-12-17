@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5887-c624-7cf8-8433-e85546a0db40'
+slug = 'desktop-tray-server-controls'
+kind = 'feature'
+canonical_branch = 't3code/kde-tray-server-controls'
+upstreamability = 'fork-only'
+status = 'draft'
+active_intent_revision_id = '019f5887-c624-7f2c-8bb9-71281d87e56f'
+created_at = '2026-07-12T22:52:00.932976Z'
