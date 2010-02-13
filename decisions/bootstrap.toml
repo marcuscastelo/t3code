@@ -1,0 +1,9 @@
+schema_version = 1
+
+[[classification]]
+ref = 'refs/heads/backup/marucs-code-pre-rebase-20260711'
+head_oid = '2252df9b233ea77770d5fc68f926104ad17da73b'
+kind = 'history'
+rationale = 'Snapshot preservado imediatamente antes do rebase de 2026-07-11; retem a linhagem pre-rebase para auditoria.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:53:29.264464Z
