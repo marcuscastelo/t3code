@@ -55,3 +55,11 @@ kind = 'history'
 rationale = 'Snapshot de merge historico anterior ao rebase; preservado apenas para rastreabilidade de linhagem.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:56:01.380652Z
+
+[[classification]]
+ref = 'refs/heads/t3code/a05bbca9'
+head_oid = '0134c8b1060eb713a8ad48512a83fdbd92c0ae6a'
+kind = 'history'
+rationale = 'Snapshot de merge historico anterior a composicao atual; preservado apenas para rastreabilidade de linhagem.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:56:28.3901Z
