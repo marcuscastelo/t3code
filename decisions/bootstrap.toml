@@ -39,3 +39,11 @@ kind = 'history'
 rationale = 'Snapshot de composicao integrado da release line marucs-code; a configuracao declara forksmith/integration, portanto este ref legado permanece historico.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:55:16.972054Z
+
+[[classification]]
+ref = 'refs/heads/mobile-design-v1'
+head_oid = '4a2e03c446acb8ea6882e25b5750f80bdcb7a1d5'
+kind = 'history'
+rationale = 'Product Change removido: manter a branch como historico, sem reincorpora-la automaticamente.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:55:40.927039Z
