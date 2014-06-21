@@ -31,3 +31,11 @@ kind = 'history'
 rationale = 'Correcao em pilha de porting antiga, substituida pela linha de tray integrada; manter como evidencia historica.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:54:57.43866Z
+
+[[classification]]
+ref = 'refs/heads/marucs-code'
+head_oid = '177d8ebf5f494ebf0684324d66a12eefeacc8fbd'
+kind = 'history'
+rationale = 'Snapshot de composicao integrado da release line marucs-code; a configuracao declara forksmith/integration, portanto este ref legado permanece historico.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:55:16.972054Z
