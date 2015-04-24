@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-a4ef-7c9a-99b0-a249c9344e77'
+slug = 'stale-provider-prompts'
+kind = 'fix'
+canonical_branch = 'fix/session-recovery/pr-1-clear-stale-provider-prompts'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-a4ef-7957-9a4c-365badcecce3'
+created_at = '2026-07-12T22:45:19.215776Z'
