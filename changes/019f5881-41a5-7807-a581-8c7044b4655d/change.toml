@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-41a5-7807-a581-8c7044b4655d'
+slug = 'codex-session-importer'
+kind = 'feature'
+canonical_branch = 'feat/codex-session-importer/pr-1-importer-sync'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-41a5-7255-af65-090f457fffd5'
+created_at = '2026-07-12T22:44:53.797899Z'
