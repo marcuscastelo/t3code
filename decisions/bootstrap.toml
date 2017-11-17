@@ -7,3 +7,11 @@ kind = 'history'
 rationale = 'Snapshot preservado imediatamente antes do rebase de 2026-07-11; retem a linhagem pre-rebase para auditoria.'
 actor = 'marcusmartins'
 classified_at = 2026-07-12T22:53:29.264464Z
+
+[[classification]]
+ref = 'refs/heads/chore/change-ports'
+head_oid = 'c154ab4a6a8d33d542c90dd798de99bb783a9787'
+kind = 'history'
+rationale = 'Linha antiga de porting anterior ao rebase; preservada como evidencia de evolucao, nao como Change ativa da integracao atual.'
+actor = 'marcusmartins'
+classified_at = 2026-07-12T22:54:03.071464Z
