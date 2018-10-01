@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5881-6bf8-76f6-8a65-f3cbc26321d1'
+slug = 'project-contexts'
+kind = 'feature'
+canonical_branch = 'feature/app-project-contexts'
+upstreamability = 'independent'
+status = 'draft'
+active_intent_revision_id = '019f5881-6bf8-7631-841e-306b16ea060c'
+created_at = '2026-07-12T22:45:04.63231Z'
