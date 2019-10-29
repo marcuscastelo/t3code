@@ -1,0 +1,9 @@
+schema_version = 1
+id = '019f5b4e-bfb7-7ed4-b61e-e5eb9651fb2c'
+slug = 'forksmith-adoption-workflow'
+kind = 'enabler'
+canonical_branch = 'feat/forksmith-adoption/pr-1-workflow'
+upstreamability = 'fork-only'
+status = 'draft'
+active_intent_revision_id = '019f5b4e-bfb7-7dcc-a5a3-40d4fac15a8a'
+created_at = '2026-07-13T11:48:35.383705Z'
