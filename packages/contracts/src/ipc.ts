@@ -194,7 +194,6 @@ export const DesktopAppBrandingSchema = Schema.Struct({
 export type DesktopAppearance = {
   mode: DesktopTheme;
   themeId: string;
-  accentHue: number | null;
 };
 
 export interface DesktopRuntimeInfo {

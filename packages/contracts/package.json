@@ -7,6 +7,10 @@
   ],
   "type": "module",
   "exports": {
+    "./appearanceTheme": {
+      "types": "./src/appearanceTheme.ts",
+      "import": "./src/appearanceTheme.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
