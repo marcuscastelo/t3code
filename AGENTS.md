@@ -30,9 +30,10 @@ New branches:
 
 Integration flow:
 
-- Push work branches to `origin`.
-- Merge work branches into local `main`.
-- Push local `main` to `origin/main`.
+- Before merging any work into fork `main`, create or update the PR-ready branch that points at that work commit.
+- Push that PR-ready branch to `origin` before merging it into local `main`.
+- Merge the pushed work branch into local `main`.
+- Push local `main` to `origin/main`; this is the fork remote, not `upstream`.
 - Periodically sync from `upstream/main` into local `main`, then push local `main` to `origin/main`.
 - Never push to `upstream`; treat it as read-only.
 

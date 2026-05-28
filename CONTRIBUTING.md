@@ -16,9 +16,10 @@ Rules:
 - `origin/main` must not diverge from local `main`.
 - Create all new work branches from `upstream/main`.
 - Name stacked feature branches explicitly: `feat/<feature-name>/pr-1-<description>`, `feat/<feature-name>/pr-2-<description>`, and so on.
-- Push work branches to `origin`.
-- Merge work branches into local `main`.
-- Push local `main` to `origin/main`.
+- Before merging any work into fork `main`, create or update the PR-ready branch that points at that work commit.
+- Push that PR-ready branch to `origin` before merging it into local `main`.
+- Merge the pushed work branch into local `main`.
+- Push local `main` to `origin/main`; this is the fork remote, not `upstream`.
 - Periodically pull `upstream/main` into local `main`, then push local `main` to `origin/main`.
 - Do not base new branches on fork-only customizations unless explicitly intended.
 
