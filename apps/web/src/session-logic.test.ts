@@ -1033,7 +1033,54 @@ describe("deriveWorkLogEntries", () => {
       id: "read-complete",
       toolTitle: "Read File",
       detail: 'import * as Effect from "effect/Effect"',
+      toolOutput:
+        'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"\n',
       itemType: "dynamic_tool_call",
+    });
+  });
+
+  it("keeps dynamic tool response output on collapsed completed tool rows", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "ask-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail: 'AskUserQuestion: {"questions":[{"question":"Continue?"}]}',
+          data: {
+            toolCallId: "tool-ask-1",
+            kind: "ask",
+          },
+        },
+      }),
+      makeActivity({
+        id: "ask-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Tool call completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          data: {
+            toolCallId: "tool-ask-1",
+            kind: "ask",
+            rawOutput: {
+              result: { answer: "Go until the design is fully implemented." },
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "ask-complete",
+      detail: 'AskUserQuestion: {"questions":[{"question":"Continue?"}]}',
+      toolOutput: '{\n  "answer": "Go until the design is fully implemented."\n}',
     });
   });
 

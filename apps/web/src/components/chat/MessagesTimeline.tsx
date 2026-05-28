@@ -24,6 +24,7 @@ import {
   BotIcon,
   CheckIcon,
   CircleAlertIcon,
+  CopyIcon,
   EyeIcon,
   GlobeIcon,
   HammerIcon,
@@ -35,6 +36,15 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogTitle,
+} from "../ui/dialog";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -67,6 +77,7 @@ import {
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -1059,6 +1070,50 @@ function workEntryRawCommand(
   return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
+function workEntryCopyText(
+  workEntry: TimelineWorkEntry,
+  heading: string,
+  workspaceRoot: string | undefined,
+): string {
+  const lines = [`Title: ${heading}`, `Label: ${workEntry.label}`, `Tone: ${workEntry.tone}`];
+  if (workEntry.itemType) {
+    lines.push(`Item type: ${workEntry.itemType}`);
+  }
+  if (workEntry.requestKind) {
+    lines.push(`Request kind: ${workEntry.requestKind}`);
+  }
+  lines.push(`Created at: ${workEntry.createdAt}`);
+
+  if (workEntry.command) {
+    lines.push("", "Command:", workEntry.command);
+  }
+  if (workEntry.rawCommand && workEntry.rawCommand !== workEntry.command) {
+    lines.push("", "Raw command:", workEntry.rawCommand);
+  }
+  if (workEntry.toolOutput) {
+    lines.push("", "Tool response:", workEntry.toolOutput);
+  }
+  if (workEntry.stdout) {
+    lines.push("", "Stdout:", workEntry.stdout);
+  }
+  if (workEntry.stderr) {
+    lines.push("", "Stderr:", workEntry.stderr);
+  }
+  if (workEntry.detail) {
+    lines.push("", "Detail:", workEntry.detail);
+  }
+  if ((workEntry.changedFiles?.length ?? 0) > 0) {
+    lines.push(
+      "",
+      "Changed files:",
+      ...(workEntry.changedFiles ?? []).map(
+        (filePath) => `- ${formatWorkspaceRelativePath(filePath, workspaceRoot)}`,
+      ),
+    );
+  }
+  return lines.join("\n");
+}
+
 function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
   if (workEntry.requestKind === "command") return TerminalIcon;
   if (workEntry.requestKind === "file-read") return EyeIcon;
@@ -1104,6 +1159,9 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const { timestampFormat } = use(TimelineRowCtx);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -1118,10 +1176,15 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+  const copyText = workEntryCopyText(workEntry, heading, workspaceRoot);
 
   return (
     <div className="rounded-lg px-1 py-1">
-      <div className="flex items-center gap-2 transition-[opacity,translate] duration-200">
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-center gap-2 rounded-md text-left transition-[opacity,translate,color,background-color] duration-200 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        onClick={() => setDetailsOpen(true)}
+      >
         <span
           className={cn("flex size-5 shrink-0 items-center justify-center", iconConfig.className)}
         >
@@ -1194,7 +1257,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
             </Tooltip>
           )}
         </div>
-      </div>
+      </button>
       {hasChangedFiles && !previewIsChangedFiles && (
         <div className="mt-1 flex flex-wrap gap-1 pl-6">
           {workEntry.changedFiles?.slice(0, 4).map((filePath) => {
@@ -1216,6 +1279,128 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           )}
         </div>
       )}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{heading}</DialogTitle>
+            <DialogDescription>
+              {workEntry.tone === "error"
+                ? "Runtime or tool error emitted during this turn."
+                : "Runtime or tool activity emitted during this turn."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <div>
+                <span className="text-foreground/70">Label</span>
+                <p className="mt-0.5 text-foreground/85">{workEntry.label}</p>
+              </div>
+              <div>
+                <span className="text-foreground/70">Tone</span>
+                <p className="mt-0.5 text-foreground/85">{workEntry.tone}</p>
+              </div>
+              {workEntry.itemType && (
+                <div>
+                  <span className="text-foreground/70">Type</span>
+                  <p className="mt-0.5 text-foreground/85">{workEntry.itemType}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-foreground/70">Created</span>
+                <p className="mt-0.5 text-foreground/85">
+                  {formatTimestamp(workEntry.createdAt, timestampFormat)}
+                </p>
+              </div>
+            </div>
+            {workEntry.command && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Command
+                </p>
+                <pre className="max-h-44 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.command}
+                </pre>
+              </div>
+            )}
+            {workEntry.rawCommand && workEntry.rawCommand !== workEntry.command && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Raw command
+                </p>
+                <pre className="max-h-44 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.rawCommand}
+                </pre>
+              </div>
+            )}
+            {workEntry.toolOutput && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Tool response
+                </p>
+                <pre className="max-h-72 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.toolOutput}
+                </pre>
+              </div>
+            )}
+            {workEntry.stdout && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Stdout
+                </p>
+                <pre className="max-h-72 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.stdout}
+                </pre>
+              </div>
+            )}
+            {workEntry.stderr && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Stderr
+                </p>
+                <pre className="max-h-72 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.stderr}
+                </pre>
+              </div>
+            )}
+            {workEntry.detail && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Detail
+                </p>
+                <pre className="max-h-72 overflow-auto rounded-lg border border-border/60 bg-background/70 p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                  {workEntry.detail}
+                </pre>
+              </div>
+            )}
+            {hasChangedFiles && (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/65">
+                  Changed files
+                </p>
+                <div className="max-h-44 overflow-auto rounded-lg border border-border/60 bg-background/70 p-2">
+                  {workEntry.changedFiles?.map((filePath) => {
+                    const displayPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+                    return (
+                      <p
+                        key={`${workEntry.id}:modal:${filePath}`}
+                        className="font-mono text-xs leading-5 text-foreground/80"
+                      >
+                        {displayPath}
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => copyToClipboard(copyText)}>
+              {isCopied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+              {isCopied ? "Copied" : "Copy details"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });
