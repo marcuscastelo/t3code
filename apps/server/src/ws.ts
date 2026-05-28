@@ -66,6 +66,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
+import { CodexSessionImporter } from "./codex/CodexSessionImporter.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import {
@@ -311,6 +312,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.serverGetProcessDiagnostics, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetProcessResourceHistory, AuthOrchestrationReadScope],
   [WS_METHODS.serverSignalProcess, AuthOrchestrationOperateScope],
+  [WS_METHODS.serverSyncCodexThread, AuthOrchestrationOperateScope],
   [WS_METHODS.cloudGetRelayClientStatus, AuthRelayWriteScope],
   [WS_METHODS.cloudInstallRelayClient, AuthRelayWriteScope],
   [WS_METHODS.sourceControlLookupRepository, AuthOrchestrationReadScope],
@@ -412,6 +414,7 @@ const makeWsRpcLayer = (
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+      const codexSessionImporterOption = yield* Effect.serviceOption(CodexSessionImporter);
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
@@ -1356,6 +1359,18 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
+              yield* Option.match(codexSessionImporterOption, {
+                onNone: () => Effect.void,
+                onSome: (codexSessionImporter) =>
+                  codexSessionImporter.importThread({ threadId: input.threadId }).pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning("codex session import before thread snapshot failed", {
+                        threadId: input.threadId,
+                        error: error.message,
+                      }),
+                    ),
+                  ),
+              });
               const isThisThreadDetailEvent = (event: OrchestrationEvent) =>
                 event.aggregateKind === "thread" &&
                 event.aggregateId === input.threadId &&
@@ -1564,6 +1579,40 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverSignalProcess, processDiagnostics.signal(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverSyncCodexThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSyncCodexThread,
+            Option.match(codexSessionImporterOption, {
+              onNone: () =>
+                Effect.succeed({
+                  providerThreadId: "",
+                  sourcePath: null,
+                  importedEvents: 0,
+                  importedMessages: 0,
+                  importedTurns: 0,
+                  staleRequestsCleared: 0,
+                }),
+              onSome: (codexSessionImporter) =>
+                codexSessionImporter.importThread(input).pipe(
+                  Effect.catch((error) =>
+                    Effect.logWarning("manual codex session import failed", {
+                      threadId: input.threadId,
+                      error: error.message,
+                    }).pipe(
+                      Effect.as({
+                        providerThreadId: "",
+                        sourcePath: null,
+                        importedEvents: 0,
+                        importedMessages: 0,
+                        importedTurns: 0,
+                        staleRequestsCleared: 0,
+                      }),
+                    ),
+                  ),
+                ),
+            }),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
