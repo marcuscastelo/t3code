@@ -103,6 +103,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const backendLayer = Layer.succeed(DesktopBackendManager.DesktopBackendManager, {
     start: Effect.void,
+    restart: Effect.void,
     stop: () => Effect.void,
     currentConfig: Effect.succeed(Option.none()),
     snapshot: Effect.succeed({

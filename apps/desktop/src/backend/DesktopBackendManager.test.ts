@@ -3,6 +3,7 @@ import {
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vitest";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -24,6 +25,31 @@ import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+
+vi.mock("electron", () => ({
+  BrowserWindow: {
+    getAllWindows: () => [],
+    getFocusedWindow: () => null,
+  },
+  Menu: {
+    buildFromTemplate: () => ({ popup: () => undefined }),
+    setApplicationMenu: () => undefined,
+  },
+  app: {},
+  nativeImage: {
+    createFromNamedImage: () => ({ isEmpty: () => true, resize: () => ({ isEmpty: () => true }) }),
+  },
+  nativeTheme: {
+    on: () => undefined,
+    removeListener: () => undefined,
+    shouldUseDarkColors: false,
+    themeSource: "system",
+  },
+  protocol: {},
+  shell: {
+    openExternal: async () => undefined,
+  },
+}));
 
 const decodeDesktopBackendBootstrap = Schema.decodeEffect(
   Schema.fromJsonString(DesktopBackendBootstrap),
@@ -345,6 +371,52 @@ describe("DesktopBackendManager", () => {
         assert.equal(stoppedSnapshot.desiredRunning, false);
         assert.equal(stoppedSnapshot.ready, false);
         assert.equal(Option.isNone(stoppedSnapshot.activePid), true);
+      }).pipe(Effect.provide(managerLayer));
+    }),
+  );
+
+  it.effect("restarts the active backend on request", () =>
+    Effect.gen(function* () {
+      const starts = yield* Queue.unbounded<number>();
+      const closed = yield* Queue.unbounded<void>();
+      let startCount = 0;
+      let closeCount = 0;
+
+      const spawnerLayer = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          Effect.gen(function* () {
+            startCount += 1;
+            yield* Queue.offer(starts, startCount);
+            const scope = yield* Scope.Scope;
+            const close = Effect.sync(() => {
+              closeCount += 1;
+            }).pipe(Effect.andThen(Queue.offer(closed, void 0)), Effect.asVoid);
+
+            yield* Scope.addFinalizer(scope, close);
+
+            return makeProcess({
+              exitCode: Queue.take(closed).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+              kill: () => close,
+            });
+          }),
+        ),
+      );
+
+      const managerLayer = makeManagerLayer({
+        spawnerLayer,
+        httpClientLayer: httpClientLayer(() => Effect.never),
+      });
+
+      yield* Effect.gen(function* () {
+        const manager = yield* DesktopBackendManager.DesktopBackendManager;
+        yield* manager.start;
+        assert.equal(yield* Queue.take(starts), 1);
+
+        yield* manager.restart;
+        assert.equal(yield* Queue.take(starts), 2);
+        assert.equal(closeCount, 1);
+        assert.equal((yield* manager.snapshot).desiredRunning, true);
       }).pipe(Effect.provide(managerLayer));
     }),
   );
