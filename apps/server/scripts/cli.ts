@@ -165,6 +165,11 @@ const buildCmd = Command.make(
         }),
       );
 
+      yield* fs.copyFile(
+        path.join(serverDir, "src", "trayHost.cjs"),
+        path.join(serverDir, "dist", "trayHost.cjs"),
+      );
+
       const webDist = path.join(repoRoot, "apps/web/dist");
       const clientTarget = path.join(serverDir, "dist/client");
 
