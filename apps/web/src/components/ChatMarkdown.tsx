@@ -27,7 +27,7 @@ import { openInPreferredEditor } from "../editorPreferences";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
-import { useTheme } from "../hooks/useTheme";
+import { useAppearance } from "../hooks/useAppearance";
 import {
   normalizeMarkdownLinkDestination,
   resolveMarkdownFileLinkMeta,
@@ -518,7 +518,7 @@ function ChatMarkdown({
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
 }: ChatMarkdownProps) {
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme } = useAppearance();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<

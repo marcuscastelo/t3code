@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./appearanceTheme": {
+      "types": "./src/appearanceTheme.ts",
+      "import": "./src/appearanceTheme.ts"
+    },
     "./settings": {
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"

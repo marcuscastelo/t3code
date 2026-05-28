@@ -45,7 +45,7 @@ import {
 } from "../rpc/serverState";
 import { useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
-import { syncBrowserChromeTheme } from "../hooks/useTheme";
+import { useAppearance } from "../hooks/useAppearance";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
@@ -103,15 +103,7 @@ function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      syncBrowserChromeTheme();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [pathname]);
+  useAppearance();
 
   if (pathname === "/pair") {
     return <Outlet />;

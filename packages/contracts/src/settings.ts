@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import { ThemeDocumentSchema } from "./appearanceTheme.ts";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
@@ -38,6 +39,12 @@ export const SidebarThreadPreviewCount = Schema.Int.check(
 );
 export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
 export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
+
+export const ColorMode = Schema.Literals(["light", "dark", "system"]);
+export type ColorMode = typeof ColorMode.Type;
+export const DEFAULT_COLOR_MODE: ColorMode = "system";
+export const DEFAULT_ACTIVE_LIGHT_THEME_ID = "t3code-light";
+export const DEFAULT_ACTIVE_DARK_THEME_ID = "t3code-dark";
 
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -340,6 +347,16 @@ export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 
 export const ServerSettings = Schema.Struct({
+  colorMode: ColorMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_COLOR_MODE))),
+  activeLightThemeId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_LIGHT_THEME_ID)),
+  ),
+  activeDarkThemeId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_DARK_THEME_ID)),
+  ),
+  customThemes: Schema.Array(ThemeDocumentSchema).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
@@ -447,6 +464,10 @@ const OpenCodeSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
+  colorMode: Schema.optionalKey(ColorMode),
+  activeLightThemeId: Schema.optionalKey(Schema.String),
+  activeDarkThemeId: Schema.optionalKey(Schema.String),
+  customThemes: Schema.optionalKey(Schema.Array(ThemeDocumentSchema)),
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
