@@ -41,6 +41,24 @@ function describeOfflineToast(): string {
   return "WebSocket disconnected. Waiting for network.";
 }
 
+function hasDesktopStartServerBridge(): boolean {
+  return (
+    typeof window !== "undefined" && typeof window.desktopBridge?.startLocalServer === "function"
+  );
+}
+
+export function shouldShowDesktopServerOfflineToast(
+  status: WsConnectionStatus,
+  uiState: WsConnectionUiState,
+  hasStartServerBridge: boolean,
+): boolean {
+  return (
+    hasStartServerBridge &&
+    status.hasConnected &&
+    (uiState === "offline" || uiState === "reconnecting" || uiState === "error")
+  );
+}
+
 function formatReconnectAttemptLabel(status: WsConnectionStatus): string {
   const reconnectAttempt = Math.max(
     1,
@@ -187,6 +205,26 @@ export function WebSocketConnectionCoordinator() {
   const triggerManualReconnect = useEffectEvent(() => {
     runReconnect(true);
   });
+  const triggerStartLocalServer = useEffectEvent(() => {
+    void window.desktopBridge
+      ?.startLocalServer?.()
+      .then(() => {
+        triggerManualReconnect();
+      })
+      .catch((error) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not start server",
+            description: error instanceof Error ? error.message : "Unable to start T3 Server.",
+            data: {
+              dismissAfterVisibleMs: 8_000,
+              hideCopyButton: true,
+            },
+          }),
+        );
+      });
+  });
   const triggerAutoReconnect = useEffectEvent((trigger: WsAutoReconnectTrigger) => {
     const currentStatus =
       trigger === "online" ? setBrowserOnlineStatus(true) : getWsConnectionStatus();
@@ -274,56 +312,83 @@ export function WebSocketConnectionCoordinator() {
     const shouldShowReconnectToast = status.hasConnected && uiState === "reconnecting";
     const shouldShowOfflineToast = uiState === "offline" && status.disconnectedAt !== null;
     const shouldShowExhaustedToast = status.hasConnected && status.reconnectPhase === "exhausted";
+    const shouldShowDesktopOfflineToast = shouldShowDesktopServerOfflineToast(
+      status,
+      uiState,
+      hasDesktopStartServerBridge(),
+    );
 
     if (
       toastResetTimerRef.current !== null &&
-      (shouldShowReconnectToast || shouldShowOfflineToast || shouldShowExhaustedToast)
+      (shouldShowDesktopOfflineToast ||
+        shouldShowReconnectToast ||
+        shouldShowOfflineToast ||
+        shouldShowExhaustedToast)
     ) {
       window.clearTimeout(toastResetTimerRef.current);
       toastResetTimerRef.current = null;
     }
 
-    if (shouldShowReconnectToast || shouldShowOfflineToast || shouldShowExhaustedToast) {
-      const toastPayload = shouldShowOfflineToast
+    if (
+      shouldShowDesktopOfflineToast ||
+      shouldShowReconnectToast ||
+      shouldShowOfflineToast ||
+      shouldShowExhaustedToast
+    ) {
+      const toastPayload = shouldShowDesktopOfflineToast
         ? stackedThreadToast({
+            actionProps: {
+              children: "Start now?",
+              onClick: triggerStartLocalServer,
+            },
             data: {
               hideCopyButton: true,
             },
-            description: describeOfflineToast(),
+            description: "Server is offline.",
             timeout: 0,
-            title: "Offline",
+            title: "Server is offline.",
             type: "warning",
           })
-        : shouldShowExhaustedToast
+        : shouldShowOfflineToast
           ? stackedThreadToast({
-              actionProps: {
-                children: "Retry",
-                onClick: triggerManualReconnect,
-              },
               data: {
                 hideCopyButton: true,
               },
-              description: describeExhaustedToast(),
+              description: describeOfflineToast(),
               timeout: 0,
-              title: buildReconnectTitle(status),
-              type: "error",
+              title: "Offline",
+              type: "warning",
             })
-          : stackedThreadToast({
-              actionProps: {
-                children: "Retry now",
-                onClick: triggerManualReconnect,
-              },
-              data: {
-                hideCopyButton: true,
-              },
-              description:
-                status.nextRetryAt === null
-                  ? `Reconnecting... ${formatReconnectAttemptLabel(status)}`
-                  : `Reconnecting in ${formatRetryCountdown(status.nextRetryAt, nowMs)}... ${formatReconnectAttemptLabel(status)}`,
-              timeout: 0,
-              title: buildReconnectTitle(status),
-              type: "loading",
-            });
+          : shouldShowExhaustedToast
+            ? stackedThreadToast({
+                actionProps: {
+                  children: "Retry",
+                  onClick: triggerManualReconnect,
+                },
+                data: {
+                  hideCopyButton: true,
+                },
+                description: describeExhaustedToast(),
+                timeout: 0,
+                title: buildReconnectTitle(status),
+                type: "error",
+              })
+            : stackedThreadToast({
+                actionProps: {
+                  children: "Retry now",
+                  onClick: triggerManualReconnect,
+                },
+                data: {
+                  hideCopyButton: true,
+                },
+                description:
+                  status.nextRetryAt === null
+                    ? `Reconnecting... ${formatReconnectAttemptLabel(status)}`
+                    : `Reconnecting in ${formatRetryCountdown(status.nextRetryAt, nowMs)}... ${formatReconnectAttemptLabel(status)}`,
+                timeout: 0,
+                title: buildReconnectTitle(status),
+                type: "loading",
+              });
 
       if (toastIdRef.current) {
         toastManager.update(toastIdRef.current, toastPayload);

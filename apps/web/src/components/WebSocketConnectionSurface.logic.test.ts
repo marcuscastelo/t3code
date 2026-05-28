@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { WsConnectionStatus } from "../rpc/wsConnectionState";
-import { shouldAutoReconnect, shouldRestartStalledReconnect } from "./WebSocketConnectionSurface";
+import {
+  shouldAutoReconnect,
+  shouldRestartStalledReconnect,
+  shouldShowDesktopServerOfflineToast,
+} from "./WebSocketConnectionSurface";
 
 function makeStatus(overrides: Partial<WsConnectionStatus> = {}): WsConnectionStatus {
   return {
@@ -108,6 +112,32 @@ describe("WebSocketConnectionSurface.logic", () => {
           reconnectPhase: "attempting",
         }),
         "2026-04-03T20:00:01.000Z",
+      ),
+    ).toBe(false);
+  });
+
+  it("shows desktop server-offline action only after a previous connection", () => {
+    expect(
+      shouldShowDesktopServerOfflineToast(
+        makeStatus({ hasConnected: true, phase: "disconnected" }),
+        "reconnecting",
+        true,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowDesktopServerOfflineToast(
+        makeStatus({ hasConnected: false, phase: "disconnected" }),
+        "reconnecting",
+        true,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowDesktopServerOfflineToast(
+        makeStatus({ hasConnected: true, phase: "disconnected" }),
+        "reconnecting",
+        false,
       ),
     ).toBe(false);
   });
