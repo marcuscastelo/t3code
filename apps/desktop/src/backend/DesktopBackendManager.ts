@@ -184,6 +184,7 @@ export interface DesktopBackendInstance {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
   readonly start: Effect.Effect<void>;
+  readonly restart: Effect.Effect<void>;
   readonly stop: (options?: { readonly timeout?: Duration.Duration }) => Effect.Effect<void>;
   readonly currentConfig: Effect.Effect<Option.Option<DesktopBackendStartConfig>>;
   readonly snapshot: Effect.Effect<DesktopBackendSnapshot>;
@@ -805,12 +806,18 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       Effect.map(Option.getOrElse(() => false)),
     );
 
+  const restart: Effect.Effect<void> = Effect.gen(function* () {
+    yield* stop();
+    yield* start;
+  }).pipe(Effect.withSpan("desktop.backendManager.restart"));
+
   yield* Effect.addFinalizer(() => stop());
 
   return {
     id: spec.id,
     label: spec.label,
     start,
+    restart,
     stop,
     currentConfig,
     snapshot,

@@ -191,10 +191,9 @@ export const make = DesktopLifecycle.of({
     yield* electronApp.on("window-all-closed", () => {
       void runEffect(
         Effect.gen(function* () {
-          const app = yield* ElectronApp.ElectronApp;
           const state = yield* DesktopState.DesktopState;
-          if (environment.platform !== "darwin" && !(yield* Ref.get(state.quitting))) {
-            yield* app.quit;
+          if (!(yield* Ref.get(state.quitting))) {
+            yield* logLifecycleInfo("all windows closed; keeping backend alive");
           }
         }).pipe(Effect.withSpan("desktop.lifecycle.windowAllClosed")),
       );
