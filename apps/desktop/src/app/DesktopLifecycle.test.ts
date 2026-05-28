@@ -107,4 +107,70 @@ describe("DesktopLifecycle", () => {
       ).pipe(Effect.provide(layer));
     }),
   );
+
+  it.effect("reveals the desktop window when the tray helper sends SIGUSR2", () =>
+    Effect.gen(function* () {
+      let revealCount = 0;
+
+      const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
+        metadata: Effect.die("unexpected metadata"),
+        name: Effect.succeed("T3 Code"),
+        whenReady: Effect.void,
+        quit: Effect.void,
+        exit: () => Effect.void,
+        relaunch: () => Effect.void,
+        setPath: () => Effect.void,
+        setName: () => Effect.void,
+        setAboutPanelOptions: () => Effect.void,
+        setAppUserModelId: () => Effect.void,
+        setDesktopName: () => Effect.void,
+        setDockIcon: () => Effect.void,
+        appendCommandLineSwitch: () => Effect.void,
+        on: () => Effect.void,
+      } satisfies ElectronApp.ElectronAppShape);
+
+      const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(DesktopLifecycle.layerShutdown),
+        Layer.provideMerge(DesktopState.layer),
+        Layer.provideMerge(
+          Layer.succeed(DesktopWindow.DesktopWindow, {
+            createMain: Effect.die("unexpected createMain"),
+            ensureMain: Effect.die("unexpected ensureMain"),
+            revealOrCreateMain: Effect.sync((): Electron.BrowserWindow => {
+              revealCount += 1;
+              return {} as Electron.BrowserWindow;
+            }),
+            activate: Effect.void,
+            createMainIfBackendReady: Effect.void,
+            handleBackendReady: Effect.void,
+            dispatchMenuAction: () => Effect.void,
+            syncAppearance: Effect.void,
+          } satisfies DesktopWindow.DesktopWindowShape),
+        ),
+        Layer.provideMerge(electronAppLayer),
+        Layer.provideMerge(
+          Layer.succeed(ElectronTheme.ElectronTheme, {
+            shouldUseDarkColors: Effect.succeed(false),
+            onUpdated: () => Effect.void,
+            setSource: () => Effect.void,
+          } satisfies ElectronTheme.ElectronThemeShape),
+        ),
+        Layer.provideMerge(
+          DesktopEnvironment.layer(environmentInput).pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+          ),
+        ),
+      );
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          yield* lifecycle.register;
+          process.emit("SIGUSR2");
+          yield* Effect.yieldNow;
+          assert.equal(revealCount, 1);
+        }),
+      ).pipe(Effect.provide(layer));
+    }),
+  );
 });

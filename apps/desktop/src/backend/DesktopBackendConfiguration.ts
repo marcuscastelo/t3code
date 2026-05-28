@@ -105,6 +105,7 @@ const resolveBackendStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        T3CODE_TRAY_SUPERVISOR_PID: String(process.pid),
       },
       bootstrap: {
         mode: "desktop",
