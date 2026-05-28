@@ -1,7 +1,9 @@
 import type { ServerProvider } from "@t3tools/contracts";
 import { ProviderDriverKind } from "@t3tools/contracts";
+import { useEffect, useState } from "react";
 
 import {
+  type ProviderRateLimitDetectionStatus,
   type ProviderRateLimitSnapshot,
   type ProviderRateLimitWindowSnapshot,
   formatRateLimitPercent,
@@ -105,10 +107,32 @@ function mergeWindowsWithDefaults(
   return merged.slice(0, 2);
 }
 
-function WindowMiniMeter(props: { window: DisplayRateLimitWindow }) {
+function useDetectingLimitsLabel(active: boolean): string {
+  const [dotCount, setDotCount] = useState(1);
+
+  useEffect(() => {
+    if (!active) {
+      setDotCount(1);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setDotCount((current) => (current >= 3 ? 1 : current + 1));
+    }, 500);
+
+    return () => window.clearInterval(intervalId);
+  }, [active]);
+
+  return `Detecting limits${".".repeat(dotCount)}`;
+}
+
+function WindowMiniMeter(props: { window: DisplayRateLimitWindow; detectingLabel: string | null }) {
   const usedPercent =
     props.window.usedPercent === null ? null : Math.max(0, Math.min(100, props.window.usedPercent));
   const remainingPercent = usedPercent === null ? null : Math.max(0, 100 - usedPercent);
+  const missingText = props.detectingLabel
+    ? props.detectingLabel.replace("Detecting limits", "")
+    : "--";
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="text-[10px] font-medium text-muted-foreground">{props.window.label}</span>
@@ -126,14 +150,15 @@ function WindowMiniMeter(props: { window: DisplayRateLimitWindow }) {
           "w-7 text-right text-[10px] tabular-nums",
           usedPercent === null ? "text-muted-foreground/60" : usageTextClass(usedPercent),
         )}
+        aria-label={usedPercent === null && props.detectingLabel ? props.detectingLabel : undefined}
       >
-        {usedPercent === null ? "--" : formatRemainingPercent(usedPercent)}
+        {usedPercent === null ? missingText : formatRemainingPercent(usedPercent)}
       </span>
     </span>
   );
 }
 
-function WindowDetail(props: { window: DisplayRateLimitWindow }) {
+function WindowDetail(props: { window: DisplayRateLimitWindow; detectingLabel: string | null }) {
   const usedPercent =
     props.window.usedPercent === null ? null : Math.max(0, Math.min(100, props.window.usedPercent));
   const resetLabel = formatRateLimitReset(props.window.resetsAtMs);
@@ -147,7 +172,9 @@ function WindowDetail(props: { window: DisplayRateLimitWindow }) {
             usedPercent === null ? "text-muted-foreground/60" : usageTextClass(usedPercent),
           )}
         >
-          {usedPercent === null ? "not reported" : `${formatRemainingPercent(usedPercent)} left`}
+          {usedPercent === null
+            ? (props.detectingLabel ?? "not reported")
+            : `${formatRemainingPercent(usedPercent)} left`}
         </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -169,8 +196,10 @@ function WindowDetail(props: { window: DisplayRateLimitWindow }) {
 export function ProviderRateLimitMeter(props: {
   provider: ServerProvider;
   limits: ProviderRateLimitSnapshot | null;
+  detectionStatus?: ProviderRateLimitDetectionStatus;
 }) {
-  const { provider, limits } = props;
+  const { provider, limits, detectionStatus = "idle" } = props;
+  const detectingLabel = useDetectingLimitsLabel(detectionStatus === "detecting");
   const defaultWindows = DEFAULT_WINDOWS_BY_PROVIDER[provider.driver] ?? [];
   if ((!limits || limits.windows.length === 0) && defaultWindows.length === 0) {
     return null;
@@ -204,7 +233,11 @@ export function ProviderRateLimitMeter(props: {
             </span>
             <span className="inline-flex items-center gap-2">
               {visibleWindows.map((window) => (
-                <WindowMiniMeter key={window.id} window={window} />
+                <WindowMiniMeter
+                  key={window.id}
+                  window={window}
+                  detectingLabel={detectionStatus === "detecting" ? detectingLabel : null}
+                />
               ))}
             </span>
           </button>
@@ -226,11 +259,17 @@ export function ProviderRateLimitMeter(props: {
           </div>
           <div className="space-y-2">
             {visibleWindows.map((window) => (
-              <WindowDetail key={window.id} window={window} />
+              <WindowDetail
+                key={window.id}
+                window={window}
+                detectingLabel={detectionStatus === "detecting" ? detectingLabel : null}
+              />
             ))}
           </div>
           {!limits || limits.windows.length === 0 ? (
-            <div className="text-xs text-muted-foreground">No provider limit data yet.</div>
+            <div className="text-xs text-muted-foreground">
+              {detectionStatus === "detecting" ? detectingLabel : "No provider limit data yet."}
+            </div>
           ) : null}
           {limits?.rateLimitReachedType ? (
             <div className="text-xs text-red-600 dark:text-red-300">

@@ -1114,16 +1114,16 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       } satisfies ProviderEvent);
 
       const firstEvent = yield* Fiber.join(firstEventFiber);
-      assert.equal(firstEvent._tag, "Some");
+      NodeAssert.equal(firstEvent._tag, "Some");
       if (firstEvent._tag !== "Some") {
         return;
       }
-      assert.equal(firstEvent.value.type, "account.rate-limits.updated");
+      NodeAssert.equal(firstEvent.value.type, "account.rate-limits.updated");
       if (firstEvent.value.type !== "account.rate-limits.updated") {
         return;
       }
 
-      assert.deepEqual(firstEvent.value.payload.rateLimits, {
+      NodeAssert.deepEqual(firstEvent.value.payload.rateLimits, {
         primary: {
           usedPercent: 42,
           windowDurationMins: 300,

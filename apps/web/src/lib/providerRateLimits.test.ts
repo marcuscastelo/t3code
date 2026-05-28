@@ -11,6 +11,7 @@ import {
   deriveProviderRateLimitSnapshotFromValue,
   formatRateLimitPercent,
   formatRateLimitReset,
+  shouldRefreshProviderRateLimits,
 } from "./providerRateLimits";
 
 function makeActivity(
@@ -137,6 +138,56 @@ describe("providerRateLimits", () => {
       { label: "5h", usedPercent: 25, resetsAtMs: 1_778_000_000_000 },
       { label: "weekly", usedPercent: 50 },
     ]);
+  });
+
+  it("asks for refresh when an expected provider window is missing", () => {
+    expect(
+      shouldRefreshProviderRateLimits(
+        {
+          provider: "claudeAgent",
+          providerInstanceId: "claude",
+          windows: [
+            {
+              id: "five_hour",
+              label: "5h",
+              usedPercent: 0,
+              resetsAtMs: null,
+              windowDurationMins: 300,
+            },
+          ],
+          rateLimitReachedType: null,
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        },
+        ProviderDriverKind.make("claudeAgent"),
+      ),
+    ).toBe(true);
+    expect(
+      shouldRefreshProviderRateLimits(
+        {
+          provider: "claudeAgent",
+          providerInstanceId: "claude",
+          windows: [
+            {
+              id: "five_hour",
+              label: "5h",
+              usedPercent: 0,
+              resetsAtMs: null,
+              windowDurationMins: 300,
+            },
+            {
+              id: "seven_day",
+              label: "weekly",
+              usedPercent: 10,
+              resetsAtMs: null,
+              windowDurationMins: 10_080,
+            },
+          ],
+          rateLimitReachedType: null,
+          updatedAt: "2026-03-23T00:00:00.000Z",
+        },
+        ProviderDriverKind.make("claudeAgent"),
+      ),
+    ).toBe(false);
   });
 
   it("filters provider mismatches", () => {
