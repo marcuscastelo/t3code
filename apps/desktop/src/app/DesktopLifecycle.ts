@@ -134,6 +134,18 @@ function quitFromSignal(
   );
 }
 
+function revealFromSignal(
+  runEffect: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => Promise<A>,
+): void {
+  void runEffect(
+    Effect.gen(function* () {
+      const desktopWindow = yield* DesktopWindow.DesktopWindow;
+      yield* logLifecycleInfo("desktop reveal signal received");
+      yield* desktopWindow.revealOrCreateMain;
+    }).pipe(Effect.withSpan("desktop.lifecycle.revealSignal")),
+  );
+}
+
 export const make = DesktopLifecycle.of({
   relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason) {
     const electronApp = yield* ElectronApp.ElectronApp;
@@ -205,6 +217,9 @@ export const make = DesktopLifecycle.of({
       });
       yield* addScopedListener(process, "SIGTERM", () => {
         quitFromSignal("SIGTERM", runEffect);
+      });
+      yield* addScopedListener(process, "SIGUSR2", () => {
+        revealFromSignal(runEffect);
       });
     }
   }).pipe(Effect.withSpan("desktop.lifecycle.register")),

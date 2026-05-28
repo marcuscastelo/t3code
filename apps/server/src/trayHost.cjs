@@ -5,6 +5,7 @@ const { app, Menu, Tray, nativeImage, shell } = require("electron");
 const parentPid = Number.parseInt(process.env.T3CODE_TRAY_PARENT_PID ?? "", 10);
 const supervisorPid = Number.parseInt(process.env.T3CODE_TRAY_SUPERVISOR_PID ?? "", 10);
 const serverUrl = process.env.T3CODE_TRAY_SERVER_URL ?? "";
+const pairingToken = process.env.T3CODE_TRAY_PAIRING_TOKEN ?? "";
 const iconPath = process.env.T3CODE_TRAY_ICON_PATH ?? "";
 const restartExecPath = process.env.T3CODE_TRAY_RESTART_EXEC_PATH ?? "";
 const restartCwd = process.env.T3CODE_TRAY_RESTART_CWD ?? process.cwd();
@@ -71,19 +72,51 @@ function restartServer() {
   shutdownServer();
 }
 
-function openServer() {
-  if (serverUrl.length > 0) {
-    void shell.openExternal(serverUrl);
+function buildServerUrl() {
+  if (serverUrl.length === 0) {
+    return "";
+  }
+  if (pairingToken.length === 0) {
+    return serverUrl;
+  }
+
+  const url = new URL("/pair", serverUrl);
+  url.hash = new URLSearchParams([["token", pairingToken]]).toString();
+  return url.toString();
+}
+
+function openWebApp() {
+  const url = buildServerUrl();
+  if (url.length > 0) {
+    void shell.openExternal(url);
+  }
+}
+
+function openDesktopApp() {
+  if (!isSupervisorAlive()) {
+    openWebApp();
+    return;
+  }
+
+  try {
+    process.kill(supervisorPid, "SIGUSR2");
+  } catch (error) {
+    console.error(`Could not open desktop app: ${error instanceof Error ? error.message : error}`);
   }
 }
 
 function buildMenu() {
-  return Menu.buildFromTemplate([
-    { label: "Open T3 Code", click: openServer },
+  const template = [];
+  if (isSupervisorAlive()) {
+    template.push({ label: "Open Desktop App", click: openDesktopApp });
+  }
+  template.push(
+    { label: "Open Web App", click: openWebApp },
     { type: "separator" },
     { label: "Restart server", click: restartServer },
     { label: "Shutdown server", click: shutdownServer },
-  ]);
+  );
+  return Menu.buildFromTemplate(template);
 }
 
 app.setName("T3 Code Server");
@@ -122,7 +155,13 @@ app.whenReady().then(() => {
   tray.setContextMenu(contextMenu);
   tray.on("click", openContextMenu);
   tray.on("right-click", openContextMenu);
-  tray.on("double-click", openServer);
+  tray.on("double-click", () => {
+    if (isSupervisorAlive()) {
+      openDesktopApp();
+      return;
+    }
+    openWebApp();
+  });
   if (process.platform === "linux") {
     tray.setTitle("T3");
   }
