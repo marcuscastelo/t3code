@@ -809,6 +809,7 @@ const bootstrapBrowserSession = (
     );
     const body = (yield* Effect.promise(() => response.json())) as {
       readonly authenticated: boolean;
+      readonly role: string;
       readonly sessionMethod: string;
       readonly expiresAt: string;
     };
@@ -1313,9 +1314,43 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const bootstrapResult = yield* bootstrapBrowserSession(body.credential);
       assert.equal(bootstrapResult.response.status, 200);
+      assert.equal(bootstrapResult.body.role, "client");
 
       const reusedResult = yield* bootstrapBrowserSession(body.credential);
       assert.equal(reusedResult.response.status, 401);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("issues owner pairing credentials for owner sessions that request them", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* HttpClient.post("/api/auth/pairing-token", {
+        headers: {
+          cookie: yield* getAuthenticatedSessionCookieHeader(),
+          "content-type": "application/json",
+        },
+        body: HttpBody.text(
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({
+            label: "Tray web app",
+            role: "owner",
+          }),
+          "application/json",
+        ),
+      });
+      const body = (yield* response.json) as {
+        readonly credential: string;
+        readonly expiresAt: string;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(typeof body.credential, "string");
+      assert.equal(typeof body.expiresAt, "string");
+
+      const bootstrapResult = yield* bootstrapBrowserSession(body.credential);
+      assert.equal(bootstrapResult.response.status, 200);
+      assert.equal(bootstrapResult.body.role, "owner");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

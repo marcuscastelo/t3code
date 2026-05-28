@@ -6,8 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
-import type { ServerConfigShape } from "../config.ts";
+import { AuthControlPlaneRuntimeLive } from "../auth/Layers/AuthControlPlane.ts";
+import { AuthControlPlane } from "../auth/Services/AuthControlPlane.ts";
+import { ServerConfig, type ServerConfigShape } from "../config.ts";
 
 export interface ServerTrayHandle {
   readonly shutdown: Effect.Effect<void>;
@@ -71,9 +74,29 @@ function resolveElectronPath(): string | null {
   return electronFallback ?? null;
 }
 
+const issueTraySessionToken = Effect.fn("server.tray.issueSessionToken")(function* (
+  config: ServerConfigShape,
+) {
+  return yield* Effect.gen(function* () {
+    const authControlPlane = yield* AuthControlPlane;
+    const issued = yield* authControlPlane.issueSession({
+      role: "owner",
+      subject: "tray-server",
+      label: "T3 Code tray",
+    });
+    return issued.token;
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(AuthControlPlaneRuntimeLive).pipe(
+        Layer.provide(Layer.succeed(ServerConfig, config)),
+      ),
+    ),
+  );
+});
+
 export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   config: ServerConfigShape,
-): Effect.fn.Return<ServerTrayHandle, never> {
+) {
   if (process.env.T3CODE_TRAY === "0" || process.env.T3CODE_SERVER_TRAY === "0") {
     return { shutdown: Effect.void };
   }
@@ -91,11 +114,18 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   }
 
   const serverUrl = `http://${normalizeServerHost(config.host)}:${config.port}`;
+  const traySessionToken = yield* issueTraySessionToken(config).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("server tray could not issue pairing session token", { cause }).pipe(
+        Effect.as(""),
+      ),
+    ),
+  );
   const trayEnv: NodeJS.ProcessEnv = {
     ...process.env,
     T3CODE_TRAY_ICON_PATH: iconPath,
     T3CODE_TRAY_PARENT_PID: String(process.pid),
-    T3CODE_TRAY_PAIRING_TOKEN: config.desktopBootstrapToken,
+    T3CODE_TRAY_SESSION_TOKEN: traySessionToken,
     T3CODE_TRAY_SUPERVISOR_PID: process.env.T3CODE_TRAY_SUPERVISOR_PID,
     // @effect-diagnostics-next-line preferSchemaOverJson:off - argv is passed only to the local tray helper process
     T3CODE_TRAY_RESTART_ARGV: JSON.stringify(process.argv.slice(1)),
