@@ -95,6 +95,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
     ...process.env,
     T3CODE_TRAY_ICON_PATH: iconPath,
     T3CODE_TRAY_PARENT_PID: String(process.pid),
+    T3CODE_TRAY_PAIRING_TOKEN: config.desktopBootstrapToken,
     T3CODE_TRAY_SUPERVISOR_PID: process.env.T3CODE_TRAY_SUPERVISOR_PID,
     // @effect-diagnostics-next-line preferSchemaOverJson:off - argv is passed only to the local tray helper process
     T3CODE_TRAY_RESTART_ARGV: JSON.stringify(process.argv.slice(1)),
