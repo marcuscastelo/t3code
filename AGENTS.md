@@ -25,6 +25,7 @@ New branches:
 
 - Always create new work branches from `upstream/main`.
 - Do not base new branches on local `main` or another personal branch unless explicitly requested.
+- Name stacked feature branches explicitly: `feat/<feature-name>/pr-1-<description>`, `feat/<feature-name>/pr-2-<description>`, and so on.
 - This keeps unrelated fork customizations out of new work and preserves the option to make upstream PRs later.
 
 Integration flow:

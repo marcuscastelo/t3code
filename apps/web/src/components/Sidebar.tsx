@@ -1915,6 +1915,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
+          { id: "sync-codex", label: "Sync from Codex" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true },
@@ -1931,6 +1932,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "mark-unread") {
         markThreadUnread(threadKey, thread.latestTurn?.completedAt);
+        return;
+      }
+      if (clicked === "sync-codex") {
+        try {
+          const result = await api.server.syncCodexThread({ threadId: thread.id });
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: "Synced from Codex",
+              description: `${result.importedEvents} event${result.importedEvents === 1 ? "" : "s"} imported. Reopen the thread if it is already visible.`,
+            }),
+          );
+        } catch (error) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to sync from Codex",
+              description: error instanceof Error ? error.message : "Unknown error.",
+            }),
+          );
+        }
         return;
       }
       if (clicked === "copy-path") {

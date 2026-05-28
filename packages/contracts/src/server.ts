@@ -394,6 +394,21 @@ export const ServerSignalProcessResult = Schema.Struct({
 });
 export type ServerSignalProcessResult = typeof ServerSignalProcessResult.Type;
 
+export const ServerSyncCodexThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ServerSyncCodexThreadInput = typeof ServerSyncCodexThreadInput.Type;
+
+export const ServerSyncCodexThreadResult = Schema.Struct({
+  providerThreadId: Schema.String,
+  sourcePath: Schema.NullOr(Schema.String),
+  importedEvents: NonNegativeInt,
+  importedMessages: NonNegativeInt,
+  importedTurns: NonNegativeInt,
+  staleRequestsCleared: NonNegativeInt,
+});
+export type ServerSyncCodexThreadResult = typeof ServerSyncCodexThreadResult.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,

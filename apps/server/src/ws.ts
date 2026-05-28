@@ -38,6 +38,7 @@ import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery.ts";
+import { CodexSessionImporter } from "./codex/CodexSessionImporter.ts";
 import { ServerConfig } from "./config.ts";
 import { Keybindings } from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -162,6 +163,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
     Effect.gen(function* () {
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
+      const codexSessionImporterOption = yield* Effect.serviceOption(CodexSessionImporter);
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
@@ -778,6 +780,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
+              yield* Option.match(codexSessionImporterOption, {
+                onNone: () => Effect.void,
+                onSome: (codexSessionImporter) =>
+                  codexSessionImporter.importThread({ threadId: input.threadId }).pipe(
+                    Effect.catch((error) =>
+                      Effect.logWarning("codex session import before thread snapshot failed", {
+                        threadId: input.threadId,
+                        error: error.message,
+                      }),
+                    ),
+                  ),
+              });
               const [threadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(
@@ -923,6 +937,42 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.serverSignalProcess, processDiagnostics.signal(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverSyncCodexThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSyncCodexThread,
+            Option.match(codexSessionImporterOption, {
+              onNone: () =>
+                Effect.succeed({
+                  providerThreadId: "",
+                  sourcePath: null,
+                  importedEvents: 0,
+                  importedMessages: 0,
+                  importedTurns: 0,
+                  staleRequestsCleared: 0,
+                }),
+              onSome: (codexSessionImporter) =>
+                codexSessionImporter.importThread(input).pipe(
+                  Effect.catch((error) =>
+                    Effect.logWarning("manual codex session import failed", {
+                      threadId: input.threadId,
+                      error: error.message,
+                    }).pipe(
+                      Effect.as({
+                        providerThreadId: "",
+                        sourcePath: null,
+                        importedEvents: 0,
+                        importedMessages: 0,
+                        importedTurns: 0,
+                        staleRequestsCleared: 0,
+                      }),
+                    ),
+                  ),
+                ),
+            }),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlLookupRepository,

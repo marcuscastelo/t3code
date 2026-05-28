@@ -36,6 +36,8 @@ import type {
   ServerRemoveKeybindingResult,
   ServerSignalProcessInput,
   ServerSignalProcessResult,
+  ServerSyncCodexThreadInput,
+  ServerSyncCodexThreadResult,
   ServerTraceDiagnosticsResult,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -481,6 +483,7 @@ export interface LocalApi {
       input: ServerProcessResourceHistoryInput,
     ) => Promise<ServerProcessResourceHistoryResult>;
     signalProcess: (input: ServerSignalProcessInput) => Promise<ServerSignalProcessResult>;
+    syncCodexThread: (input: ServerSyncCodexThreadInput) => Promise<ServerSyncCodexThreadResult>;
   };
 }
 

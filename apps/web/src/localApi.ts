@@ -163,6 +163,10 @@ function createBrowserLocalApi(rpcClient?: WsRpcClient): LocalApi {
         rpcClient
           ? rpcClient.server.signalProcess(input)
           : Promise.reject(unavailableLocalBackendError()),
+      syncCodexThread: (input) =>
+        rpcClient
+          ? rpcClient.server.syncCodexThread(input)
+          : Promise.reject(unavailableLocalBackendError()),
     },
   };
 }

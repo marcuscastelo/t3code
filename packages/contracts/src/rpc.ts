@@ -83,6 +83,8 @@ import {
   ServerProcessResourceHistoryResult,
   ServerSignalProcessInput,
   ServerSignalProcessResult,
+  ServerSyncCodexThreadInput,
+  ServerSyncCodexThreadResult,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -149,6 +151,7 @@ export const WS_METHODS = {
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
+  serverSyncCodexThread: "server.syncCodexThread",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -238,6 +241,11 @@ export const WsServerGetProcessResourceHistoryRpc = Rpc.make(
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
+});
+
+export const WsServerSyncCodexThreadRpc = Rpc.make(WS_METHODS.serverSyncCodexThread, {
+  payload: ServerSyncCodexThreadInput,
+  success: ServerSyncCodexThreadResult,
 });
 
 export const WsSourceControlLookupRepositoryRpc = Rpc.make(
@@ -485,6 +493,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerSignalProcessRpc,
+  WsServerSyncCodexThreadRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
