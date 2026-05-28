@@ -5,6 +5,10 @@
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 
+## Tooling Notes
+
+- Context-mode MCP commands may not inherit the current shell `workdir`. For repository commands, explicitly prefix the command with `cd <absolute path from environment_context.cwd> &&` before `rtk`; do not assume `apps/` or `packages/` exists in the tool's default cwd.
+
 ## Fork And Git Workflow
 
 This checkout is a personal fork workflow.
