@@ -118,6 +118,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { serverEnvironment } from "../state/server";
 import {
   buildThreadRouteParams,
   resolveThreadRouteRef,
@@ -1117,6 +1118,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     reportFailure: false,
   });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const syncCodexThread = useAtomCommand(serverEnvironment.syncCodexThread, {
     reportFailure: false,
   });
   const updateSettings = useUpdateClientSettings();
@@ -2127,6 +2131,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
+          { id: "sync-codex", label: "Sync from Codex" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
@@ -2141,6 +2146,34 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "mark-unread") {
         markThreadUnread(threadKey, thread.latestTurn?.completedAt);
+        return;
+      }
+      if (clicked === "sync-codex") {
+        try {
+          const commandResult = await syncCodexThread({
+            environmentId: thread.environmentId,
+            input: { threadId: thread.id },
+          });
+          if (commandResult._tag === "Failure") {
+            throw squashAtomCommandFailure(commandResult);
+          }
+          const result = commandResult.value;
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: "Synced from Codex",
+              description: `${result.importedEvents} event${result.importedEvents === 1 ? "" : "s"} imported. Reopen the thread if it is already visible.`,
+            }),
+          );
+        } catch (error) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to sync from Codex",
+              description: error instanceof Error ? error.message : "Unknown error.",
+            }),
+          );
+        }
         return;
       }
       if (clicked === "copy-path") {
@@ -2194,6 +2227,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       memberProjectByScopedKey,
       project.workspaceRoot,
       startThreadRename,
+      syncCodexThread,
     ],
   );
 
