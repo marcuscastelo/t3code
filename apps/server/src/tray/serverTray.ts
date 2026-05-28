@@ -51,6 +51,7 @@ function resolveElectronPath(): string | null {
   const electronFallback = [
     process.env.T3CODE_ELECTRON_PATH,
     "/usr/bin/electron",
+    process.execPath,
     path.join(process.cwd(), "node_modules", ".bin", "electron"),
     path.join(process.cwd(), "..", "..", "node_modules", ".bin", "electron"),
   ].find((candidate) => Boolean(candidate && existsSync(candidate)));
@@ -76,9 +77,6 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   if (process.env.T3CODE_TRAY === "0" || process.env.T3CODE_SERVER_TRAY === "0") {
     return { shutdown: Effect.void };
   }
-  if (config.mode !== "web") {
-    return { shutdown: Effect.void };
-  }
 
   const electronPath = resolveElectronPath();
   const trayHostPath = resolveTrayHostPath();
@@ -97,6 +95,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
     ...process.env,
     T3CODE_TRAY_ICON_PATH: iconPath,
     T3CODE_TRAY_PARENT_PID: String(process.pid),
+    T3CODE_TRAY_SUPERVISOR_PID: process.env.T3CODE_TRAY_SUPERVISOR_PID,
     // @effect-diagnostics-next-line preferSchemaOverJson:off - argv is passed only to the local tray helper process
     T3CODE_TRAY_RESTART_ARGV: JSON.stringify(process.argv.slice(1)),
     T3CODE_TRAY_RESTART_CWD: process.cwd(),

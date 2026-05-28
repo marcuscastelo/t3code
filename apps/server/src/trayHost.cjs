@@ -3,6 +3,7 @@ const { existsSync } = require("node:fs");
 const { app, Menu, Tray, nativeImage, shell } = require("electron");
 
 const parentPid = Number.parseInt(process.env.T3CODE_TRAY_PARENT_PID ?? "", 10);
+const supervisorPid = Number.parseInt(process.env.T3CODE_TRAY_SUPERVISOR_PID ?? "", 10);
 const serverUrl = process.env.T3CODE_TRAY_SERVER_URL ?? "";
 const iconPath = process.env.T3CODE_TRAY_ICON_PATH ?? "";
 const restartExecPath = process.env.T3CODE_TRAY_RESTART_EXEC_PATH ?? "";
@@ -12,11 +13,19 @@ let tray = null;
 let contextMenu = null;
 
 function isParentAlive() {
-  if (!Number.isInteger(parentPid) || parentPid <= 0) {
+  return isPidAlive(parentPid);
+}
+
+function isSupervisorAlive() {
+  return isPidAlive(supervisorPid);
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
     return false;
   }
   try {
-    process.kill(parentPid, 0);
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
@@ -24,6 +33,9 @@ function isParentAlive() {
 }
 
 function shutdownServer() {
+  if (isSupervisorAlive()) {
+    process.kill(supervisorPid, "SIGTERM");
+  }
   if (isParentAlive()) {
     process.kill(parentPid, "SIGTERM");
   }
@@ -31,6 +43,14 @@ function shutdownServer() {
 }
 
 function restartServer() {
+  if (isSupervisorAlive()) {
+    if (isParentAlive()) {
+      process.kill(parentPid, "SIGTERM");
+    }
+    app.quit();
+    return;
+  }
+
   let args = [];
   try {
     args = JSON.parse(process.env.T3CODE_TRAY_RESTART_ARGV ?? "[]");

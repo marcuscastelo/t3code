@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -17,6 +18,10 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+
+vi.mock("electron", () => ({
+  app: {},
+}));
 
 const PersistedServerObservabilitySettingsDocument = Schema.Struct({
   observability: Schema.Struct({
@@ -135,6 +140,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
+        assert.equal(first.env.T3CODE_TRAY_SUPERVISOR_PID, String(process.pid));
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
