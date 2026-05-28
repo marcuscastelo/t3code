@@ -192,6 +192,10 @@ import {
   isVersionMismatchDismissed,
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
+import {
+  deriveLatestProviderRateLimitSnapshot,
+  deriveProviderRateLimitSnapshotFromValue,
+} from "~/lib/providerRateLimits";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -1639,18 +1643,52 @@ export default function ChatView(props: ChatViewProps) {
   // saved instance id is available or the instance no longer exists.
   const activeProviderInstanceId =
     activeThread?.session?.providerInstanceId ??
+    composerActiveProvider ??
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
   const activeProviderStatus = useMemo(() => {
-    if (activeProviderInstanceId) {
-      return (
-        providerStatuses.find((status) => status.instanceId === activeProviderInstanceId) ?? null
-      );
+    const exactProviderStatus = activeProviderInstanceId
+      ? providerStatuses.find((status) => status.instanceId === activeProviderInstanceId)
+      : undefined;
+    if (exactProviderStatus) {
+      return exactProviderStatus;
     }
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
-    return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
+    return (
+      providerStatuses.find((status) => status.instanceId === defaultInstanceId) ??
+      providerStatuses.find((status) => status.driver === selectedProvider) ??
+      null
+    );
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const activeProviderRateLimits = useMemo(() => {
+    const latestRuntimeLimits = deriveLatestProviderRateLimitSnapshot(
+      activeThread?.activities ?? EMPTY_ACTIVITIES,
+      {
+        provider: activeProviderStatus?.driver ?? selectedProvider,
+        providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
+      },
+    );
+    if (latestRuntimeLimits) {
+      return latestRuntimeLimits;
+    }
+    if (!activeProviderStatus?.accountRateLimits) {
+      return null;
+    }
+    return deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
+      provider: activeProviderStatus?.driver ?? selectedProvider,
+      providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
+      updatedAt: activeProviderStatus.checkedAt,
+    });
+  }, [
+    activeProviderInstanceId,
+    activeProviderStatus?.accountRateLimits,
+    activeProviderStatus?.checkedAt,
+    activeProviderStatus?.driver,
+    activeProviderStatus?.instanceId,
+    activeThread?.activities,
+    selectedProvider,
+  ]);
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
@@ -3520,6 +3558,8 @@ export default function ChatView(props: ChatViewProps) {
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
           activeProjectScripts={activeProject?.scripts}
+          activeProviderStatus={activeProviderStatus}
+          activeProviderRateLimits={activeProviderRateLimits}
           preferredScriptId={
             activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
           }

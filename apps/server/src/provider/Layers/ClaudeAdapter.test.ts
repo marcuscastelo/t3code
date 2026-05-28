@@ -2429,6 +2429,68 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("emits Claude SDK rate-limit telemetry as account limit updates", () => {
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    const harness = makeHarness({ instanceId });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const rateLimitFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "account.rate-limits.updated",
+      ).pipe(Stream.runHead, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      const rateLimitInfo = {
+        status: "allowed",
+        rateLimitType: "five_hour",
+        utilization: 0.62,
+        resetsAt: 1_778_000_000,
+      };
+      harness.query.emit({
+        type: "rate_limit_event",
+        uuid: "rate-limit-1",
+        session_id: "sdk-session-rate-limit",
+        rate_limit_info: rateLimitInfo,
+      } as unknown as SDKMessage);
+
+      const emitted = yield* Fiber.join(rateLimitFiber);
+      assert.equal(emitted._tag, "Some");
+      if (emitted._tag !== "Some") {
+        return;
+      }
+
+      const event = emitted.value;
+      assert.equal(event.type, "account.rate-limits.updated");
+      if (event.type !== "account.rate-limits.updated") {
+        return;
+      }
+      assert.equal(event.provider, "claudeAgent");
+      assert.equal(event.providerInstanceId, instanceId);
+      assert.equal(event.threadId, THREAD_ID);
+      assert.deepEqual(event.payload.rateLimits, {
+        type: "rate_limit_event",
+        uuid: "rate-limit-1",
+        session_id: "sdk-session-rate-limit",
+        rate_limit_info: rateLimitInfo,
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("bridges approval request/response lifecycle through canUseTool", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

@@ -3,6 +3,7 @@ import {
   type EditorId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
@@ -17,6 +18,8 @@ import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
+import type { ProviderRateLimitSnapshot } from "~/lib/providerRateLimits";
+import { ProviderRateLimitMeter } from "./ProviderRateLimitMeter";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -27,6 +30,8 @@ interface ChatHeaderProps {
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
+  activeProviderStatus: ServerProvider | null;
+  activeProviderRateLimits: ProviderRateLimitSnapshot | null;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -65,6 +70,8 @@ export const ChatHeader = memo(function ChatHeader({
   isGitRepo,
   openInCwd,
   activeProjectScripts,
+  activeProviderStatus,
+  activeProviderRateLimits,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -110,6 +117,12 @@ export const ChatHeader = memo(function ChatHeader({
         )}
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
+        {activeProviderStatus ? (
+          <ProviderRateLimitMeter
+            provider={activeProviderStatus}
+            limits={activeProviderRateLimits}
+          />
+        ) : null}
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
