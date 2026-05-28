@@ -5,7 +5,7 @@ const { app, Menu, Tray, nativeImage, shell } = require("electron");
 const parentPid = Number.parseInt(process.env.T3CODE_TRAY_PARENT_PID ?? "", 10);
 const supervisorPid = Number.parseInt(process.env.T3CODE_TRAY_SUPERVISOR_PID ?? "", 10);
 const serverUrl = process.env.T3CODE_TRAY_SERVER_URL ?? "";
-const pairingToken = process.env.T3CODE_TRAY_PAIRING_TOKEN ?? "";
+const traySessionToken = process.env.T3CODE_TRAY_SESSION_TOKEN ?? "";
 const iconPath = process.env.T3CODE_TRAY_ICON_PATH ?? "";
 const restartExecPath = process.env.T3CODE_TRAY_RESTART_EXEC_PATH ?? "";
 const restartCwd = process.env.T3CODE_TRAY_RESTART_CWD ?? process.cwd();
@@ -73,22 +73,56 @@ function restartServer() {
 }
 
 function buildServerUrl() {
+  return serverUrl;
+}
+
+async function buildPairingUrl() {
   if (serverUrl.length === 0) {
     return "";
   }
-  if (pairingToken.length === 0) {
+
+  if (traySessionToken.length === 0 || typeof fetch !== "function") {
     return serverUrl;
   }
 
+  const endpoint = new URL("/api/auth/pairing-token", serverUrl);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${traySessionToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ label: "Tray web app", role: "owner" }),
+  });
+  if (!response.ok) {
+    throw new Error(`Pairing token request failed: ${response.status}`);
+  }
+
+  const body = await response.json();
+  const credential = typeof body.credential === "string" ? body.credential : "";
+  if (credential.length === 0) {
+    throw new Error("Pairing token response did not include a credential.");
+  }
+
   const url = new URL("/pair", serverUrl);
-  url.hash = new URLSearchParams([["token", pairingToken]]).toString();
+  url.hash = new URLSearchParams([["token", credential]]).toString();
   return url.toString();
 }
 
-function openWebApp() {
-  const url = buildServerUrl();
-  if (url.length > 0) {
-    void shell.openExternal(url);
+async function openWebApp() {
+  try {
+    const url = await buildPairingUrl();
+    if (url.length > 0) {
+      void shell.openExternal(url);
+    }
+  } catch (error) {
+    console.error(
+      `Could not create pairing link: ${error instanceof Error ? error.message : error}`,
+    );
+    const fallbackUrl = buildServerUrl();
+    if (fallbackUrl.length > 0) {
+      void shell.openExternal(fallbackUrl);
+    }
   }
 }
 

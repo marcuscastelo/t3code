@@ -331,6 +331,7 @@ export type AuthRevokeClientSessionInput = typeof AuthRevokeClientSessionInput.T
 export const AuthCreatePairingCredentialInput = Schema.Struct({
   label: Schema.optionalKey(TrimmedNonEmptyString),
   scopes: Schema.optionalKey(AuthEnvironmentScopes),
+  role: Schema.optionalKey(AuthSessionRole),
 });
 export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;
 
