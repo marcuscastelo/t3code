@@ -1474,7 +1474,9 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverRefreshProviders,
             (input.instanceId !== undefined
-              ? providerRegistry.refreshInstance(input.instanceId)
+              ? input.accountRateLimits === true
+                ? providerRegistry.refreshInstanceAccountRateLimits(input.instanceId)
+                : providerRegistry.refreshInstance(input.instanceId)
               : providerRegistry.refresh()
             ).pipe(Effect.map((providers) => ({ providers }))),
             { "rpc.aggregate": "server" },
