@@ -259,6 +259,10 @@ import {
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import {
+  deriveLatestProviderRateLimitSnapshot,
+  deriveProviderRateLimitSnapshotFromValue,
+} from "~/lib/providerRateLimits";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -2289,6 +2293,22 @@ function ChatViewContent(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const activeProviderRateLimits = useMemo(() => {
+    const latestRuntimeLimits = deriveLatestProviderRateLimitSnapshot(
+      activeThread?.activities ?? EMPTY_ACTIVITIES,
+      {
+        provider: activeProviderStatus?.driver ?? selectedProvider,
+        providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
+      },
+    );
+    if (latestRuntimeLimits) return latestRuntimeLimits;
+    if (!activeProviderStatus?.accountRateLimits) return null;
+    return deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
+      provider: activeProviderStatus.driver,
+      providerInstanceId: activeProviderStatus.instanceId,
+      updatedAt: activeProviderStatus.checkedAt,
+    });
+  }, [activeProviderInstanceId, activeProviderStatus, activeThread?.activities, selectedProvider]);
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
@@ -5233,6 +5253,8 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectName={activeProject?.title}
             openInCwd={gitCwd}
             activeProjectScripts={activeProject?.scripts}
+            activeProviderStatus={activeProviderStatus}
+            activeProviderRateLimits={activeProviderRateLimits}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
             }
