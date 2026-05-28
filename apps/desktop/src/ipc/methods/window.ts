@@ -1,6 +1,7 @@
 import {
   ContextMenuItemSchema,
   DesktopAppBrandingSchema,
+  DesktopAppearanceSchema,
   DesktopEnvironmentBootstrapSchema,
   DesktopThemeSchema,
   PickFolderOptionsSchema,
@@ -100,6 +101,16 @@ export const setTheme = makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.setTheme")(function* (theme) {
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     yield* electronTheme.setSource(theme);
+  }),
+});
+
+export const setAppearance = makeIpcMethod({
+  channel: IpcChannels.SET_APPEARANCE_CHANNEL,
+  payload: DesktopAppearanceSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setAppearance")(function* (appearance) {
+    const electronTheme = yield* ElectronTheme.ElectronTheme;
+    yield* electronTheme.setSource(appearance.mode);
   }),
 });
 
