@@ -1,4 +1,4 @@
-import { RotateCcwIcon } from "lucide-react";
+import { ArrowLeftIcon, RotateCcwIcon } from "lucide-react";
 import {
   Outlet,
   createFileRoute,
@@ -64,9 +64,17 @@ function SettingsContentLayout() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         {!isElectron && (
-          <header className="border-b border-border px-3 py-2 sm:px-5">
+          <header className="border-b border-border px-3 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] sm:px-5 sm:pt-2">
             <div className="flex min-h-7 items-center gap-2 sm:min-h-6">
-              <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+              <button
+                type="button"
+                aria-label="Back"
+                className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/70 bg-card/70 text-muted-foreground active:bg-accent active:text-foreground sm:hidden"
+                onClick={navigateBackWithinApp}
+              >
+                <ArrowLeftIcon className="size-4" />
+              </button>
+              <SidebarTrigger className="size-7 shrink-0 max-sm:hidden md:hidden" />
               <span className="text-sm font-medium text-foreground">Settings</span>
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">

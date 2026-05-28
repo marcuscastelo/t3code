@@ -144,6 +144,43 @@
   }
 }
 
+/* Mobile uses the dedicated T3 Code Mobile dark palette regardless of the
+   active theme. `:root.dark` matches specificity (0,2,0) with the `@variant
+   dark` block above and wins on source order, so these tokens also apply when
+   the app is in dark mode. */
+@media (max-width: 639px) {
+  :root,
+  :root.dark {
+    color-scheme: dark;
+    --background: #0b0d10;
+    --app-chrome-background: #0b0d10;
+    --foreground: #f2f4f8;
+    --card: #15181e;
+    --card-foreground: #f2f4f8;
+    --popover: #15181e;
+    --popover-foreground: #f2f4f8;
+    --primary: oklch(0.66 0.17 272);
+    --primary-foreground: #0a0b12;
+    --secondary: rgb(255 255 255 / 4%);
+    --secondary-foreground: #f2f4f8;
+    --muted: rgb(255 255 255 / 5%);
+    --muted-foreground: #9ba3af;
+    --accent: rgb(255 255 255 / 5%);
+    --accent-foreground: #f2f4f8;
+    --border: rgb(255 255 255 / 8%);
+    --input: rgb(255 255 255 / 10%);
+    --ring: oklch(0.66 0.17 272);
+    --destructive: #f4716e;
+    --destructive-foreground: #f4716e;
+    --info: #5b9cf6;
+    --info-foreground: #5b9cf6;
+    --success: #46ce81;
+    --success-foreground: #46ce81;
+    --warning: #e3a24c;
+    --warning-foreground: #e3a24c;
+  }
+}
+
 body {
   font-family:
     "DM Sans",
