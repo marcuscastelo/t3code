@@ -3,6 +3,7 @@ import {
   type EditorId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
@@ -19,6 +20,11 @@ import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { MobileChatActionsSheet } from "../mobile/MobileChatActionsSheet";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
+import type {
+  ProviderRateLimitDetectionStatus,
+  ProviderRateLimitSnapshot,
+} from "~/lib/providerRateLimits";
+import { ProviderRateLimitMeter } from "./ProviderRateLimitMeter";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -29,6 +35,9 @@ interface ChatHeaderProps {
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
+  activeProviderStatus: ServerProvider | null;
+  activeProviderRateLimits: ProviderRateLimitSnapshot | null;
+  activeProviderRateLimitDetectionStatus: ProviderRateLimitDetectionStatus;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -67,6 +76,9 @@ export const ChatHeader = memo(function ChatHeader({
   isGitRepo,
   openInCwd,
   activeProjectScripts,
+  activeProviderStatus,
+  activeProviderRateLimits,
+  activeProviderRateLimitDetectionStatus,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -202,6 +214,13 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </div>
         <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
+          {activeProviderStatus ? (
+            <ProviderRateLimitMeter
+              provider={activeProviderStatus}
+              limits={activeProviderRateLimits}
+              detectionStatus={activeProviderRateLimitDetectionStatus}
+            />
+          ) : null}
           {activeProjectScripts && (
             <ProjectScriptsControl
               scripts={activeProjectScripts}

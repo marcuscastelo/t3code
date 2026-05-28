@@ -2631,6 +2631,57 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("projects account rate-limit updates into normalized thread activities", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-account-rate-limits-updated"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex_personal"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      payload: {
+        rateLimits: {
+          primary: {
+            usedPercent: 42,
+            windowDurationMins: 300,
+          },
+          secondary: {
+            usedPercent: 71,
+            windowDurationMins: 10_080,
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "account.rate-limits.updated",
+      ),
+    );
+
+    const activity = thread.activities.find(
+      (candidate: ProviderRuntimeTestActivity) => candidate.kind === "account.rate-limits.updated",
+    );
+    expect(activity).toBeDefined();
+    expect(activity?.payload).toMatchObject({
+      provider: "codex",
+      providerInstanceId: "codex_personal",
+      rateLimits: {
+        primary: {
+          usedPercent: 42,
+          windowDurationMins: 300,
+        },
+        secondary: {
+          usedPercent: 71,
+          windowDurationMins: 10_080,
+        },
+      },
+    });
+  });
+
   it("projects Codex camelCase token usage payloads into normalized thread activities", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

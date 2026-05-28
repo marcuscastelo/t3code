@@ -6,6 +6,7 @@ import {
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
+import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -91,6 +92,7 @@ const CLAUDE_EFFORT_OPTIONS = {
   ],
 } as const;
 
+const CLAUDE_USAGE_PROBE_TIMEOUT_MS = 14_000;
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-8",
@@ -430,6 +432,28 @@ type ClaudeCapabilitiesProbe = {
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
+type ClaudeRateLimitProbeWindow = {
+  readonly id: string;
+  readonly label: string;
+  readonly usedPercent: number;
+  readonly resetsAtText?: string;
+  readonly windowDurationMins: number | null;
+};
+
+type ClaudeRateLimitProbe = {
+  readonly rateLimits: {
+    readonly source: "claude-cli-usage";
+    readonly windows: ReadonlyArray<ClaudeRateLimitProbeWindow>;
+  };
+};
+
+class ClaudeCliUsageProbeError extends Data.TaggedError("ClaudeCliUsageProbeError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+function noopCleanup() {}
+
 function parseClaudeInitializationCommands(
   commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
 ): ReadonlyArray<ServerProviderSlashCommand> {
@@ -570,6 +594,258 @@ const probeClaudeCapabilities = (
   );
 };
 
+function stripAnsiCodes(value: string): string {
+  let clean = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 27) {
+      const next = value[index + 1];
+      if (next === "[") {
+        index += 2;
+        while (index < value.length && !/[A-Za-z~]/.test(value[index]!)) {
+          index += 1;
+        }
+        continue;
+      }
+      if (next === "]") {
+        index += 2;
+        while (index < value.length) {
+          const currentCode = value.charCodeAt(index);
+          if (currentCode === 7) break;
+          if (currentCode === 27 && value[index + 1] === "\\") {
+            index += 1;
+            break;
+          }
+          index += 1;
+        }
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+    clean += value[index] === "\r" ? "\n" : value[index];
+  }
+  return clean;
+}
+
+function normalizeForUsageLabelSearch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function percentToUsedPercent(percent: number, keyword: string | undefined): number {
+  const normalizedKeyword = keyword?.toLowerCase();
+  const used =
+    normalizedKeyword === "left" ||
+    normalizedKeyword === "remaining" ||
+    normalizedKeyword === "available"
+      ? 100 - percent
+      : percent;
+  return Math.max(0, Math.min(100, used));
+}
+
+function parseUsagePercent(value: string): number | null {
+  const percentagePattern =
+    /(\d+(?:\.\d+)?)\s*%\s*(used|left|remaining|available)?|(used|left|remaining|available)\D{0,24}(\d+(?:\.\d+)?)\s*%/gi;
+  for (const match of value.matchAll(percentagePattern)) {
+    const rawPercent = match[1] ?? match[4];
+    const percent = rawPercent ? Number(rawPercent) : Number.NaN;
+    if (!Number.isFinite(percent)) {
+      continue;
+    }
+    return percentToUsedPercent(percent, match[2] ?? match[3]);
+  }
+  return null;
+}
+
+function parseUsageResetText(value: string): string | undefined {
+  const match = /Resets[^\n)]*(?:\([^)]+\))?/i.exec(value);
+  return match?.[0]?.trim();
+}
+
+function usageCaptureHasSessionValue(value: string): boolean {
+  const normalized = normalizeForUsageLabelSearch(stripAnsiCodes(value));
+  return normalized.includes("currentsession") && /(?:used|left|remaining|available)/i.test(value);
+}
+
+function usageCaptureHasWeeklyValue(value: string): boolean {
+  const normalized = normalizeForUsageLabelSearch(stripAnsiCodes(value));
+  return usageCaptureHasSessionValue(value) && normalized.includes("currentweek");
+}
+
+function extractClaudeUsageWindow(
+  lines: ReadonlyArray<string>,
+  labels: ReadonlyArray<string>,
+  input: {
+    readonly id: string;
+    readonly label: string;
+    readonly windowDurationMins: number | null;
+  },
+): ClaudeRateLimitProbeWindow | null {
+  const normalizedLabels = labels.map(normalizeForUsageLabelSearch);
+  const normalizedLines = lines.map(normalizeForUsageLabelSearch);
+  const startIndex = normalizedLines.findIndex((line) =>
+    normalizedLabels.some((label) => line.includes(label)),
+  );
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const windowLines: string[] = [];
+  for (const line of lines.slice(startIndex, startIndex + 14)) {
+    const normalizedLine = normalizeForUsageLabelSearch(line);
+    if (
+      windowLines.length > 0 &&
+      normalizedLine.startsWith("current") &&
+      !normalizedLabels.some((label) => normalizedLine.includes(label))
+    ) {
+      break;
+    }
+    windowLines.push(line);
+  }
+
+  const windowText = windowLines.join("\n");
+  const usedPercent = parseUsagePercent(windowText);
+  if (usedPercent === null) {
+    return null;
+  }
+
+  const resetsAtText = parseUsageResetText(windowText);
+  return {
+    id: input.id,
+    label: input.label,
+    usedPercent,
+    ...(resetsAtText ? { resetsAtText } : {}),
+    windowDurationMins: input.windowDurationMins,
+  };
+}
+
+export function parseClaudeCliUsageRateLimits(text: string): ClaudeRateLimitProbe | undefined {
+  const clean = stripAnsiCodes(text);
+  const usagePanelStart = clean.toLowerCase().lastIndexOf("settings:");
+  const panel =
+    usagePanelStart >= 0 && clean.slice(usagePanelStart).toLowerCase().includes("usage")
+      ? clean.slice(usagePanelStart)
+      : clean;
+  const lines = panel
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const windows = [
+    extractClaudeUsageWindow(lines, ["Current session"], {
+      id: "five_hour",
+      label: "5h",
+      windowDurationMins: 300,
+    }),
+    extractClaudeUsageWindow(lines, ["Current week (all models)"], {
+      id: "seven_day",
+      label: "weekly",
+      windowDurationMins: 10_080,
+    }),
+    extractClaudeUsageWindow(
+      lines,
+      ["Current week (Sonnet only)", "Current week (Sonnet)", "Current week (Opus)"],
+      {
+        id: "seven_day_sonnet",
+        label: "weekly sonnet",
+        windowDurationMins: 10_080,
+      },
+    ),
+  ].filter((window): window is ClaudeRateLimitProbeWindow => window !== null);
+
+  if (windows.length === 0) {
+    return undefined;
+  }
+
+  return {
+    rateLimits: {
+      source: "claude-cli-usage",
+      windows,
+    },
+  };
+}
+
+function captureClaudeCliUsage(
+  claudeSettings: ClaudeSettings,
+  claudeEnvironment: NodeJS.ProcessEnv,
+): Effect.Effect<string, ClaudeCliUsageProbeError> {
+  let cleanup = noopCleanup;
+  let stopped = false;
+  return Effect.tryPromise({
+    try: () =>
+      new Promise<string>((resolve, reject) => {
+        let done = false;
+        const chunks: string[] = [];
+
+        const finish = (result: string) => {
+          if (done) return;
+          done = true;
+          resolve(result);
+        };
+        const fail = (cause: unknown) => {
+          if (done) return;
+          done = true;
+          reject(cause);
+        };
+
+        void import("node-pty")
+          .then((nodePty) => {
+            if (stopped) return;
+            const spawned = nodePty.spawn(claudeSettings.binaryPath, [], {
+              cols: 100,
+              rows: 32,
+              cwd:
+                typeof claudeEnvironment.HOME === "string" && claudeEnvironment.HOME.trim()
+                  ? claudeEnvironment.HOME
+                  : process.cwd(),
+              env: claudeEnvironment,
+              name: process.platform === "win32" ? "xterm-color" : "xterm-256color",
+            });
+            cleanup = () => {
+              stopped = true;
+              try {
+                spawned.kill();
+              } catch {
+                // Process may already be gone.
+              }
+            };
+
+            spawned.write("/usage\r\r");
+
+            spawned.onData((chunk) => {
+              chunks.push(chunk);
+              const output = chunks.join("");
+              if (usageCaptureHasWeeklyValue(output)) {
+                finish(output);
+              }
+            });
+            spawned.onExit(() => {
+              finish(chunks.join(""));
+            });
+          })
+          .catch(fail);
+      }),
+    catch: (cause) =>
+      new ClaudeCliUsageProbeError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  }).pipe(Effect.ensuring(Effect.sync(() => cleanup())));
+}
+
+const probeClaudeCliRateLimits = (
+  claudeSettings: ClaudeSettings,
+  environment: NodeJS.ProcessEnv = process.env,
+) =>
+  Effect.gen(function* () {
+    const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
+    const output = yield* captureClaudeCliUsage(claudeSettings, claudeEnvironment);
+    return parseClaudeCliUsageRateLimits(output);
+  }).pipe(
+    Effect.timeoutOption(CLAUDE_USAGE_PROBE_TIMEOUT_MS + 2_000),
+    Effect.orElseSucceed(() => Option.none()),
+  );
+
 const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (
   claudeSettings: ClaudeSettings,
   args: ReadonlyArray<string>,
@@ -589,6 +865,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeSettings: ClaudeSettings,
   ) => Effect.Effect<ClaudeCapabilitiesProbe | undefined>,
   environment: NodeJS.ProcessEnv = process.env,
+  resolveRateLimits?: (
+    claudeSettings: ClaudeSettings,
+  ) => Effect.Effect<Option.Option<ClaudeRateLimitProbe | undefined>, never, Path.Path>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -719,12 +998,19 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     subscriptionType: capabilities.subscriptionType,
     authMethod: capabilities.tokenSource,
   });
+  const accountRateLimits = resolveRateLimits
+    ? yield* resolveRateLimits(claudeSettings).pipe(
+        Effect.map((result) => (Option.isSome(result) ? result.value : undefined)),
+        Effect.orElseSucceed(() => undefined),
+      )
+    : undefined;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
     checkedAt,
     models,
     slashCommands: dedupedSlashCommands,
+    accountRateLimits,
     probe: {
       installed: true,
       version: parsedVersion,
@@ -784,4 +1070,4 @@ export const makePendingClaudeProvider = (
     });
   });
 
-export { probeClaudeCapabilities };
+export { probeClaudeCapabilities, probeClaudeCliRateLimits };

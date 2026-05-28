@@ -1028,6 +1028,55 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       });
     }),
   );
+
+  it.effect("unwraps Codex account rate-limit payloads", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-codex-account-rate-limits-updated"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            primary: {
+              usedPercent: 42,
+              windowDurationMins: 300,
+            },
+            secondary: {
+              usedPercent: 71,
+              windowDurationMins: 10_080,
+            },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      assert.equal(firstEvent.value.type, "account.rate-limits.updated");
+      if (firstEvent.value.type !== "account.rate-limits.updated") {
+        return;
+      }
+
+      assert.deepEqual(firstEvent.value.payload.rateLimits, {
+        primary: {
+          usedPercent: 42,
+          windowDurationMins: 300,
+        },
+        secondary: {
+          usedPercent: 71,
+          windowDurationMins: 10_080,
+        },
+      });
+    }),
+  );
 });
 
 const scopedLifecycleRuntimeFactory = makeScopedRuntimeFactory();

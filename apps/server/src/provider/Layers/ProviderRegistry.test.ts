@@ -31,7 +31,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { checkClaudeProviderStatus, parseClaudeCliUsageRateLimits } from "./ClaudeProvider.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
@@ -1329,6 +1329,43 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it("parses Claude CLI usage windows", () => {
+        const snapshot = parseClaudeCliUsageRateLimits(`
+          Settings: Status   Config   Usage (tab to cycle)
+
+          Current session
+          1% used  (Resets 5am)
+          Current week (all models)
+          10% used  (Resets Dec 2)
+          Current week (Sonnet only)
+          0% used (Resets Dec 2)
+        `);
+
+        assert.deepStrictEqual(snapshot?.rateLimits.windows, [
+          {
+            id: "five_hour",
+            label: "5h",
+            usedPercent: 1,
+            resetsAtText: "Resets 5am",
+            windowDurationMins: 300,
+          },
+          {
+            id: "seven_day",
+            label: "weekly",
+            usedPercent: 10,
+            resetsAtText: "Resets Dec 2",
+            windowDurationMins: 10_080,
+          },
+          {
+            id: "seven_day_sonnet",
+            label: "weekly sonnet",
+            usedPercent: 0,
+            resetsAtText: "Resets Dec 2",
+            windowDurationMins: 10_080,
+          },
+        ]);
+      });
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
