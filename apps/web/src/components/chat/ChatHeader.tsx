@@ -18,7 +18,10 @@ import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
-import type { ProviderRateLimitSnapshot } from "~/lib/providerRateLimits";
+import type {
+  ProviderRateLimitDetectionStatus,
+  ProviderRateLimitSnapshot,
+} from "~/lib/providerRateLimits";
 import { ProviderRateLimitMeter } from "./ProviderRateLimitMeter";
 
 interface ChatHeaderProps {
@@ -32,6 +35,7 @@ interface ChatHeaderProps {
   activeProjectScripts: ProjectScript[] | undefined;
   activeProviderStatus: ServerProvider | null;
   activeProviderRateLimits: ProviderRateLimitSnapshot | null;
+  activeProviderRateLimitDetectionStatus: ProviderRateLimitDetectionStatus;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -72,6 +76,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectScripts,
   activeProviderStatus,
   activeProviderRateLimits,
+  activeProviderRateLimitDetectionStatus,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -121,6 +126,7 @@ export const ChatHeader = memo(function ChatHeader({
           <ProviderRateLimitMeter
             provider={activeProviderStatus}
             limits={activeProviderRateLimits}
+            detectionStatus={activeProviderRateLimitDetectionStatus}
           />
         ) : null}
         {activeProjectScripts && (

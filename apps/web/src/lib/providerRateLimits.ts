@@ -1,8 +1,21 @@
-import type {
-  OrchestrationThreadActivity,
+import {
   ProviderDriverKind,
-  ProviderInstanceId,
+  type OrchestrationThreadActivity,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
+
+const EXPECTED_WINDOWS_BY_PROVIDER: Partial<
+  Record<string, readonly { readonly label: string; readonly windowDurationMins: number }[]>
+> = {
+  [ProviderDriverKind.make("codex")]: [
+    { label: "5h", windowDurationMins: 300 },
+    { label: "weekly", windowDurationMins: 10_080 },
+  ],
+  [ProviderDriverKind.make("claudeAgent")]: [
+    { label: "5h", windowDurationMins: 300 },
+    { label: "weekly", windowDurationMins: 10_080 },
+  ],
+};
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -141,6 +154,8 @@ export interface ProviderRateLimitSnapshot {
   readonly updatedAt: string;
 }
 
+export type ProviderRateLimitDetectionStatus = "idle" | "detecting" | "exhausted";
+
 function parseRateLimitWindow(
   id: string,
   value: unknown,
@@ -175,7 +190,7 @@ function parseRateLimitWindow(
     fallbackLabel,
   );
   return {
-    id,
+    id: readString(record, ["id", "type", "rateLimitType", "rate_limit_type"]) ?? id,
     label,
     usedPercent,
     resetsAtMs: normalizeResetAtMs(
@@ -183,6 +198,17 @@ function parseRateLimitWindow(
     ),
     windowDurationMins,
   };
+}
+
+function windowSatisfiesExpectation(
+  window: ProviderRateLimitWindowSnapshot,
+  expected: { readonly label: string; readonly windowDurationMins: number },
+): boolean {
+  return (
+    window.label === expected.label ||
+    window.windowDurationMins === expected.windowDurationMins ||
+    (expected.label === "weekly" && window.label.startsWith("weekly"))
+  );
 }
 
 function windowsFromRoot(root: Record<string, unknown>): ProviderRateLimitWindowSnapshot[] {
@@ -342,6 +368,18 @@ export function deriveProviderRateLimitSnapshotFromValue(
   },
 ): ProviderRateLimitSnapshot | null {
   return snapshotFromRateLimitValue(value, input);
+}
+
+export function shouldRefreshProviderRateLimits(
+  snapshot: ProviderRateLimitSnapshot | null,
+  provider: ProviderDriverKind | string | null | undefined,
+): boolean {
+  const expectedWindows = provider ? EXPECTED_WINDOWS_BY_PROVIDER[String(provider)] : undefined;
+  if (!expectedWindows || expectedWindows.length === 0) return false;
+  if (!snapshot || snapshot.windows.length === 0) return true;
+  return expectedWindows.some(
+    (expected) => !snapshot.windows.some((window) => windowSatisfiesExpectation(window, expected)),
+  );
 }
 
 export function formatRateLimitPercent(value: number): string {

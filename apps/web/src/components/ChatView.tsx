@@ -193,8 +193,11 @@ import {
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
 import {
+  type ProviderRateLimitDetectionStatus,
+  type ProviderRateLimitSnapshot,
   deriveLatestProviderRateLimitSnapshot,
   deriveProviderRateLimitSnapshotFromValue,
+  shouldRefreshProviderRateLimits,
 } from "~/lib/providerRateLimits";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
@@ -211,6 +214,16 @@ type EnvironmentUnavailableState = {
 };
 
 type ThreadPlanCatalogEntry = Pick<Thread, "id" | "proposedPlans">;
+
+function removeProviderRateLimitDetectionStatus(
+  current: Record<string, ProviderRateLimitDetectionStatus>,
+  instanceId: string,
+): Record<string, ProviderRateLimitDetectionStatus> {
+  if (!(instanceId in current)) return current;
+  const next = { ...current };
+  delete next[instanceId];
+  return next;
+}
 
 function useThreadPlanCatalog(threadIds: readonly ThreadId[]): ThreadPlanCatalogEntry[] {
   return useStore(
@@ -1661,25 +1674,44 @@ export default function ChatView(props: ChatViewProps) {
       null
     );
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const [providerRateLimitSnapshotsByInstance, setProviderRateLimitSnapshotsByInstance] = useState<
+    Record<string, ProviderRateLimitSnapshot>
+  >({});
   const activeProviderRateLimits = useMemo(() => {
+    const provider = activeProviderStatus?.driver ?? selectedProvider;
+    const providerInstanceId = activeProviderStatus?.instanceId ?? activeProviderInstanceId;
+    const providerInstanceKey = providerInstanceId ? String(providerInstanceId) : null;
+    const fallbackSnapshot = providerInstanceKey
+      ? providerRateLimitSnapshotsByInstance[providerInstanceKey]
+      : undefined;
     const latestRuntimeLimits = deriveLatestProviderRateLimitSnapshot(
       activeThread?.activities ?? EMPTY_ACTIVITIES,
       {
-        provider: activeProviderStatus?.driver ?? selectedProvider,
-        providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
+        provider,
+        providerInstanceId,
       },
     );
     if (latestRuntimeLimits) {
       return latestRuntimeLimits;
     }
     if (!activeProviderStatus?.accountRateLimits) {
-      return null;
+      return fallbackSnapshot ?? null;
     }
-    return deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
-      provider: activeProviderStatus?.driver ?? selectedProvider,
-      providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
-      updatedAt: activeProviderStatus.checkedAt,
-    });
+    const accountSnapshot = deriveProviderRateLimitSnapshotFromValue(
+      activeProviderStatus.accountRateLimits,
+      {
+        provider,
+        providerInstanceId,
+        updatedAt: activeProviderStatus.checkedAt,
+      },
+    );
+    if (accountSnapshot && !shouldRefreshProviderRateLimits(accountSnapshot, provider)) {
+      return accountSnapshot;
+    }
+    if (fallbackSnapshot && !shouldRefreshProviderRateLimits(fallbackSnapshot, provider)) {
+      return fallbackSnapshot;
+    }
+    return accountSnapshot ?? fallbackSnapshot ?? null;
   }, [
     activeProviderInstanceId,
     activeProviderStatus?.accountRateLimits,
@@ -1687,7 +1719,115 @@ export default function ChatView(props: ChatViewProps) {
     activeProviderStatus?.driver,
     activeProviderStatus?.instanceId,
     activeThread?.activities,
+    providerRateLimitSnapshotsByInstance,
     selectedProvider,
+  ]);
+  const [providerRateLimitDetectionByInstance, setProviderRateLimitDetectionByInstance] = useState<
+    Record<string, ProviderRateLimitDetectionStatus>
+  >({});
+  const providerRateLimitRequestsRef = useRef(new Set<string>());
+  const activeProviderRateLimitNeedsRefresh = Boolean(
+    activeProviderStatus?.enabled &&
+    shouldRefreshProviderRateLimits(activeProviderRateLimits, activeProviderStatus.driver),
+  );
+  const activeProviderRateLimitDetectionKey = activeProviderStatus?.instanceId
+    ? String(activeProviderStatus.instanceId)
+    : null;
+  const currentProviderRateLimitDetectionStatus = activeProviderRateLimitDetectionKey
+    ? (providerRateLimitDetectionByInstance[activeProviderRateLimitDetectionKey] ?? null)
+    : null;
+  const activeProviderRateLimitDetectionStatus: ProviderRateLimitDetectionStatus =
+    activeProviderRateLimitNeedsRefresh && activeProviderRateLimitDetectionKey
+      ? (currentProviderRateLimitDetectionStatus ?? "detecting")
+      : "idle";
+  useEffect(() => {
+    if (!activeProviderStatus) {
+      return;
+    }
+
+    const instanceId = activeProviderStatus.instanceId;
+    const instanceKey = String(instanceId);
+
+    if (!activeProviderStatus.enabled || !activeProviderRateLimitNeedsRefresh) {
+      setProviderRateLimitDetectionByInstance((current) =>
+        removeProviderRateLimitDetectionStatus(current, instanceKey),
+      );
+      return;
+    }
+
+    if (
+      currentProviderRateLimitDetectionStatus === "detecting" ||
+      currentProviderRateLimitDetectionStatus === "exhausted"
+    ) {
+      return;
+    }
+
+    const activeEnvironmentId = activeThread?.environmentId ?? environmentId;
+    if (!primaryEnvironmentId || activeEnvironmentId !== primaryEnvironmentId) {
+      setProviderRateLimitDetectionByInstance((current) => ({
+        ...current,
+        [instanceKey]: "exhausted",
+      }));
+      return;
+    }
+
+    const localApi = readLocalApi();
+    if (!localApi) {
+      setProviderRateLimitDetectionByInstance((current) => ({
+        ...current,
+        [instanceKey]: "exhausted",
+      }));
+      return;
+    }
+
+    if (providerRateLimitRequestsRef.current.has(instanceKey)) {
+      return;
+    }
+    providerRateLimitRequestsRef.current.add(instanceKey);
+
+    void localApi.server
+      .refreshProviders({ instanceId, accountRateLimits: true })
+      .then((result) => {
+        const refreshedProvider = result.providers.find(
+          (provider) => provider.instanceId === instanceId,
+        );
+        const refreshedLimits = refreshedProvider?.accountRateLimits
+          ? deriveProviderRateLimitSnapshotFromValue(refreshedProvider.accountRateLimits, {
+              provider: refreshedProvider.driver,
+              providerInstanceId: refreshedProvider.instanceId,
+              updatedAt: refreshedProvider.checkedAt,
+            })
+          : null;
+
+        if (refreshedLimits) {
+          setProviderRateLimitSnapshotsByInstance((current) => ({
+            ...current,
+            [instanceKey]: refreshedLimits,
+          }));
+        }
+
+        setProviderRateLimitDetectionByInstance((current) =>
+          shouldRefreshProviderRateLimits(refreshedLimits, activeProviderStatus.driver)
+            ? { ...current, [instanceKey]: "exhausted" }
+            : removeProviderRateLimitDetectionStatus(current, instanceKey),
+        );
+      })
+      .catch(() => {
+        setProviderRateLimitDetectionByInstance((current) => ({
+          ...current,
+          [instanceKey]: "exhausted",
+        }));
+      })
+      .finally(() => {
+        providerRateLimitRequestsRef.current.delete(instanceKey);
+      });
+  }, [
+    activeProviderRateLimitNeedsRefresh,
+    activeProviderStatus,
+    activeThread?.environmentId,
+    currentProviderRateLimitDetectionStatus,
+    environmentId,
+    primaryEnvironmentId,
   ]);
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
@@ -3560,6 +3700,7 @@ export default function ChatView(props: ChatViewProps) {
           activeProjectScripts={activeProject?.scripts}
           activeProviderStatus={activeProviderStatus}
           activeProviderRateLimits={activeProviderRateLimits}
+          activeProviderRateLimitDetectionStatus={activeProviderRateLimitDetectionStatus}
           preferredScriptId={
             activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
           }

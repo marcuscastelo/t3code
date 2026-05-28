@@ -17,7 +17,9 @@ import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
@@ -31,6 +33,7 @@ import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
   probeClaudeCapabilities,
+  probeClaudeCliRateLimits,
 } from "../Layers/ClaudeProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -39,6 +42,7 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
+import type { ServerProviderShape } from "../Services/ServerProvider.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
@@ -150,18 +154,27 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           ),
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig);
+      const rateLimitProbeRequestedRef = yield* Ref.make(false);
 
       const checkProvider = checkClaudeProviderStatus(
         effectiveConfig,
         () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
         processEnv,
+        (settings) =>
+          Ref.get(rateLimitProbeRequestedRef).pipe(
+            Effect.flatMap((requested) =>
+              requested
+                ? probeClaudeCliRateLimits(settings, processEnv)
+                : Effect.succeed(Option.none()),
+            ),
+          ),
       ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(Path.Path, path),
       );
 
-      const snapshot = yield* makeManagedServerProvider<ClaudeSettings>({
+      const managedSnapshot = yield* makeManagedServerProvider<ClaudeSettings>({
         maintenanceCapabilities,
         getSettings: Effect.succeed(effectiveConfig),
         streamSettings: Stream.never,
@@ -186,6 +199,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             }),
         ),
       );
+      const refreshAccountRateLimits: NonNullable<ServerProviderShape["refreshAccountRateLimits"]> =
+        Effect.gen(function* () {
+          yield* Ref.set(rateLimitProbeRequestedRef, true);
+          return yield* managedSnapshot.refresh;
+        }).pipe(Effect.ensuring(Ref.set(rateLimitProbeRequestedRef, false)));
+      const snapshot = {
+        ...managedSnapshot,
+        refreshAccountRateLimits,
+      } satisfies ServerProviderShape;
 
       return {
         instanceId,

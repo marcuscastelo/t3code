@@ -181,6 +181,7 @@ const buildSnapshotSource = (instance: ProviderInstance): ProviderSnapshotSource
   driverKind: instance.driverKind,
   getSnapshot: instance.snapshot.getSnapshot,
   refresh: instance.snapshot.refresh,
+  refreshAccountRateLimits: instance.snapshot.refreshAccountRateLimits,
   streamChanges: instance.snapshot.streamChanges,
 });
 
@@ -474,6 +475,25 @@ export const ProviderRegistryLive = Layer.effect(
       return yield* refreshOneSource(providerSource);
     });
 
+    const refreshInstanceAccountRateLimits = Effect.fn("refreshInstanceAccountRateLimits")(
+      function* (instanceId: ProviderInstanceId) {
+        const sources = yield* getLiveSources;
+        const providerSource = sources.find((candidate) => candidate.instanceId === instanceId);
+        if (!providerSource) {
+          return yield* Ref.get(providersRef);
+        }
+        const refreshAccountRateLimits =
+          providerSource.refreshAccountRateLimits ?? providerSource.refresh;
+        return yield* refreshAccountRateLimits.pipe(
+          Effect.flatMap((nextProvider) =>
+            correlateSnapshotWithSource(providerSource, nextProvider).pipe(
+              Effect.flatMap(syncProvider),
+            ),
+          ),
+        );
+      },
+    );
+
     const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
       "getProviderMaintenanceCapabilitiesForInstance",
     )(function* (instanceId: ProviderInstanceId, provider: ProviderDriverKind) {
@@ -685,6 +705,8 @@ export const ProviderRegistryLive = Layer.effect(
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>
         refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
+      refreshInstanceAccountRateLimits: (instanceId: ProviderInstanceId) =>
+        refreshInstanceAccountRateLimits(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
       get streamChanges() {

@@ -190,6 +190,7 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refreshes.
      */
     instanceId: Schema.optional(ProviderInstanceId),
+    accountRateLimits: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
 });
