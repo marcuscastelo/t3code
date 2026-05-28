@@ -2573,6 +2573,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const base = {
       eventId: stamp.eventId,
       provider: PROVIDER,
+      providerInstanceId: context.session.providerInstanceId,
       createdAt: stamp.createdAt,
       threadId: context.session.threadId,
       ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
@@ -2778,6 +2779,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const base = {
       eventId: stamp.eventId,
       provider: PROVIDER,
+      providerInstanceId: context.session.providerInstanceId,
       createdAt: stamp.createdAt,
       threadId: context.session.threadId,
       ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
