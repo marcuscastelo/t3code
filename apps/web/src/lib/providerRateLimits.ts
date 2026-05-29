@@ -82,6 +82,8 @@ function hasWindowShape(record: Record<string, unknown> | null): boolean {
   return (
     asRecord(record.primary) !== null ||
     asRecord(record.secondary) !== null ||
+    asRecord(record.rateLimitsByLimitId) !== null ||
+    asRecord(record.rate_limits_by_limit_id) !== null ||
     asArray(record.limits) !== null ||
     asArray(record.rate_limits) !== null ||
     asArray(record.windows) !== null
@@ -232,6 +234,16 @@ function windowsFromRoot(root: Record<string, unknown>): ProviderRateLimitWindow
 
   pushWindow(parseRateLimitWindow("primary", root.primary, "5h"));
   pushWindow(parseRateLimitWindow("secondary", root.secondary, "weekly"));
+
+  const byLimitId = asRecord(root.rateLimitsByLimitId) ?? asRecord(root.rate_limits_by_limit_id);
+  if (byLimitId) {
+    for (const [limitId, limitValue] of Object.entries(byLimitId)) {
+      const limit = asRecord(limitValue);
+      if (!limit) continue;
+      pushWindow(parseRateLimitWindow(`${limitId}:primary`, limit.primary, "5h"));
+      pushWindow(parseRateLimitWindow(`${limitId}:secondary`, limit.secondary, "weekly"));
+    }
+  }
 
   const claudeRateLimitInfo = asRecord(root.rate_limit_info) ?? asRecord(root.rateLimitInfo);
   if (claudeRateLimitInfo) {
