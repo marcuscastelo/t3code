@@ -89,6 +89,14 @@ function unsupportedProvider(
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.headSelector),
         detail: `No ${kind} source control provider is registered.`,
       }),
+    updateChangeRequest: (input) =>
+      new SourceControlProviderError({
+        provider: kind,
+        operation: "updateChangeRequest",
+        cwd: input.cwd,
+        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
+        detail: `No ${kind} source control provider is registered.`,
+      }),
     getRepositoryCloneUrls: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -171,6 +179,11 @@ function bindProviderContext(
       }),
     createChangeRequest: (input) =>
       provider.createChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+    updateChangeRequest: (input) =>
+      provider.updateChangeRequest({
         ...input,
         context: input.context ?? context,
       }),

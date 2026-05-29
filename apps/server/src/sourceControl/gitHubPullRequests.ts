@@ -10,6 +10,7 @@ import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson"
 export interface NormalizedGitHubPullRequestRecord {
   readonly number: number;
   readonly title: string;
+  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -23,6 +24,7 @@ export interface NormalizedGitHubPullRequestRecord {
 const GitHubPullRequestSchema = Schema.Struct({
   number: PositiveInt,
   title: TrimmedNonEmptyString,
+  body: Schema.optional(Schema.String),
   url: TrimmedNonEmptyString,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
@@ -81,6 +83,7 @@ function normalizeGitHubPullRequestRecord(
   return {
     number: raw.number,
     title: raw.title,
+    ...(raw.body !== undefined ? { body: raw.body } : {}),
     url: raw.url,
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,

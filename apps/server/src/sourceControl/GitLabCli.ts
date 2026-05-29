@@ -226,6 +226,7 @@ export const isGitLabCliError = Schema.is(GitLabCliError);
 export interface GitLabMergeRequestSummary {
   readonly number: number;
   readonly title: string;
+  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -281,6 +282,13 @@ export class GitLabCli extends Context.Service<
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
       readonly target?: SourceControlProvider.SourceControlRefSelector;
+      readonly title: string;
+      readonly bodyFile: string;
+    }) => Effect.Effect<void, GitLabCliError>;
+
+    readonly updateMergeRequest: (input: {
+      readonly cwd: string;
+      readonly reference: string;
       readonly title: string;
       readonly bodyFile: string;
     }) => Effect.Effect<void, GitLabCliError>;
@@ -603,6 +611,20 @@ export const make = Effect.gen(function* () {
         ],
       }).pipe(Effect.asVoid);
     },
+    updateMergeRequest: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "api",
+          "--method",
+          "PUT",
+          `projects/:fullpath/merge_requests/${input.reference}`,
+          "--raw-field",
+          `title=${input.title}`,
+          "--field",
+          `description=@${input.bodyFile}`,
+        ],
+      }).pipe(Effect.asVoid),
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,

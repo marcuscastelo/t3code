@@ -22,6 +22,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildPrUpdateContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import * as TextGeneration from "./TextGeneration.ts";
@@ -37,6 +38,7 @@ const OPENCODE_TEXT_GENERATION_IDLE_TTL = "30 seconds";
 const OpenCodeTextGenerationOperation = Schema.Literals([
   "generateCommitMessage",
   "generatePrContent",
+  "generatePrUpdateContent",
   "generateBranchName",
   "generateThreadTitle",
 ]);
@@ -252,6 +254,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     readonly operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle";
   }) =>
@@ -571,6 +574,19 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       };
     });
 
+  const generatePrUpdateContent: TextGeneration.TextGeneration["Service"]["generatePrUpdateContent"] =
+    Effect.fn("OpenCodeTextGeneration.generatePrUpdateContent")(function* (input) {
+      const { prompt, outputSchema } = buildPrUpdateContentPrompt(input);
+      const generated = yield* runOpenCodeJson({
+        operation: "generatePrUpdateContent",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return { title: sanitizePrTitle(generated.title), body: generated.body.trim() };
+    });
+
   const generateBranchName: TextGeneration.TextGeneration["Service"]["generateBranchName"] =
     Effect.fn("OpenCodeTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({
@@ -614,6 +630,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
   return {
     generateCommitMessage,
     generatePrContent,
+    generatePrUpdateContent,
     generateBranchName,
     generateThreadTitle,
   } satisfies TextGeneration.TextGeneration["Service"];
