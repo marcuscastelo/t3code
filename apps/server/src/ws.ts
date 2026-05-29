@@ -797,18 +797,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
-              yield* Option.match(codexSessionImporterOption, {
-                onNone: () => Effect.void,
-                onSome: (codexSessionImporter) =>
-                  codexSessionImporter.importThread({ threadId: input.threadId }).pipe(
-                    Effect.catch((error) =>
-                      Effect.logWarning("codex session import before thread snapshot failed", {
-                        threadId: input.threadId,
-                        error: error.message,
-                      }),
-                    ),
-                  ),
-              });
               const [threadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(

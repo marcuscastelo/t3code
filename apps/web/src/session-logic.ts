@@ -178,6 +178,16 @@ export function deriveActiveWorkStartedAt(
   return sendStartedAt;
 }
 
+export function deriveActiveWorkTurnId(
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId"> | null,
+  session: SessionActivityState | null,
+): TurnId | null {
+  if (session?.orchestrationStatus === "running") {
+    return session.activeTurnId ?? latestTurn?.turnId ?? null;
+  }
+  return latestTurn?.turnId ?? null;
+}
+
 function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":

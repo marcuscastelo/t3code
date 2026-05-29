@@ -240,3 +240,78 @@ it.effect("CodexSessionImporter is idempotent", () =>
     assert.equal(second.importedTurns, 0);
   }).pipe(Effect.provide(layer)),
 );
+
+it.effect("CodexSessionImporter does not mark a live provider runtime ready", () =>
+  Effect.gen(function* () {
+    const { root } = yield* makeCodexHome;
+    yield* seedProjection;
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      INSERT INTO projection_thread_sessions (
+        thread_id,
+        status,
+        provider_name,
+        provider_instance_id,
+        provider_session_id,
+        provider_thread_id,
+        active_turn_id,
+        last_error,
+        updated_at,
+        runtime_mode
+      )
+      VALUES (
+        ${TEST_THREAD_ID},
+        'running',
+        'codex',
+        'codex',
+        'session-1',
+        ${TEST_PROVIDER_THREAD_ID},
+        'turn-live',
+        NULL,
+        '2026-05-28T16:00:00.000Z',
+        'full-access'
+      )
+    `;
+    yield* sql`
+      INSERT INTO provider_session_runtime (
+        thread_id,
+        provider_name,
+        provider_instance_id,
+        adapter_key,
+        runtime_mode,
+        status,
+        last_seen_at,
+        resume_cursor_json,
+        runtime_payload_json
+      )
+      VALUES (
+        ${TEST_THREAD_ID},
+        'codex',
+        'codex',
+        'codex:session-1',
+        'full-access',
+        'running',
+        '2026-05-28T16:00:00.000Z',
+        '{"threadId":"019e6f57-772b-7081-bd7e-c98a4b0b12c8"}',
+        '{}'
+      )
+    `;
+    const importer = yield* CodexSessionImporter;
+
+    yield* importer.importSession({
+      threadId: TEST_THREAD_ID,
+      providerThreadId: TEST_PROVIDER_THREAD_ID,
+      codexHomePath: root,
+    });
+
+    const sessions = yield* sql<{
+      readonly status: string;
+      readonly activeTurnId: string | null;
+    }>`
+      SELECT status, active_turn_id AS "activeTurnId"
+      FROM projection_thread_sessions
+      WHERE thread_id = ${TEST_THREAD_ID}
+    `;
+    assert.deepStrictEqual(sessions, [{ status: "running", activeTurnId: "turn-live" }]);
+  }).pipe(Effect.provide(layer)),
+);

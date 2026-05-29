@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveCompletionDividerBeforeEntryId,
   deriveActiveWorkStartedAt,
+  deriveActiveWorkTurnId,
   deriveActivePlanState,
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -1035,8 +1036,7 @@ describe("deriveWorkLogEntries", () => {
       id: "read-complete",
       toolTitle: "Read File",
       detail: 'import * as Effect from "effect/Effect"',
-      toolOutput:
-        'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"\n',
+      toolOutput: 'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"',
       itemType: "dynamic_tool_call",
     });
   });
@@ -1563,5 +1563,35 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:11:00.000Z");
+  });
+});
+
+describe("deriveActiveWorkTurnId", () => {
+  it("prefers the running session turn when latest turn snapshot is stale", () => {
+    expect(
+      deriveActiveWorkTurnId(
+        {
+          turnId: TurnId.make("turn-completed"),
+        },
+        {
+          activeTurnId: TurnId.make("turn-live"),
+          orchestrationStatus: "running",
+        },
+      ),
+    ).toBe("turn-live");
+  });
+
+  it("falls back to latest turn when session has no active turn", () => {
+    expect(
+      deriveActiveWorkTurnId(
+        {
+          turnId: TurnId.make("turn-latest"),
+        },
+        {
+          activeTurnId: undefined,
+          orchestrationStatus: "ready",
+        },
+      ),
+    ).toBe("turn-latest");
   });
 });

@@ -56,6 +56,10 @@ const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
 import type { ServerConfigShape } from "./config.ts";
 import { deriveServerPaths, ServerConfig } from "./config.ts";
+import {
+  CodexSessionImporter,
+  type CodexSessionImporterShape,
+} from "./codex/CodexSessionImporter.ts";
 import { makeRoutesLayer } from "./server.ts";
 import { resolveAttachmentRelativePath } from "./attachmentPaths.ts";
 import {
@@ -338,6 +342,7 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    codexSessionImporter?: Partial<CodexSessionImporterShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -722,6 +727,29 @@ const buildAppUnderTest = (options?: {
         Layer.mock(RepositoryIdentityResolver)({
           resolve: () => Effect.succeed(null),
           ...options?.layers?.repositoryIdentityResolver,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(CodexSessionImporter)({
+          importSession: () =>
+            Effect.succeed({
+              providerThreadId: "",
+              sourcePath: null,
+              importedEvents: 0,
+              importedMessages: 0,
+              importedTurns: 0,
+              staleRequestsCleared: 0,
+            }),
+          importThread: () =>
+            Effect.succeed({
+              providerThreadId: "",
+              sourcePath: null,
+              importedEvents: 0,
+              importedMessages: 0,
+              importedTurns: 0,
+              staleRequestsCleared: 0,
+            }),
+          ...options?.layers?.codexSessionImporter,
         }),
       ),
       Layer.provideMerge(makeAuthTestLayer()),
@@ -3253,6 +3281,48 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.deepEqual(replayResult, []);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("does not import Codex session state when subscribing to thread detail", () =>
+    Effect.gen(function* () {
+      let importCalls = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () =>
+              Effect.succeed(Option.some(makeDefaultOrchestrationReadModel().threads[0]!)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 1 }),
+          },
+          codexSessionImporter: {
+            importThread: () =>
+              Effect.sync(() => {
+                importCalls += 1;
+                return {
+                  providerThreadId: "provider-thread-1",
+                  sourcePath: null,
+                  importedEvents: 0,
+                  importedMessages: 0,
+                  importedTurns: 0,
+                  staleRequestsCleared: 0,
+                };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const first = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+          }).pipe(Stream.runHead),
+        ),
+      );
+
+      assertTrue(Option.isSome(first));
+      assert.equal(first.value.kind, "snapshot");
+      assert.equal(importCalls, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

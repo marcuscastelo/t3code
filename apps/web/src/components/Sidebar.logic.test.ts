@@ -520,6 +520,18 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Working", pulse: true });
   });
 
+  it("keeps working while session is running even when latest turn snapshot is stale", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          latestTurn: makeLatestTurn(),
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+        },
+      }),
+    ).toMatchObject({ label: "Working", pulse: true });
+  });
+
   it("shows plan ready when a settled plan turn has a proposed plan ready for follow-up", () => {
     expect(
       resolveThreadStatusPill({

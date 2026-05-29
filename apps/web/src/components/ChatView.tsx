@@ -55,6 +55,7 @@ import {
   derivePhase,
   deriveTimelineEntries,
   deriveActiveWorkStartedAt,
+  deriveActiveWorkTurnId,
   deriveActivePlanState,
   findSidebarProposedPlan,
   findLatestProposedPlan,
@@ -1280,14 +1281,15 @@ export default function ChatView(props: ChatViewProps) {
   );
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
+  const activeWorkTurnId = deriveActiveWorkTurnId(activeLatestTurn, activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(
-    () => deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
-    [activeLatestTurn?.turnId, threadActivities],
+    () => deriveWorkLogEntries(threadActivities, activeWorkTurnId ?? undefined),
+    [activeWorkTurnId, threadActivities],
   );
   const latestTurnHasToolActivity = useMemo(
-    () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
-    [activeLatestTurn?.turnId, threadActivities],
+    () => hasToolActivityForTurn(threadActivities, activeWorkTurnId),
+    [activeWorkTurnId, threadActivities],
   );
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
@@ -3739,7 +3741,7 @@ export default function ChatView(props: ChatViewProps) {
               key={activeThread.id}
               isWorking={isWorking}
               activeTurnInProgress={isWorking || !latestTurnSettled}
-              activeTurnId={activeLatestTurn?.turnId ?? null}
+              activeTurnId={activeWorkTurnId}
               activeTurnStartedAt={activeWorkStartedAt}
               listRef={legendListRef}
               timelineEntries={timelineEntries}
