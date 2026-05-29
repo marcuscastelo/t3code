@@ -65,6 +65,7 @@ export interface WorkLogEntry {
   createdAt: string;
   turnId?: TurnId | null;
   label: string;
+  status?: "running" | "completed";
   detail?: string;
   command?: string;
   rawCommand?: string;
@@ -630,7 +631,6 @@ export function deriveWorkLogEntries(
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
-    if (activity.kind === "tool.started") continue;
     if (activity.kind === "task.started") continue;
     if (activity.kind === "context-window.updated") continue;
     if (activity.summary === "Checkpoint captured") continue;
@@ -709,6 +709,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     createdAt: activity.createdAt,
     turnId: activity.turnId,
     label: taskLabel || activity.summary,
+    status:
+      activity.kind === "tool.completed" || activity.kind === "task.completed"
+        ? "completed"
+        : "running",
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -782,7 +786,11 @@ function shouldCollapseToolLifecycleEntries(
   previous: DerivedWorkLogEntry,
   next: DerivedWorkLogEntry,
 ): boolean {
-  if (previous.activityKind !== "tool.updated" && previous.activityKind !== "tool.completed") {
+  if (
+    previous.activityKind !== "tool.started" &&
+    previous.activityKind !== "tool.updated" &&
+    previous.activityKind !== "tool.completed"
+  ) {
     return false;
   }
   if (next.activityKind !== "tool.updated" && next.activityKind !== "tool.completed") {
@@ -791,7 +799,13 @@ function shouldCollapseToolLifecycleEntries(
   if (previous.activityKind === "tool.completed") {
     return false;
   }
+  if (previous.activityKind === "tool.started") {
+    return true;
+  }
   if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {
+    return true;
+  }
+  if (previous.itemType !== undefined && previous.itemType === next.itemType) {
     return true;
   }
   return (
