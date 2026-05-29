@@ -161,6 +161,7 @@ export type ProviderRateLimitPaceStatus = "ahead" | "on_pace" | "in_debt";
 export interface ProviderRateLimitPaceSnapshot {
   readonly expectedRemainingPercent: number;
   readonly deltaPercentPoints: number;
+  readonly deltaDurationMins: number;
   readonly status: ProviderRateLimitPaceStatus;
 }
 
@@ -418,11 +419,13 @@ export function deriveRateLimitPaceSnapshot(
   const expectedRemainingPercent = remainingWindowRatio * 100;
   const actualRemainingPercent = Math.max(0, Math.min(100, 100 - window.usedPercent));
   const deltaPercentPoints = actualRemainingPercent - expectedRemainingPercent;
+  const deltaDurationMins = (Math.abs(deltaPercentPoints) / 100) * window.windowDurationMins;
   const tolerance = Math.max(0, tolerancePercentPoints);
 
   return {
     expectedRemainingPercent,
     deltaPercentPoints,
+    deltaDurationMins,
     status:
       Math.abs(deltaPercentPoints) <= tolerance
         ? "on_pace"
