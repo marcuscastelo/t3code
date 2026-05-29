@@ -41,6 +41,12 @@ Integration flow:
 - Periodically sync from `upstream/main` into local `main`, then push local `main` to `origin/main`.
 - Never push to `upstream`; treat it as read-only.
 
+Fork feature inventory:
+
+- Keep the `Fork-only features` table in `README.md` current.
+- Update it whenever creating new branches, adding fork-only features, merging branches into `marucs-code`, merging into `main`, or changing which branch holds a future `origin` -> `upstream` PR candidate.
+- Each row must name the feature, the branch that holds it, and whether the branch is clean or stacked for future upstream PR planning.
+
 ## Project Snapshot
 
 T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
