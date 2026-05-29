@@ -1156,18 +1156,6 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
-              yield* Option.match(codexSessionImporterOption, {
-                onNone: () => Effect.void,
-                onSome: (codexSessionImporter) =>
-                  codexSessionImporter.importThread({ threadId: input.threadId }).pipe(
-                    Effect.catch((error) =>
-                      Effect.logWarning("codex session import before thread snapshot failed", {
-                        threadId: input.threadId,
-                        error: error.message,
-                      }),
-                    ),
-                  ),
-              });
               const isThisThreadDetailEvent = (event: OrchestrationEvent) =>
                 event.aggregateKind === "thread" &&
                 event.aggregateId === input.threadId &&
