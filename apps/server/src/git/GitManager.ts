@@ -1154,25 +1154,39 @@ export const make = Effect.gen(function* () {
     return "main";
   });
 
-  const resolveBaseRangeRef = Effect.fn("resolveBaseRangeRef")(function* (
+  const resolveRangeBaseRef = Effect.fn("resolveRangeBaseRef")(function* (
     cwd: string,
-    baseBranch: string,
+    baseRef: string,
   ) {
-    const remoteName = yield* gitCore
-      .resolvePrimaryRemoteName(cwd)
-      .pipe(Effect.orElseSucceed(() => null));
-    if (!remoteName) return baseBranch;
+    const verifyRef = (candidate: string) =>
+      gitCore
+        .execute({
+          operation: "GitManager.resolveRangeBaseRef.verify",
+          cwd,
+          args: ["rev-parse", "--verify", `${candidate}^{commit}`],
+        })
+        .pipe(Effect.as(candidate));
 
-    return yield* gitCore
-      .resolveRemoteTrackingCommit({
-        cwd,
-        refName: baseBranch,
-        fallbackRemoteName: remoteName,
-      })
-      .pipe(
-        Effect.map((resolved) => resolved.commitSha),
-        Effect.orElseSucceed(() => baseBranch),
-      );
+    return yield* verifyRef(baseRef).pipe(
+      Effect.catch(() =>
+        gitCore.resolvePrimaryRemoteName(cwd).pipe(
+          Effect.flatMap((remoteName) => {
+            const remoteBaseRef = `${remoteName}/${baseRef}`;
+            return verifyRef(remoteBaseRef).pipe(
+              Effect.catch(() =>
+                gitCore
+                  .fetchRemoteTrackingBranch({
+                    cwd,
+                    remoteName,
+                    remoteBranch: baseRef,
+                  })
+                  .pipe(Effect.flatMap(() => verifyRef(remoteBaseRef))),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
   });
 
   const resolveCommitAndBranchSuggestion = Effect.fn("resolveCommitAndBranchSuggestion")(
@@ -1378,13 +1392,13 @@ export const make = Effect.gen(function* () {
     }
 
     const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
+    const rangeBaseRef = yield* resolveRangeBaseRef(cwd, baseBranch);
     yield* emit({
       kind: "phase_started",
       phase: "pr",
       label: `Generating ${terms.shortLabel} content...`,
     });
-    const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseBranch);
-    const rangeContext = yield* gitCore.readRangeContext(cwd, baseRangeRef);
+    const rangeContext = yield* gitCore.readRangeContext(cwd, rangeBaseRef);
 
     const generated = yield* textGeneration.generatePrContent({
       cwd,
@@ -1496,12 +1510,13 @@ export const make = Effect.gen(function* () {
       reference: String(existing.number),
     });
     const baseRef = extractPrUpdateMarker(existingDetails.body) ?? existing.baseRefName;
+    const rangeBaseRef = yield* resolveRangeBaseRef(cwd, baseRef);
     yield* emit({
       kind: "phase_started",
       phase: "pr",
       label: `Generating updated ${terms.shortLabel} content...`,
     });
-    const rangeContext = yield* gitCore.readRangeContext(cwd, baseRef);
+    const rangeContext = yield* gitCore.readRangeContext(cwd, rangeBaseRef);
     if (rangeContext.commitSummary.trim().length === 0) {
       return yield* new GitManagerError({
         operation: "runUpdatePrStep",
