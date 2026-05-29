@@ -571,7 +571,7 @@ describe("findSidebarProposedPlan", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
-  it("omits tool started entries and keeps completed entries", () => {
+  it("collapses tool started entries into matching completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "tool-complete",
@@ -589,6 +589,76 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+    expect(entries[0]?.status).toBe("completed");
+  });
+
+  it("keeps open tool started entries as running work", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "tool-start",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          summary: "Ran command started",
+          kind: "tool.started",
+          payload: {
+            itemType: "command_execution",
+            title: "Ran command",
+            detail: "bun lint",
+          },
+        }),
+      ],
+      undefined,
+    );
+
+    expect(entries).toMatchObject([
+      {
+        id: "tool-start",
+        label: "Ran command started",
+        status: "running",
+        command: "bun lint",
+      },
+    ]);
+  });
+
+  it("settles legacy tool lifecycle entries by item type when item ids are missing", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "tool-start",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          summary: "Tool started",
+          kind: "tool.started",
+          payload: {
+            itemType: "command_execution",
+            detail: "bun lint",
+          },
+        }),
+        makeActivity({
+          id: "tool-update",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          summary: "Tool updated",
+          kind: "tool.updated",
+          payload: {
+            itemType: "command_execution",
+            detail: "bun lint",
+          },
+        }),
+        makeActivity({
+          id: "tool-complete",
+          createdAt: "2026-02-23T00:00:03.000Z",
+          summary: "Ran command",
+          kind: "tool.completed",
+          payload: {
+            itemType: "command_execution",
+            detail: "bun lint\nExit code: 0",
+          },
+        }),
+      ],
+      undefined,
+    );
+
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+    expect(entries[0]?.status).toBe("completed");
   });
 
   it("omits task.started but shows task.progress and task.completed", () => {
@@ -1294,6 +1364,7 @@ describe("deriveTimelineEntries", () => {
           id: "work-1",
           createdAt: "2026-02-23T00:00:03.000Z",
           label: "Ran tests",
+          status: "completed",
           tone: "tool",
         },
       ],

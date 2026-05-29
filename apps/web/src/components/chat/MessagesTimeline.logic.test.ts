@@ -441,6 +441,7 @@ describe("computeStableMessagesTimelineRows", () => {
       createdAt: "2026-01-01T00:00:00Z",
       label: "thinking",
       detail: "Inspecting repository state",
+      status: "running" as const,
       tone: "thinking" as const,
     };
     const secondWorkEntry = {
@@ -448,6 +449,7 @@ describe("computeStableMessagesTimelineRows", () => {
       createdAt: "2026-01-01T00:00:01Z",
       label: "read",
       detail: "Reading package.json",
+      status: "completed" as const,
       tone: "tool" as const,
     };
 
