@@ -66,10 +66,14 @@ function readString(
   return null;
 }
 
-function normalizePercent(value: number | null): number | null {
+function clampPercent(value: number | null): number | null {
   if (value === null) return null;
-  const percent = value >= 0 && value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, percent));
+  return Math.max(0, Math.min(100, value));
+}
+
+function normalizeRatioOrPercent(value: number | null): number | null {
+  if (value === null) return null;
+  return clampPercent(value >= 0 && value <= 1 ? value * 100 : value);
 }
 
 function normalizeResetAtMs(value: number | null): number | null {
@@ -77,13 +81,11 @@ function normalizeResetAtMs(value: number | null): number | null {
   return value < 10_000_000_000 ? value * 1000 : value;
 }
 
-function hasWindowShape(record: Record<string, unknown> | null): boolean {
+function hasDirectWindowShape(record: Record<string, unknown> | null): boolean {
   if (!record) return false;
   return (
     asRecord(record.primary) !== null ||
     asRecord(record.secondary) !== null ||
-    asRecord(record.rateLimitsByLimitId) !== null ||
-    asRecord(record.rate_limits_by_limit_id) !== null ||
     asArray(record.limits) !== null ||
     asArray(record.rate_limits) !== null ||
     asArray(record.windows) !== null
@@ -94,10 +96,12 @@ function unwrapRateLimits(value: unknown): Record<string, unknown> | null {
   let current = asRecord(value);
   for (let index = 0; index < 4; index += 1) {
     if (!current) return null;
-    if (hasWindowShape(current)) return current;
+    if (hasDirectWindowShape(current)) return current;
     const nested = asRecord(current.rateLimits) ?? asRecord(current.rate_limits);
+    const byLimitId =
+      asRecord(current.rateLimitsByLimitId) ?? asRecord(current.rate_limits_by_limit_id);
     if (!nested) return current;
-    current = nested;
+    current = byLimitId ? { ...nested, rateLimitsByLimitId: byLimitId } : nested;
   }
   return current;
 }
@@ -176,7 +180,7 @@ function parseRateLimitWindow(
 ): ProviderRateLimitWindowSnapshot | null {
   const record = asRecord(value);
   if (!record) return null;
-  const usedPercent = normalizePercent(
+  const usedPercent = clampPercent(
     readNumber(record, [
       "usedPercent",
       "used_percent",
@@ -249,11 +253,14 @@ function windowsFromRoot(root: Record<string, unknown>): ProviderRateLimitWindow
   if (claudeRateLimitInfo) {
     const type = readString(claudeRateLimitInfo, ["rateLimitType", "rate_limit_type"]);
     const defaults = claudeWindowDefaults(type);
+    const utilization = readNumber(claudeRateLimitInfo, ["utilization"]);
     pushWindow({
       id: defaults.id,
       label: defaults.label,
       usedPercent:
-        normalizePercent(readNumber(claudeRateLimitInfo, ["utilization", "usedPercent"])) ?? 0,
+        utilization !== null
+          ? (normalizeRatioOrPercent(utilization) ?? 0)
+          : (clampPercent(readNumber(claudeRateLimitInfo, ["usedPercent"])) ?? 0),
       resetsAtMs: normalizeResetAtMs(
         readNumber(claudeRateLimitInfo, ["resetsAt", "resets_at", "resetAt"]),
       ),
