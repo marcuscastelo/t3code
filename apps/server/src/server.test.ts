@@ -3326,6 +3326,66 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("streams thread detail events to every subscriber in real time", () =>
+    Effect.gen(function* () {
+      const liveEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-turn-start-requested"),
+        aggregateKind: "thread" as const,
+        aggregateId: defaultThreadId,
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: CommandId.make("cmd-turn-start"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-turn-start"),
+        metadata: {},
+        type: "thread.turn-start-requested" as const,
+        payload: {
+          threadId: defaultThreadId,
+          messageId: MessageId.make("message-turn-start"),
+          runtimeMode: "full-access" as const,
+          interactionMode: "default" as const,
+          createdAt: "2026-01-01T00:00:01.000Z",
+        },
+      } satisfies OrchestrationEvent;
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () =>
+              Effect.succeed(Option.some(makeDefaultOrchestrationReadModel().threads[0]!)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 1 }),
+          },
+          orchestrationEngine: {
+            streamDomainEvents: Stream.succeed(liveEvent),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const readLiveEvent = Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+          }).pipe(Stream.drop(1), Stream.runHead),
+        ),
+      );
+
+      const [first, second] = yield* Effect.all([readLiveEvent, readLiveEvent], {
+        concurrency: "unbounded",
+      });
+
+      assertTrue(Option.isSome(first));
+      assertTrue(Option.isSome(second));
+      assert.equal(first.value.kind, "event");
+      assert.equal(second.value.kind, "event");
+      if (first.value.kind !== "event" || second.value.kind !== "event") {
+        throw new Error("expected live thread events");
+      }
+      assert.equal(first.value.event.type, "thread.turn-start-requested");
+      assert.equal(second.value.event.type, "thread.turn-start-requested");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestration shell snapshot errors", () =>
     Effect.gen(function* () {
       const projectionError = new PersistenceSqlError({
