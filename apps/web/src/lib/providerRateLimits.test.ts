@@ -108,6 +108,44 @@ describe("providerRateLimits", () => {
     ]);
   });
 
+  it("derives limits from Codex multi-bucket provider snapshots", () => {
+    const snapshot = deriveProviderRateLimitSnapshotFromValue(
+      {
+        rateLimits: {
+          limitId: "codex",
+          limitName: "Codex",
+          primary: null,
+          secondary: null,
+        },
+        rateLimitsByLimitId: {
+          codex: {
+            limitId: "codex",
+            limitName: "Codex",
+            primary: {
+              usedPercent: 64,
+              windowDurationMins: 300,
+              resetsAt: 1_778_000_000,
+            },
+            secondary: {
+              usedPercent: 9,
+              windowDurationMins: 10_080,
+            },
+          },
+        },
+      },
+      {
+        provider: "codex",
+        providerInstanceId: "codex",
+        updatedAt: "2026-03-23T00:00:00.000Z",
+      },
+    );
+
+    expect(snapshot?.windows).toMatchObject([
+      { label: "5h", usedPercent: 64, resetsAtMs: 1_778_000_000_000 },
+      { label: "weekly", usedPercent: 9 },
+    ]);
+  });
+
   it("derives Claude SDK rate-limit events", () => {
     const snapshot = deriveLatestProviderRateLimitSnapshot([
       makeActivity("activity-1", {
