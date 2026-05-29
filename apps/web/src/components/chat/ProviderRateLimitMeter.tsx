@@ -6,6 +6,7 @@ import {
   type ProviderRateLimitDetectionStatus,
   type ProviderRateLimitSnapshot,
   type ProviderRateLimitWindowSnapshot,
+  deriveRateLimitPaceSnapshot,
   formatRateLimitPercent,
   formatRateLimitReset,
 } from "~/lib/providerRateLimits";
@@ -64,6 +65,20 @@ function usageTextClass(usedPercent: number): string {
 
 function formatRemainingPercent(usedPercent: number): string {
   return formatRateLimitPercent(Math.max(0, 100 - usedPercent));
+}
+
+function formatPacePercentPoints(value: number): string {
+  const absValue = Math.abs(value);
+  if (absValue < 10) {
+    return `${absValue.toFixed(1).replace(/\.0$/, "")}pp`;
+  }
+  return `${Math.round(absValue)}pp`;
+}
+
+function formatPaceLabel(deltaPercentPoints: number, status: "ahead" | "on_pace" | "in_debt") {
+  if (status === "on_pace") return "On pace";
+  if (status === "ahead") return `Ahead by ${formatPacePercentPoints(deltaPercentPoints)}`;
+  return `In debt by ${formatPacePercentPoints(deltaPercentPoints)}`;
 }
 
 function windowMatches(
@@ -162,6 +177,14 @@ function WindowDetail(props: { window: DisplayRateLimitWindow; detectingLabel: s
   const usedPercent =
     props.window.usedPercent === null ? null : Math.max(0, Math.min(100, props.window.usedPercent));
   const resetLabel = formatRateLimitReset(props.window.resetsAtMs);
+  const pace =
+    usedPercent === null
+      ? null
+      : deriveRateLimitPaceSnapshot({
+          usedPercent,
+          resetsAtMs: props.window.resetsAtMs,
+          windowDurationMins: props.window.windowDurationMins,
+        });
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-6 text-xs">
@@ -177,7 +200,7 @@ function WindowDetail(props: { window: DisplayRateLimitWindow; detectingLabel: s
             : `${formatRemainingPercent(usedPercent)} left`}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="relative h-2 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
             "h-full rounded-full",
@@ -185,7 +208,33 @@ function WindowDetail(props: { window: DisplayRateLimitWindow; detectingLabel: s
           )}
           style={{ width: `${usedPercent === null ? 100 : Math.max(0, 100 - usedPercent)}%` }}
         />
+        {pace ? (
+          <div
+            className="absolute top-0 h-full w-px -translate-x-1/2 bg-foreground shadow-[0_0_0_1px_hsl(var(--background))]"
+            style={{ left: `${pace.expectedRemainingPercent}%` }}
+            aria-label={`expected ${formatRateLimitPercent(pace.expectedRemainingPercent)} remaining`}
+          />
+        ) : null}
       </div>
+      {pace ? (
+        <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+          <span className="tabular-nums">
+            expected {formatRateLimitPercent(pace.expectedRemainingPercent)}
+          </span>
+          <span
+            className={cn(
+              "tabular-nums",
+              pace.status === "ahead"
+                ? "text-emerald-700 dark:text-emerald-300"
+                : pace.status === "in_debt"
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-muted-foreground",
+            )}
+          >
+            {formatPaceLabel(pace.deltaPercentPoints, pace.status)}
+          </span>
+        </div>
+      ) : null}
       {resetLabel ? (
         <div className="text-xs text-muted-foreground">resets in {resetLabel}</div>
       ) : null}
