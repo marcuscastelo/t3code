@@ -156,6 +156,16 @@ export interface ProviderRateLimitSnapshot {
 
 export type ProviderRateLimitDetectionStatus = "idle" | "detecting" | "exhausted";
 
+export type ProviderRateLimitPaceStatus = "ahead" | "on_pace" | "in_debt";
+
+export interface ProviderRateLimitPaceSnapshot {
+  readonly expectedRemainingPercent: number;
+  readonly deltaPercentPoints: number;
+  readonly status: ProviderRateLimitPaceStatus;
+}
+
+const RATE_LIMIT_PACE_TOLERANCE_PERCENT_POINTS = 2;
+
 function parseRateLimitWindow(
   id: string,
   value: unknown,
@@ -387,6 +397,39 @@ export function formatRateLimitPercent(value: number): string {
     return `${value.toFixed(1).replace(/\.0$/, "")}%`;
   }
   return `${Math.round(value)}%`;
+}
+
+export function deriveRateLimitPaceSnapshot(
+  window: Pick<
+    ProviderRateLimitWindowSnapshot,
+    "usedPercent" | "resetsAtMs" | "windowDurationMins"
+  >,
+  nowMs = Date.now(),
+  tolerancePercentPoints = RATE_LIMIT_PACE_TOLERANCE_PERCENT_POINTS,
+): ProviderRateLimitPaceSnapshot | null {
+  if (window.resetsAtMs === null || window.windowDurationMins === null) return null;
+  const windowDurationMs = window.windowDurationMins * 60_000;
+  if (windowDurationMs <= 0) return null;
+
+  const remainingWindowRatio = Math.max(
+    0,
+    Math.min(1, (window.resetsAtMs - nowMs) / windowDurationMs),
+  );
+  const expectedRemainingPercent = remainingWindowRatio * 100;
+  const actualRemainingPercent = Math.max(0, Math.min(100, 100 - window.usedPercent));
+  const deltaPercentPoints = actualRemainingPercent - expectedRemainingPercent;
+  const tolerance = Math.max(0, tolerancePercentPoints);
+
+  return {
+    expectedRemainingPercent,
+    deltaPercentPoints,
+    status:
+      Math.abs(deltaPercentPoints) <= tolerance
+        ? "on_pace"
+        : deltaPercentPoints > 0
+          ? "ahead"
+          : "in_debt",
+  };
 }
 
 export function formatRateLimitReset(resetsAtMs: number | null, nowMs = Date.now()): string | null {
