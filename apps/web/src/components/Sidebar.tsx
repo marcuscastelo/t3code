@@ -39,6 +39,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   type DesktopUpdateState,
+  type AuthClientSession,
   ProjectId,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
@@ -89,7 +90,10 @@ import { useGitStatus } from "../lib/gitStatusState";
 import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { retainThreadDetailSubscription } from "../environments/runtime/service";
+import {
+  getPrimaryEnvironmentConnection,
+  retainThreadDetailSubscription,
+} from "../environments/runtime/service";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
@@ -159,8 +163,10 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   getSidebarThreadIdsToPrewarm,
+  countConnectedClientSessions,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
+  reduceAuthAccessClientSessions,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -2541,6 +2547,7 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  const connectedDeviceCount = useConnectedDeviceCount();
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2552,6 +2559,21 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="p-2">
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
+      <div
+        className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground/65"
+        title={
+          connectedDeviceCount === null
+            ? "Connected devices are loading."
+            : `${connectedDeviceCount} connected device${connectedDeviceCount === 1 ? "" : "s"}.`
+        }
+      >
+        <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+        <span className="truncate">
+          {connectedDeviceCount === null
+            ? "Devices syncing"
+            : `${connectedDeviceCount} device${connectedDeviceCount === 1 ? "" : "s"} connected`}
+        </span>
+      </div>
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
@@ -2567,6 +2589,38 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     </SidebarFooter>
   );
 });
+
+function useConnectedDeviceCount(): number | null {
+  const [clientSessions, setClientSessions] = useState<ReadonlyArray<AuthClientSession> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = getPrimaryEnvironmentConnection().client.server.subscribeAuthAccess(
+      (event) => {
+        if (cancelled) {
+          return;
+        }
+        setClientSessions((current) => reduceAuthAccessClientSessions(current ?? [], event));
+      },
+      {
+        onResubscribe: () => {
+          if (!cancelled) {
+            setClientSessions(null);
+          }
+        },
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  return clientSessions === null ? null : countConnectedClientSessions(clientSessions);
+}
 
 interface SidebarProjectsContentProps {
   showArm64IntelBuildWarning: boolean;

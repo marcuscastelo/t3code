@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { AuthAccessStreamEvent, AuthClientSession } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
   getThreadSortTimestamp,
@@ -24,6 +25,33 @@ type SidebarProject = {
 };
 
 export type ThreadTraversalDirection = "previous" | "next";
+
+export function reduceAuthAccessClientSessions(
+  current: ReadonlyArray<AuthClientSession>,
+  event: AuthAccessStreamEvent,
+): AuthClientSession[] {
+  switch (event.type) {
+    case "snapshot":
+      return [...event.payload.clientSessions];
+    case "clientUpserted":
+      return current.some((session) => session.sessionId === event.payload.sessionId)
+        ? current.map((session) =>
+            session.sessionId === event.payload.sessionId ? event.payload : session,
+          )
+        : [...current, event.payload];
+    case "clientRemoved":
+      return current.filter((session) => session.sessionId !== event.payload.sessionId);
+    case "pairingLinkUpserted":
+    case "pairingLinkRemoved":
+      return [...current];
+  }
+}
+
+export function countConnectedClientSessions(
+  clientSessions: ReadonlyArray<AuthClientSession>,
+): number {
+  return clientSessions.filter((session) => session.connected).length;
+}
 
 export interface ThreadStatusPill {
   label:
