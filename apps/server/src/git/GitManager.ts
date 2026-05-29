@@ -427,8 +427,13 @@ interface CommitAndBranchSuggestion {
 
 function isCommitAction(
   action: GitStackedAction,
-): action is "commit" | "commit_push" | "commit_push_pr" {
-  return action === "commit" || action === "commit_push" || action === "commit_push_pr";
+): action is "commit" | "commit_push" | "commit_push_pr" | "commit_push_update_pr" {
+  return (
+    action === "commit" ||
+    action === "commit_push" ||
+    action === "commit_push_pr" ||
+    action === "commit_push_update_pr"
+  );
 }
 
 function appendPrUpdateMarker(body: string, sha: string): string {
@@ -1091,7 +1096,8 @@ export const make = Effect.gen(function* () {
               result.action === "create_pr" ||
               result.action === "update_pr" ||
               result.action === "commit_push" ||
-              result.action === "commit_push_pr") &&
+              result.action === "commit_push_pr" ||
+              result.action === "commit_push_update_pr") &&
             openPr?.url &&
             (!currentBranchIsDefault ||
               result.pr.status === "created" ||
@@ -1219,7 +1225,7 @@ export const make = Effect.gen(function* () {
   const runCommitStep = Effect.fn("runCommitStep")(function* (
     modelSelection: ModelSelection,
     cwd: string,
-    action: "commit" | "commit_push" | "commit_push_pr",
+    action: "commit" | "commit_push" | "commit_push_pr" | "commit_push_update_pr",
     branch: string | null,
     commitMessage?: string,
     preResolvedSuggestion?: CommitAndBranchSuggestion,
@@ -1835,13 +1841,15 @@ export const make = Effect.gen(function* () {
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
+          input.action === "commit_push_update_pr" ||
           (input.action === "update_pr" && initialStatus.aheadCount > 0) ||
           (input.action === "create_pr" &&
             (!initialStatus.hasUpstream || initialStatus.aheadCount > 0));
         const wantsPr =
           input.action === "create_pr" ||
           input.action === "update_pr" ||
-          input.action === "commit_push_pr";
+          input.action === "commit_push_pr" ||
+          input.action === "commit_push_update_pr";
 
         if (input.featureBranch && !wantsCommit) {
           return yield* new GitManagerError({
@@ -1984,7 +1992,7 @@ export const make = Effect.gen(function* () {
                     GitRunStackedActionResult["pr"],
                     GitManagerServiceError
                   > =
-                    input.action === "update_pr"
+                    input.action === "update_pr" || input.action === "commit_push_update_pr"
                       ? runUpdatePrStep(modelSelection, input.cwd, currentBranch, progress.emit)
                       : runPrStep(modelSelection, input.cwd, currentBranch, progress.emit);
                   return prEffect;
