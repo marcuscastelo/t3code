@@ -27,6 +27,7 @@ function toChangeRequest(
     provider: "bitbucket",
     number: summary.number,
     title: summary.title,
+    ...(summary.body !== undefined ? { body: summary.body } : {}),
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
@@ -85,6 +86,16 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
         })
         .pipe(Effect.mapError((error) => providerError("createChangeRequest", error)));
     },
+    updateChangeRequest: (input) =>
+      bitbucket
+        .updatePullRequest({
+          cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(Effect.mapError((error) => providerError("updateChangeRequest", error))),
     getRepositoryCloneUrls: (input) =>
       bitbucket
         .getRepositoryCloneUrls(input)

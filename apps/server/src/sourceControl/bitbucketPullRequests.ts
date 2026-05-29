@@ -6,6 +6,7 @@ import { PositiveInt, TrimmedNonEmptyString } from "@t3tools/contracts";
 export interface NormalizedBitbucketPullRequestRecord {
   readonly number: number;
   readonly title: string;
+  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -37,6 +38,7 @@ export const BitbucketPullRequestBranchSchema = Schema.Struct({
 export const BitbucketPullRequestSchema = Schema.Struct({
   id: PositiveInt,
   title: TrimmedNonEmptyString,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
   state: Schema.optional(Schema.NullOr(Schema.String)),
   updated_on: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   links: Schema.Struct({
@@ -94,6 +96,7 @@ export function normalizeBitbucketPullRequestRecord(
   return {
     number: raw.id,
     title: raw.title,
+    ...(raw.description !== undefined && raw.description !== null ? { body: raw.description } : {}),
     url: raw.links.html.href,
     baseRefName: raw.destination.branch.name,
     headRefName: raw.source.branch.name,

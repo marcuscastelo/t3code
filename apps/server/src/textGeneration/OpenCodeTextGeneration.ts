@@ -21,6 +21,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildPrUpdateContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import { type TextGenerationShape } from "./TextGeneration.ts";
@@ -159,6 +160,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     readonly operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle";
   }) =>
@@ -269,6 +271,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     readonly operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle";
     readonly cwd: string;
@@ -416,6 +419,25 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     };
   });
 
+  const generatePrUpdateContent: TextGenerationShape["generatePrUpdateContent"] = Effect.fn(
+    "OpenCodeTextGeneration.generatePrUpdateContent",
+  )(function* (input) {
+    const { prompt, outputSchema } = buildPrUpdateContentPrompt(input);
+
+    const generated = yield* runOpenCodeJson({
+      operation: "generatePrUpdateContent",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+
+    return {
+      title: sanitizePrTitle(generated.title),
+      body: generated.body.trim(),
+    };
+  });
+
   const generateBranchName: TextGenerationShape["generateBranchName"] = Effect.fn(
     "OpenCodeTextGeneration.generateBranchName",
   )(function* (input) {
@@ -461,6 +483,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
   return {
     generateCommitMessage,
     generatePrContent,
+    generatePrUpdateContent,
     generateBranchName,
     generateThreadTitle,
   } satisfies TextGenerationShape;

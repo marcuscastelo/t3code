@@ -12,10 +12,10 @@ import {
 
 export type GitActionIconName = "commit" | "push" | "pr";
 
-export type GitDialogAction = "commit" | "push" | "create_pr";
+export type GitDialogAction = "commit" | "push" | "create_pr" | "update_pr";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "update_pr";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
@@ -65,14 +65,18 @@ export function buildGitActionProgressStages(input: {
   const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
   const prStages = [
     `Preparing ${terminology.shortLabel}...`,
-    `Generating ${terminology.shortLabel} content...`,
-    `Creating ${terminology.singular}...`,
+    input.action === "update_pr"
+      ? `Generating updated ${terminology.shortLabel} content...`
+      : `Generating ${terminology.shortLabel} content...`,
+    input.action === "update_pr"
+      ? `Updating ${terminology.singular}...`
+      : `Creating ${terminology.singular}...`,
   ];
 
   if (input.action === "push") {
     return [pushStage];
   }
-  if (input.action === "create_pr") {
+  if (input.action === "create_pr" || input.action === "update_pr") {
     return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
   }
 
@@ -121,6 +125,14 @@ export function buildMenuItems(
     !isBehind &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canOpenPr = !isBusy && hasOpenPr;
+  const canUpdatePr =
+    !isBusy &&
+    hasBranch &&
+    !hasChanges &&
+    hasOpenPr &&
+    hasDefaultBranchDelta &&
+    !isBehind &&
+    gitStatus.hasUpstream;
 
   const commitItem: GitActionMenuItem = {
     id: "commit",
@@ -145,22 +157,34 @@ export function buildMenuItems(
       kind: "open_dialog",
       dialogAction: "push",
     },
-    hasOpenPr
-      ? {
-          id: "pr",
-          label: `View ${terminology.shortLabel}`,
-          disabled: !canOpenPr,
-          icon: "pr",
-          kind: "open_pr",
-        }
-      : {
-          id: "pr",
-          label: `Create ${terminology.shortLabel}`,
-          disabled: !canCreatePr,
-          icon: "pr",
-          kind: "open_dialog",
-          dialogAction: "create_pr",
-        },
+    ...(hasOpenPr
+      ? [
+          {
+            id: "pr" as const,
+            label: `View ${terminology.shortLabel}`,
+            disabled: !canOpenPr,
+            icon: "pr" as const,
+            kind: "open_pr" as const,
+          },
+          {
+            id: "update_pr" as const,
+            label: `Update ${terminology.shortLabel}`,
+            disabled: !canUpdatePr,
+            icon: "pr" as const,
+            kind: "open_dialog" as const,
+            dialogAction: "update_pr" as const,
+          },
+        ]
+      : [
+          {
+            id: "pr" as const,
+            label: `Create ${terminology.shortLabel}`,
+            disabled: !canCreatePr,
+            icon: "pr" as const,
+            kind: "open_dialog" as const,
+            dialogAction: "create_pr" as const,
+          },
+        ]),
   ];
 }
 

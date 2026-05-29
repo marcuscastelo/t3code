@@ -141,6 +141,13 @@ export interface BitbucketApiShape {
     readonly title: string;
     readonly bodyFile: string;
   }) => Effect.Effect<void, BitbucketApiError>;
+  readonly updatePullRequest: (input: {
+    readonly cwd: string;
+    readonly context?: SourceControlProvider.SourceControlProviderContext;
+    readonly reference: string;
+    readonly title: string;
+    readonly bodyFile: string;
+  }) => Effect.Effect<void, BitbucketApiError>;
   readonly getDefaultBranch: (input: {
     readonly cwd: string;
     readonly context?: SourceControlProvider.SourceControlProviderContext;
@@ -675,6 +682,35 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
               `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
             ),
           ).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+          BitbucketPullRequests.BitbucketPullRequestSchema,
+        );
+      }),
+    updatePullRequest: (input) =>
+      Effect.gen(function* () {
+        const repository = yield* resolveRepository(input);
+        const description = yield* fileSystem.readFileString(input.bodyFile).pipe(
+          Effect.mapError(
+            (cause) =>
+              new BitbucketApiError({
+                operation: "updatePullRequest",
+                detail: `Failed to read pull request body file ${input.bodyFile}.`,
+                cause,
+              }),
+          ),
+        );
+
+        yield* executeJson(
+          "updatePullRequest",
+          HttpClientRequest.put(
+            apiUrl(
+              `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests/${encodeURIComponent(input.reference)}`,
+            ),
+          ).pipe(
+            HttpClientRequest.bodyJsonUnsafe({
+              title: input.title,
+              description,
+            }),
+          ),
           BitbucketPullRequests.BitbucketPullRequestSchema,
         );
       }),

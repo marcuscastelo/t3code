@@ -93,6 +93,7 @@ const COMMIT_TIMEOUT_MS = 10 * 60_000;
 const MAX_PROGRESS_TEXT_LENGTH = 500;
 const SHORT_SHA_LENGTH = 7;
 const TOAST_DESCRIPTION_MAX = 72;
+const PR_UPDATE_MARKER_PREFIX = "t3code-pr-updated-at:";
 const STATUS_RESULT_CACHE_TTL = Duration.seconds(1);
 const STATUS_RESULT_CACHE_CAPACITY = 2_048;
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
@@ -359,9 +360,19 @@ function summarizeGitActionResult(
   title: string;
   description?: string;
 } {
-  if (result.pr.status === "created" || result.pr.status === "opened_existing") {
+  if (
+    result.pr.status === "created" ||
+    result.pr.status === "updated" ||
+    result.pr.status === "opened_existing"
+  ) {
     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
-    const title = `${result.pr.status === "created" ? "Created" : "Opened"} ${terms.shortLabel}${prNumber}`;
+    const verb =
+      result.pr.status === "created"
+        ? "Created"
+        : result.pr.status === "updated"
+          ? "Updated"
+          : "Opened";
+    const title = `${verb} ${terms.shortLabel}${prNumber}`;
     return withDescription(title, truncateText(result.pr.title));
   }
 
@@ -426,6 +437,24 @@ function isCommitAction(
   action: GitStackedAction,
 ): action is "commit" | "commit_push" | "commit_push_pr" {
   return action === "commit" || action === "commit_push" || action === "commit_push_pr";
+}
+
+function appendPrUpdateMarker(body: string, sha: string): string {
+  const cleanBody = stripPrUpdateMarker(body).trimEnd();
+  return `${cleanBody}\n\n<!-- ${PR_UPDATE_MARKER_PREFIX} ${sha} -->`;
+}
+
+function stripPrUpdateMarker(body: string): string {
+  return body
+    .replace(new RegExp(`\\n?<!--\\s*${PR_UPDATE_MARKER_PREFIX}\\s+[^>]+-->`, "gu"), "")
+    .trim();
+}
+
+function extractPrUpdateMarker(body: string | undefined): string | null {
+  const match = new RegExp(`<!--\\s*${PR_UPDATE_MARKER_PREFIX}\\s+([^\\s>]+)\\s*-->`, "u").exec(
+    body ?? "",
+  );
+  return match?.[1]?.trim() || null;
 }
 
 function formatCommitMessage(subject: string, body: string): string {
@@ -996,7 +1025,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     }
 
     const explicitResultPr =
-      (result.pr.status === "created" || result.pr.status === "opened_existing") && result.pr.url
+      (result.pr.status === "created" ||
+        result.pr.status === "updated" ||
+        result.pr.status === "opened_existing") &&
+      result.pr.url
         ? {
             url: result.pr.url,
             state: "open" as const,
@@ -1031,6 +1063,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           }
         : (result.action === "push" ||
               result.action === "create_pr" ||
+              result.action === "update_pr" ||
               result.action === "commit_push" ||
               result.action === "commit_push_pr") &&
             openPr?.url &&
@@ -1306,10 +1339,17 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       diffPatch: limitContext(rangeContext.diffPatch, 60_000),
       modelSelection,
     });
+    const headSha = yield* gitCore
+      .execute({
+        operation: "GitManager.runPrStep.revParseHead",
+        cwd,
+        args: ["rev-parse", "--verify", "HEAD"],
+      })
+      .pipe(Effect.map((result) => result.stdout.trim()));
 
     const bodyFile = path.join(tempDir, `t3code-pr-body-${process.pid}-${yield* randomUUIDv4}.md`);
     yield* fileSystem
-      .writeFileString(bodyFile, generated.body)
+      .writeFileString(bodyFile, appendPrUpdateMarker(generated.body, headSha))
       .pipe(
         Effect.mapError((cause) =>
           gitManagerError("runPrStep", "Failed to write pull request body temp file.", cause),
@@ -1347,6 +1387,109 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       baseBranch: created.baseRefName,
       headBranch: created.headRefName,
       title: created.title,
+    };
+  });
+
+  const runUpdatePrStep = Effect.fn("runUpdatePrStep")(function* (
+    modelSelection: ModelSelection,
+    cwd: string,
+    fallbackBranch: string | null,
+    emit: GitActionProgressEmitter,
+  ) {
+    const provider = yield* sourceControlProvider(cwd);
+    const terms = getChangeRequestTerminologyForKind(provider.kind);
+    const details = yield* gitCore.statusDetails(cwd);
+    const branch = details.branch ?? fallbackBranch;
+    if (!branch) {
+      return yield* gitManagerError(
+        "runUpdatePrStep",
+        `Cannot update ${terms.singular} from detached HEAD.`,
+      );
+    }
+    if (!details.hasUpstream) {
+      return yield* gitManagerError(
+        "runUpdatePrStep",
+        `Current branch has not been pushed. Push before updating a ${terms.singular}.`,
+      );
+    }
+
+    const headContext = yield* resolveBranchHeadContext(cwd, {
+      branch,
+      upstreamRef: details.upstreamRef,
+    });
+    const existing = yield* findOpenPr(cwd, headContext);
+    if (!existing) {
+      return yield* gitManagerError(
+        "runUpdatePrStep",
+        `No open ${terms.singular} found for this branch.`,
+      );
+    }
+
+    const existingDetails = yield* provider.getChangeRequest({
+      cwd,
+      reference: String(existing.number),
+    });
+    const baseRef = extractPrUpdateMarker(existingDetails.body) ?? existing.baseRefName;
+    yield* emit({
+      kind: "phase_started",
+      phase: "pr",
+      label: `Generating updated ${terms.shortLabel} content...`,
+    });
+    const rangeContext = yield* gitCore.readRangeContext(cwd, baseRef);
+    if (rangeContext.commitSummary.trim().length === 0) {
+      return yield* gitManagerError(
+        "runUpdatePrStep",
+        `No new commits since the last ${terms.shortLabel} update.`,
+      );
+    }
+
+    const generated = yield* textGeneration.generatePrUpdateContent({
+      cwd,
+      baseBranch: baseRef,
+      headBranch: headContext.headBranch,
+      currentTitle: existingDetails.title,
+      currentBody: stripPrUpdateMarker(existingDetails.body ?? ""),
+      commitSummary: limitContext(rangeContext.commitSummary, 20_000),
+      diffSummary: limitContext(rangeContext.diffSummary, 20_000),
+      diffPatch: limitContext(rangeContext.diffPatch, 60_000),
+      modelSelection,
+    });
+    const headSha = yield* gitCore
+      .execute({
+        operation: "GitManager.runUpdatePrStep.revParseHead",
+        cwd,
+        args: ["rev-parse", "--verify", "HEAD"],
+      })
+      .pipe(Effect.map((result) => result.stdout.trim()));
+    const bodyFile = path.join(tempDir, `t3code-pr-body-${process.pid}-${yield* randomUUIDv4}.md`);
+    yield* fileSystem
+      .writeFileString(bodyFile, appendPrUpdateMarker(generated.body, headSha))
+      .pipe(
+        Effect.mapError((cause) =>
+          gitManagerError("runUpdatePrStep", "Failed to write pull request body temp file.", cause),
+        ),
+      );
+    yield* emit({
+      kind: "phase_started",
+      phase: "pr",
+      label: `Updating ${terms.singular}...`,
+    });
+    yield* provider
+      .updateChangeRequest({
+        cwd,
+        reference: String(existing.number),
+        title: generated.title,
+        bodyFile,
+      })
+      .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
+
+    return {
+      status: "updated" as const,
+      url: existing.url,
+      number: existing.number,
+      baseBranch: existing.baseRefName,
+      headBranch: existing.headRefName,
+      title: generated.title,
     };
   });
 
@@ -1610,9 +1753,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
+          (input.action === "update_pr" && initialStatus.aheadCount > 0) ||
           (input.action === "create_pr" &&
             (!initialStatus.hasUpstream || initialStatus.aheadCount > 0));
-        const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
+        const wantsPr =
+          input.action === "create_pr" ||
+          input.action === "update_pr" ||
+          input.action === "commit_push_pr";
 
         if (input.featureBranch && !wantsCommit) {
           return yield* gitManagerError(
@@ -1624,6 +1771,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           return yield* gitManagerError(
             "runStackedAction",
             "Commit local changes before creating a PR.",
+          );
+        }
+        if (input.action === "update_pr" && initialStatus.hasWorkingTreeChanges) {
+          return yield* gitManagerError(
+            "runStackedAction",
+            "Commit local changes before updating a PR.",
           );
         }
 
@@ -1730,9 +1883,16 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
-                Effect.flatMap(() =>
-                  runPrStep(modelSelection, input.cwd, currentBranch, progress.emit),
-                ),
+                Effect.flatMap(() => {
+                  const prEffect: Effect.Effect<
+                    GitRunStackedActionResult["pr"],
+                    GitManagerServiceError
+                  > =
+                    input.action === "update_pr"
+                      ? runUpdatePrStep(modelSelection, input.cwd, currentBranch, progress.emit)
+                      : runPrStep(modelSelection, input.cwd, currentBranch, progress.emit);
+                  return prEffect;
+                }),
               )
           : { status: "skipped_not_requested" as const };
 

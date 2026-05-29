@@ -22,6 +22,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildPrUpdateContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
@@ -83,6 +84,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle",
     value: unknown,
@@ -113,6 +115,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle";
     cwd: string;
@@ -313,6 +316,25 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     };
   });
 
+  const generatePrUpdateContent: TextGenerationShape["generatePrUpdateContent"] = Effect.fn(
+    "ClaudeTextGeneration.generatePrUpdateContent",
+  )(function* (input) {
+    const { prompt, outputSchema } = buildPrUpdateContentPrompt(input);
+
+    const generated = yield* runClaudeJson({
+      operation: "generatePrUpdateContent",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+
+    return {
+      title: sanitizePrTitle(generated.title),
+      body: generated.body.trim(),
+    };
+  });
+
   const generateBranchName: TextGenerationShape["generateBranchName"] = Effect.fn(
     "ClaudeTextGeneration.generateBranchName",
   )(function* (input) {
@@ -358,6 +380,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   return {
     generateCommitMessage,
     generatePrContent,
+    generatePrUpdateContent,
     generateBranchName,
     generateThreadTitle,
   } satisfies TextGenerationShape;

@@ -41,6 +41,11 @@ export interface PrContentGenerationInput {
   modelSelection: ModelSelection;
 }
 
+export interface PrUpdateContentGenerationInput extends PrContentGenerationInput {
+  currentTitle: string;
+  currentBody: string;
+}
+
 export interface PrContentGenerationResult {
   title: string;
   body: string;
@@ -75,6 +80,9 @@ export interface TextGenerationService {
     input: CommitMessageGenerationInput,
   ): Promise<CommitMessageGenerationResult>;
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
+  generatePrUpdateContent(
+    input: PrUpdateContentGenerationInput,
+  ): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
   generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
 }
@@ -95,6 +103,10 @@ export interface TextGenerationShape {
    */
   readonly generatePrContent: (
     input: PrContentGenerationInput,
+  ) => Effect.Effect<PrContentGenerationResult, TextGenerationError>;
+
+  readonly generatePrUpdateContent: (
+    input: PrUpdateContentGenerationInput,
   ) => Effect.Effect<PrContentGenerationResult, TextGenerationError>;
 
   /**
@@ -122,6 +134,7 @@ export class TextGeneration extends Context.Service<TextGeneration, TextGenerati
 type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
+  | "generatePrUpdateContent"
   | "generateBranchName"
   | "generateThreadTitle";
 
@@ -153,6 +166,10 @@ export const makeTextGenerationFromRegistry = (
   generatePrContent: (input) =>
     resolveInstance(registry, "generatePrContent", input.modelSelection.instanceId).pipe(
       Effect.flatMap((textGeneration) => textGeneration.generatePrContent(input)),
+    ),
+  generatePrUpdateContent: (input) =>
+    resolveInstance(registry, "generatePrUpdateContent", input.modelSelection.instanceId).pipe(
+      Effect.flatMap((textGeneration) => textGeneration.generatePrUpdateContent(input)),
     ),
   generateBranchName: (input) =>
     resolveInstance(registry, "generateBranchName", input.modelSelection.instanceId).pipe(
