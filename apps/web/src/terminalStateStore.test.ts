@@ -1,6 +1,6 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime";
 import { ThreadId, type TerminalEvent } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   migratePersistedTerminalStateStoreState,
@@ -67,6 +67,10 @@ describe("terminalStateStore actions", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns a closed default terminal state for unknown threads", () => {
     const terminalState = selectThreadTerminalState(
       useTerminalStateStore.getState().terminalStateByThreadKey,
@@ -77,6 +81,7 @@ describe("terminalStateStore actions", () => {
       terminalHeight: 280,
       terminalIds: ["default"],
       runningTerminalIds: [],
+      runningTerminalStartedAtById: {},
       activeTerminalId: "default",
       terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
       activeTerminalGroupId: "group-default",
@@ -208,6 +213,7 @@ describe("terminalStateStore actions", () => {
           terminalHeight: 320,
           terminalIds: ["default"],
           runningTerminalIds: [],
+          runningTerminalStartedAtById: {},
           activeTerminalId: "default",
           terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
           activeTerminalGroupId: "group-default",
@@ -217,6 +223,8 @@ describe("terminalStateStore actions", () => {
   });
 
   it("tracks and clears terminal subprocess activity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T20:01:00.000Z"));
     const store = useTerminalStateStore.getState();
     store.splitTerminal(THREAD_REF, "terminal-2");
     store.setTerminalActivity(THREAD_REF, "terminal-2", true);
@@ -226,14 +234,54 @@ describe("terminalStateStore actions", () => {
         THREAD_REF,
       ).runningTerminalIds,
     ).toEqual(["terminal-2"]);
-
-    store.setTerminalActivity(THREAD_REF, "terminal-2", false);
     expect(
       selectThreadTerminalState(
         useTerminalStateStore.getState().terminalStateByThreadKey,
         THREAD_REF,
-      ).runningTerminalIds,
-    ).toEqual([]);
+      ).runningTerminalStartedAtById,
+    ).toEqual({ "terminal-2": "2026-04-02T20:01:00.000Z" });
+
+    store.setTerminalActivity(THREAD_REF, "terminal-2", false);
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.runningTerminalIds).toEqual([]);
+    expect(terminalState.runningTerminalStartedAtById).toEqual({});
+  });
+
+  it("keeps terminal subprocess start time when duplicate running activity arrives", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T20:01:00.000Z"));
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.setTerminalActivity(THREAD_REF, "terminal-2", true);
+
+    vi.setSystemTime(new Date("2026-04-02T20:02:00.000Z"));
+    store.setTerminalActivity(THREAD_REF, "terminal-2", true);
+
+    expect(
+      selectThreadTerminalState(
+        useTerminalStateStore.getState().terminalStateByThreadKey,
+        THREAD_REF,
+      ).runningTerminalStartedAtById,
+    ).toEqual({ "terminal-2": "2026-04-02T20:01:00.000Z" });
+  });
+
+  it("removes terminal subprocess start time when terminal is closed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T20:01:00.000Z"));
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.setTerminalActivity(THREAD_REF, "terminal-2", true);
+    store.closeTerminal(THREAD_REF, "terminal-2");
+
+    expect(
+      selectThreadTerminalState(
+        useTerminalStateStore.getState().terminalStateByThreadKey,
+        THREAD_REF,
+      ).runningTerminalStartedAtById,
+    ).toEqual({});
   });
 
   it("resets to default and clears persisted entry when closing the last terminal", () => {

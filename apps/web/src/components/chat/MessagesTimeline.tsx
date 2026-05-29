@@ -1257,6 +1257,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
             </Tooltip>
           )}
         </div>
+        <WorkEntryStatusBadge workEntry={workEntry} />
       </button>
       {hasChangedFiles && !previewIsChangedFiles && (
         <div className="mt-1 flex flex-wrap gap-1 pl-6">
@@ -1404,3 +1405,37 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     </div>
   );
 });
+
+function WorkEntryStatusBadge({ workEntry }: { workEntry: TimelineWorkEntry }) {
+  if (workEntry.status !== "running") {
+    return null;
+  }
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-teal-500/20 bg-teal-500/8 px-1.5 py-0.5 text-[10px] leading-none text-teal-700 dark:text-teal-300/90">
+      <span className="size-1.5 rounded-full bg-current animate-pulse" />
+      <span>Running</span>
+      <span className="tabular-nums text-teal-700/75 dark:text-teal-300/70">
+        <WorkEntryRunningTimer createdAt={workEntry.createdAt} />
+      </span>
+    </span>
+  );
+}
+
+function WorkEntryRunningTimer({ createdAt }: { createdAt: string }) {
+  const textRef = useRef<HTMLSpanElement>(null);
+  const initialText = formatWorkingTimerNow(createdAt);
+
+  useEffect(() => {
+    const updateText = () => {
+      if (textRef.current) {
+        textRef.current.textContent = formatWorkingTimerNow(createdAt);
+      }
+    };
+    updateText();
+    const id = setInterval(updateText, 1000);
+    return () => clearInterval(id);
+  }, [createdAt]);
+
+  return <span ref={textRef}>{initialText}</span>;
+}
