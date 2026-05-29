@@ -659,7 +659,14 @@ function runStackedAction(
   manager: GitManagerShape,
   input: {
     cwd: string;
-    action: "commit" | "push" | "create_pr" | "update_pr" | "commit_push" | "commit_push_pr";
+    action:
+      | "commit"
+      | "push"
+      | "create_pr"
+      | "update_pr"
+      | "commit_push"
+      | "commit_push_pr"
+      | "commit_push_update_pr";
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;

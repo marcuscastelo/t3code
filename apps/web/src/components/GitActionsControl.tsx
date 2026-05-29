@@ -1266,7 +1266,10 @@ export default function GitActionsControl({
       const actionBranch = actionStatus?.refName ?? null;
       const actionIsDefaultBranch = featureBranch ? false : isDefaultRef;
       const actionCanCommit =
-        action === "commit" || action === "commit_push" || action === "commit_push_pr";
+        action === "commit" ||
+        action === "commit_push" ||
+        action === "commit_push_pr" ||
+        action === "commit_push_update_pr";
       const includesCommit =
         actionCanCommit &&
         (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
@@ -1279,7 +1282,8 @@ export default function GitActionsControl({
           action !== "push" &&
           action !== "create_pr" &&
           action !== "commit_push" &&
-          action !== "commit_push_pr"
+          action !== "commit_push_pr" &&
+          action !== "commit_push_update_pr"
         ) {
           return;
         }
@@ -1302,7 +1306,9 @@ export default function GitActionsControl({
         featureBranch,
         terminology: changeRequestTerminology,
         shouldPushBeforePr:
-          (action === "create_pr" || action === "update_pr") &&
+          (action === "create_pr" ||
+            action === "update_pr" ||
+            action === "commit_push_update_pr") &&
           (!actionStatus?.hasUpstream || (actionStatus?.aheadCount ?? 0) > 0),
       });
       const scopedToastData = threadToastData ? { ...threadToastData } : undefined;

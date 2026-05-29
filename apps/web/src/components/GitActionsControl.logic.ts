@@ -41,7 +41,12 @@ export type DefaultBranchConfirmableAction =
   | "push"
   | "create_pr"
   | "commit_push"
-  | "commit_push_pr";
+  | "commit_push_pr"
+  | "commit_push_update_pr";
+
+function isUpdatePrAction(action: GitStackedAction): boolean {
+  return action === "update_pr" || action === "commit_push_update_pr";
+}
 
 function resolveChangeRequestTerminology(
   gitStatus: VcsStatusResult | null,
@@ -65,10 +70,10 @@ export function buildGitActionProgressStages(input: {
   const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
   const prStages = [
     `Preparing ${terminology.shortLabel}...`,
-    input.action === "update_pr"
+    isUpdatePrAction(input.action)
       ? `Generating updated ${terminology.shortLabel} content...`
       : `Generating ${terminology.shortLabel} content...`,
-    input.action === "update_pr"
+    isUpdatePrAction(input.action)
       ? `Updating ${terminology.singular}...`
       : `Creating ${terminology.singular}...`,
   ];
@@ -229,7 +234,15 @@ export function resolveQuickAction(
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
       return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
     }
-    if (hasOpenPr || isDefaultRef) {
+    if (hasOpenPr && !isDefaultRef) {
+      return {
+        label: `Commit, push & update ${terminology.shortLabel}`,
+        disabled: false,
+        kind: "run_action",
+        action: "commit_push_update_pr",
+      };
+    }
+    if (isDefaultRef) {
       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
@@ -342,7 +355,8 @@ export function requiresDefaultBranchConfirmation(
     action === "push" ||
     action === "create_pr" ||
     action === "commit_push" ||
-    action === "commit_push_pr"
+    action === "commit_push_pr" ||
+    action === "commit_push_update_pr"
   );
 }
 
@@ -368,6 +382,14 @@ export function resolveDefaultBranchActionDialogCopy(input: {
       title: "Push to default ref?",
       description: `This action will push local commits${suffix}`,
       continueLabel: `Push to ${branchLabel}`,
+    };
+  }
+
+  if (input.action === "commit_push_update_pr") {
+    return {
+      title: `Commit, push & update ${terminology.shortLabel} from default ref?`,
+      description: `This action will commit, push, and update a ${terminology.singular}${suffix}`,
+      continueLabel: `Commit, push & update ${terminology.shortLabel}`,
     };
   }
 
