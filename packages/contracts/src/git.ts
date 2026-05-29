@@ -12,8 +12,10 @@ export const GitStackedAction = Schema.Literals([
   "commit",
   "push",
   "create_pr",
+  "update_pr",
   "commit_push",
   "commit_push_pr",
+  "commit_push_update_pr",
 ]);
 export type GitStackedAction = typeof GitStackedAction.Type;
 export const GitActionProgressPhase = Schema.Literals(["branch", "commit", "push", "pr"]);
@@ -41,7 +43,12 @@ const GitPushStepStatus = Schema.Literals([
   "skipped_up_to_date",
 ]);
 const GitBranchStepStatus = Schema.Literals(["created", "skipped_not_requested"]);
-const GitPrStepStatus = Schema.Literals(["created", "opened_existing", "skipped_not_requested"]);
+const GitPrStepStatus = Schema.Literals([
+  "created",
+  "updated",
+  "opened_existing",
+  "skipped_not_requested",
+]);
 const VcsStatusChangeRequestState = Schema.Literals(["open", "closed", "merged"]);
 const GitPullRequestReference = TrimmedNonEmptyStringSchema;
 const GitPullRequestState = Schema.Literals(["open", "closed", "merged"]);

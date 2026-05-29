@@ -94,6 +94,17 @@ interface FakeGitTextGeneration {
     diffPatch: string;
     modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string; body: string }, TextGenerationError>;
+  generatePrUpdateContent: (input: {
+    cwd: string;
+    baseBranch: string;
+    headBranch: string;
+    currentTitle: string;
+    currentBody: string;
+    commitSummary: string;
+    diffSummary: string;
+    diffPatch: string;
+    modelSelection: ModelSelection;
+  }) => Effect.Effect<{ title: string; body: string }, TextGenerationError>;
   generateBranchName: (input: {
     cwd: string;
     message: string;
@@ -325,6 +336,11 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
         title: "Add stacked git actions",
         body: "## Summary\n- Add stacked git workflow\n\n## Testing\n- Not run",
       }),
+    generatePrUpdateContent: () =>
+      Effect.succeed({
+        title: "Update stacked git actions",
+        body: "## Summary\n- Update stacked git workflow\n\n## Testing\n- Not run",
+      }),
     generateBranchName: () =>
       Effect.succeed({
         branch: "update-workflow",
@@ -354,6 +370,17 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
           (cause) =>
             new TextGenerationError({
               operation: "generatePrContent",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    generatePrUpdateContent: (input) =>
+      implementation.generatePrUpdateContent(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "generatePrUpdateContent",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),
@@ -572,6 +599,19 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             input.bodyFile,
           ],
         }).pipe(Effect.asVoid),
+      updatePullRequest: (input) =>
+        execute({
+          cwd: input.cwd,
+          args: [
+            "pr",
+            "edit",
+            input.reference,
+            "--title",
+            input.title,
+            "--body-file",
+            input.bodyFile,
+          ],
+        }).pipe(Effect.asVoid),
       getDefaultBranch: (input) =>
         execute({
           cwd: input.cwd,
@@ -619,7 +659,14 @@ function runStackedAction(
   manager: GitManagerShape,
   input: {
     cwd: string;
-    action: "commit" | "push" | "create_pr" | "commit_push" | "commit_push_pr";
+    action:
+      | "commit"
+      | "push"
+      | "create_pr"
+      | "update_pr"
+      | "commit_push"
+      | "commit_push_pr"
+      | "commit_push_update_pr";
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;

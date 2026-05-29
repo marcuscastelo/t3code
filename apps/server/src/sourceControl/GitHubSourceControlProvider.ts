@@ -32,6 +32,7 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
     provider: "github",
     number: summary.number,
     title: summary.title,
+    ...(summary.body !== undefined ? { body: summary.body } : {}),
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
@@ -179,6 +180,15 @@ export const make = Effect.fn("makeGitHubSourceControlProvider")(function* () {
           bodyFile: input.bodyFile,
         })
         .pipe(Effect.mapError((error) => providerError("createChangeRequest", error))),
+    updateChangeRequest: (input) =>
+      github
+        .updatePullRequest({
+          cwd: input.cwd,
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(Effect.mapError((error) => providerError("updateChangeRequest", error))),
     getRepositoryCloneUrls: (input) =>
       github
         .getRepositoryCloneUrls(input)

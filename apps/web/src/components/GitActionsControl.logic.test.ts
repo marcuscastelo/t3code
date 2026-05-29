@@ -87,6 +87,14 @@ describe("when: ref is clean and has an open PR", () => {
         icon: "pr",
         kind: "open_pr",
       },
+      {
+        id: "update_pr",
+        label: "Update PR",
+        disabled: true,
+        icon: "pr",
+        kind: "open_dialog",
+        dialogAction: "update_pr",
+      },
     ]);
   });
 });
@@ -207,6 +215,14 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
         disabled: false,
         icon: "pr",
         kind: "open_pr",
+      },
+      {
+        id: "update_pr",
+        label: "Update PR",
+        disabled: false,
+        icon: "pr",
+        kind: "open_dialog",
+        dialogAction: "update_pr",
       },
     ]);
   });
@@ -413,7 +429,7 @@ describe("when: working tree has local changes", () => {
     });
   });
 
-  it("resolveQuickAction returns commit and push when open PR exists", () => {
+  it("resolveQuickAction returns commit, push, and update PR when open PR exists", () => {
     const quick = resolveQuickAction(
       status({
         hasWorkingTreeChanges: true,
@@ -430,8 +446,8 @@ describe("when: working tree has local changes", () => {
     );
     assert.deepInclude(quick, {
       kind: "run_action",
-      action: "commit_push",
-      label: "Commit & push",
+      action: "commit_push_update_pr",
+      label: "Commit, push & update PR",
     });
   });
 
@@ -1000,6 +1016,22 @@ describe("buildGitActionProgressStages", () => {
       "Preparing PR...",
       "Generating PR content...",
       "Creating pull request...",
+    ]);
+  });
+
+  it("includes update PR stages for commit+push+update PR actions", () => {
+    const stages = buildGitActionProgressStages({
+      action: "commit_push_update_pr",
+      hasCustomCommitMessage: true,
+      hasWorkingTreeChanges: true,
+      pushTarget: "origin/feature/test",
+    });
+    assert.deepEqual(stages, [
+      "Committing...",
+      "Pushing to origin/feature/test...",
+      "Preparing PR...",
+      "Generating updated PR content...",
+      "Updating pull request...",
     ]);
   });
 });

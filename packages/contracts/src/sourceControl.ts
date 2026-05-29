@@ -25,6 +25,7 @@ export const ChangeRequest = Schema.Struct({
   provider: SourceControlProviderKind,
   number: PositiveInt,
   title: TrimmedNonEmptyString,
+  body: Schema.optional(Schema.String),
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,

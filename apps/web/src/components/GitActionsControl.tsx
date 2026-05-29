@@ -279,6 +279,25 @@ function getMenuActionDisabledReason({
     return "Push is currently unavailable.";
   }
 
+  if (item.id === "update_pr") {
+    if (!hasBranch) {
+      return `Detached HEAD: checkout a refName before updating a ${terminology.singular}.`;
+    }
+    if (hasChanges) {
+      return `Commit local changes before updating a ${terminology.singular}.`;
+    }
+    if (isBehind) {
+      return `Branch is behind upstream. Pull/rebase before updating a ${terminology.singular}.`;
+    }
+    if (!gitStatus.hasUpstream) {
+      return `Push this branch before updating a ${terminology.singular}.`;
+    }
+    if (!hasOpenPr) {
+      return `No open ${terminology.singular} found.`;
+    }
+    return `Update ${terminology.singular} is currently unavailable.`;
+  }
+
   if (hasOpenPr) {
     return `View ${terminology.singular} is currently unavailable.`;
   }
@@ -1247,7 +1266,10 @@ export default function GitActionsControl({
       const actionBranch = actionStatus?.refName ?? null;
       const actionIsDefaultBranch = featureBranch ? false : isDefaultRef;
       const actionCanCommit =
-        action === "commit" || action === "commit_push" || action === "commit_push_pr";
+        action === "commit" ||
+        action === "commit_push" ||
+        action === "commit_push_pr" ||
+        action === "commit_push_update_pr";
       const includesCommit =
         actionCanCommit &&
         (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
@@ -1260,7 +1282,8 @@ export default function GitActionsControl({
           action !== "push" &&
           action !== "create_pr" &&
           action !== "commit_push" &&
-          action !== "commit_push_pr"
+          action !== "commit_push_pr" &&
+          action !== "commit_push_update_pr"
         ) {
           return;
         }
@@ -1283,7 +1306,9 @@ export default function GitActionsControl({
         featureBranch,
         terminology: changeRequestTerminology,
         shouldPushBeforePr:
-          action === "create_pr" &&
+          (action === "create_pr" ||
+            action === "update_pr" ||
+            action === "commit_push_update_pr") &&
           (!actionStatus?.hasUpstream || (actionStatus?.aheadCount ?? 0) > 0),
       });
       const scopedToastData = threadToastData ? { ...threadToastData } : undefined;
@@ -1565,6 +1590,10 @@ export default function GitActionsControl({
     }
     if (item.dialogAction === "create_pr") {
       void runGitActionWithToast({ action: "create_pr" });
+      return;
+    }
+    if (item.dialogAction === "update_pr") {
+      void runGitActionWithToast({ action: "update_pr" });
       return;
     }
     setExcludedFiles(new Set());

@@ -29,6 +29,7 @@ export class GitHubCliError extends Schema.TaggedErrorClass<GitHubCliError>()("G
 export interface GitHubPullRequestSummary {
   readonly number: number;
   readonly title: string;
+  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -77,6 +78,13 @@ export interface GitHubCliShape {
     readonly cwd: string;
     readonly baseBranch: string;
     readonly headSelector: string;
+    readonly title: string;
+    readonly bodyFile: string;
+  }) => Effect.Effect<void, GitHubCliError>;
+
+  readonly updatePullRequest: (input: {
+    readonly cwd: string;
+    readonly reference: string;
     readonly title: string;
     readonly bodyFile: string;
   }) => Effect.Effect<void, GitHubCliError>;
@@ -255,7 +263,7 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
           "--limit",
           String(input.limit ?? 1),
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,body,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -348,6 +356,19 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
           input.baseBranch,
           "--head",
           input.headSelector,
+          "--title",
+          input.title,
+          "--body-file",
+          input.bodyFile,
+        ],
+      }).pipe(Effect.asVoid),
+    updatePullRequest: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "pr",
+          "edit",
+          input.reference,
           "--title",
           input.title,
           "--body-file",
