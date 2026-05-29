@@ -86,7 +86,7 @@ describe("providerRateLimits", () => {
       {
         rateLimits: {
           primary: {
-            usedPercent: 23,
+            usedPercent: 1,
             windowDurationMins: 300,
           },
           secondary: {
@@ -103,8 +103,49 @@ describe("providerRateLimits", () => {
     );
 
     expect(snapshot?.windows).toMatchObject([
-      { label: "5h", usedPercent: 23 },
+      { label: "5h", usedPercent: 1 },
       { label: "weekly", usedPercent: 5 },
+    ]);
+  });
+
+  it("prefers Codex root rateLimits over metered buckets", () => {
+    const snapshot = deriveProviderRateLimitSnapshotFromValue(
+      {
+        rateLimits: {
+          primary: {
+            usedPercent: 1,
+            windowDurationMins: 300,
+          },
+          secondary: {
+            usedPercent: 13,
+            windowDurationMins: 10_080,
+          },
+        },
+        rateLimitsByLimitId: {
+          codex_bengalfox: {
+            limitId: "codex_bengalfox",
+            limitName: "GPT-5.3-Codex-Spark",
+            primary: {
+              usedPercent: 0,
+              windowDurationMins: 300,
+            },
+            secondary: {
+              usedPercent: 0,
+              windowDurationMins: 10_080,
+            },
+          },
+        },
+      },
+      {
+        provider: "codex",
+        providerInstanceId: "codex",
+        updatedAt: "2026-03-23T00:00:00.000Z",
+      },
+    );
+
+    expect(snapshot?.windows).toMatchObject([
+      { label: "5h", usedPercent: 1 },
+      { label: "weekly", usedPercent: 13 },
     ]);
   });
 
