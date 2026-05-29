@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  deriveRateLimitPaceSnapshot,
   deriveLatestProviderRateLimitSnapshot,
   deriveProviderRateLimitSnapshotFromValue,
   formatRateLimitPercent,
@@ -211,5 +212,72 @@ describe("providerRateLimits", () => {
     expect(formatRateLimitPercent(42.2)).toBe("42%");
     expect(formatRateLimitReset(1_000 + 90 * 60_000, 1_000)).toBe("2h");
     expect(formatRateLimitReset(1_000 - 1, 1_000)).toBe("now");
+  });
+
+  it("derives linear pacing from reset time and window duration", () => {
+    const nowMs = Date.UTC(2026, 2, 23, 0, 0, 0);
+    const resetsAtMs = nowMs + 150 * 60_000;
+
+    expect(
+      deriveRateLimitPaceSnapshot(
+        {
+          usedPercent: 8,
+          resetsAtMs,
+          windowDurationMins: 300,
+        },
+        nowMs,
+      ),
+    ).toMatchObject({
+      expectedRemainingPercent: 50,
+      deltaPercentPoints: 42,
+      status: "ahead",
+    });
+
+    expect(
+      deriveRateLimitPaceSnapshot(
+        {
+          usedPercent: 70,
+          resetsAtMs,
+          windowDurationMins: 300,
+        },
+        nowMs,
+      ),
+    ).toMatchObject({
+      expectedRemainingPercent: 50,
+      deltaPercentPoints: -20,
+      status: "in_debt",
+    });
+
+    expect(
+      deriveRateLimitPaceSnapshot(
+        {
+          usedPercent: 51,
+          resetsAtMs,
+          windowDurationMins: 300,
+        },
+        nowMs,
+      ),
+    ).toMatchObject({
+      expectedRemainingPercent: 50,
+      deltaPercentPoints: -1,
+      status: "on_pace",
+    });
+  });
+
+  it("skips pacing when reset or duration is missing", () => {
+    expect(
+      deriveRateLimitPaceSnapshot({
+        usedPercent: 50,
+        resetsAtMs: null,
+        windowDurationMins: 300,
+      }),
+    ).toBeNull();
+    expect(
+      deriveRateLimitPaceSnapshot({
+        usedPercent: 50,
+        resetsAtMs: 1_778_000_000_000,
+        windowDurationMins: null,
+      }),
+    ).toBeNull();
   });
 });
