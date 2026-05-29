@@ -30,6 +30,15 @@ export const CodexSessionImportResult = Schema.Struct({
 });
 export type CodexSessionImportResult = typeof CodexSessionImportResult.Type;
 
+const CodexJsonString = Schema.fromJsonString(Schema.Json);
+const encodeCodexJsonString = Schema.encodeEffect(CodexJsonString);
+const ResumeCursorJson = Schema.fromJsonString(
+  Schema.Struct({
+    threadId: Schema.optional(Schema.Unknown),
+  }),
+);
+const decodeResumeCursorJson = Schema.decodeEffect(ResumeCursorJson);
+
 export interface CodexSessionImporterShape {
   readonly importSession: (
     input: CodexSessionImportInput,
@@ -164,7 +173,6 @@ const makeCodexSessionImporter = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json));
   const mapImportError = (operation: string) => (cause: unknown) =>
     new CodexSessionImportError({
       operation,
@@ -252,6 +260,10 @@ const makeCodexSessionImporter = Effect.gen(function* () {
       `;
       const staleRequestsCleared = Math.max(0, rows[0]?.count ?? 0);
       if (staleRequestsCleared === 0) return 0;
+      const payloadJson = yield* encodeCodexJsonString({
+        detail: "Unknown pending Codex user input request after Codex session recovery.",
+        source: "codex-session-importer",
+      });
       yield* sql`
         UPDATE projection_threads
         SET pending_user_input_count = 0, updated_at = ${at}
@@ -276,10 +288,7 @@ const makeCodexSessionImporter = Effect.gen(function* () {
           'warning',
           'provider.user-input.respond.failed',
           'Cleared stale Codex user input request after importing durable session state.',
-          ${encodeJson({
-            detail: "Unknown pending Codex user input request after Codex session recovery.",
-            source: "codex-session-importer",
-          })},
+          ${payloadJson},
           NULL,
           ${at}
         )
@@ -637,13 +646,12 @@ const makeCodexSessionImporter = Effect.gen(function* () {
           staleRequestsCleared: 0,
         };
       }
-      const resumeCursor = yield* Effect.try({
-        try: () => {
-          if (row.resumeCursorJson === null) return {};
-          return JSON.parse(row.resumeCursorJson) as { readonly threadId?: unknown };
-        },
-        catch: () => ({}),
-      });
+      let resumeCursor: { readonly threadId?: unknown } = {};
+      if (row.resumeCursorJson !== null) {
+        resumeCursor = yield* decodeResumeCursorJson(row.resumeCursorJson).pipe(
+          Effect.catch(() => Effect.succeed({})),
+        );
+      }
       const providerThreadId =
         typeof resumeCursor.threadId === "string" ? resumeCursor.threadId : "";
       if (providerThreadId.length === 0) {

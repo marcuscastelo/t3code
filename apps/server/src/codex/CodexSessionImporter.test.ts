@@ -15,6 +15,7 @@ import { CodexSessionImporter, CodexSessionImporterLive } from "./CodexSessionIm
 
 const TEST_THREAD_ID = ThreadId.make("thread-1");
 const TEST_PROVIDER_THREAD_ID = "019e6f57-772b-7081-bd7e-c98a4b0b12c8";
+const encodeCodexJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Json));
 
 const layer = CodexSessionImporterLive.pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
@@ -25,7 +26,6 @@ const layer = CodexSessionImporterLive.pipe(
 const makeCodexHome = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json));
   const root = yield* fileSystem.makeTempDirectoryScoped({
     directory: NodeOS.tmpdir(),
     prefix: "t3-codex-home-",
@@ -36,8 +36,7 @@ const makeCodexHome = Effect.gen(function* () {
     sessions,
     `rollout-2026-05-28T12-56-35-${TEST_PROVIDER_THREAD_ID}.jsonl`,
   );
-  yield* fileSystem.writeFileString(
-    filePath,
+  const lines = yield* Effect.all(
     [
       {
         timestamp: "2026-05-28T16:07:43.670Z",
@@ -100,10 +99,9 @@ const makeCodexHome = Effect.gen(function* () {
           completed_at: 1779986349,
         },
       },
-    ]
-      .map((line) => encodeJson(line))
-      .join("\n"),
+    ].map((line) => encodeCodexJsonString(line)),
   );
+  yield* fileSystem.writeFileString(filePath, lines.join("\n"));
   return { root, filePath };
 });
 
