@@ -87,6 +87,14 @@ describe("when: ref is clean and has an open PR", () => {
         icon: "pr",
         kind: "open_pr",
       },
+      {
+        id: "update_pr",
+        label: "Update PR",
+        disabled: true,
+        icon: "pr",
+        kind: "open_dialog",
+        dialogAction: "update_pr",
+      },
     ]);
   });
 });
@@ -207,6 +215,14 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
         disabled: false,
         icon: "pr",
         kind: "open_pr",
+      },
+      {
+        id: "update_pr",
+        label: "Update PR",
+        disabled: false,
+        icon: "pr",
+        kind: "open_dialog",
+        dialogAction: "update_pr",
       },
     ]);
   });
