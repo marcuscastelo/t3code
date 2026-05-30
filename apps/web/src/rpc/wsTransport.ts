@@ -31,6 +31,7 @@ interface RequestOptions {
 }
 
 const DEFAULT_SUBSCRIPTION_RETRY_DELAY_MS = Duration.millis(250);
+const TRANSPORT_CLOSE_RECONNECT_FALLBACK_DELAY_MS = 500;
 const NOOP: () => void = () => undefined;
 
 interface TransportSession {
@@ -63,6 +64,8 @@ export class WsTransport {
   private activeSessionId = 0;
   private session: TransportSession;
   private lastHeartbeatPongAt = 0;
+  private streamStartSequence = 0;
+  private readonly transportCloseReconnectTimers = new Set<ReturnType<typeof setTimeout>>();
   private readonly streamRequestStartListeners = new Set<(info: StreamRequestStartInfo) => void>();
 
   constructor(
@@ -217,6 +220,21 @@ export class WsTransport {
     await reconnectOperation;
   }
 
+  private reconnectAfterTransportClose(sessionId: number, streamStartSequence: number) {
+    if (this.disposed || this.activeSessionId !== sessionId) {
+      return;
+    }
+    if (this.streamStartSequence !== streamStartSequence) {
+      return;
+    }
+
+    void this.reconnect().catch((error) => {
+      console.warn("WebSocket RPC transport reconnect failed", {
+        error: formatErrorMessage(error),
+      });
+    });
+  }
+
   isHeartbeatFresh(maxAgeMs = 15_000): boolean {
     return this.lastHeartbeatPongAt > 0 && Date.now() - this.lastHeartbeatPongAt <= maxAgeMs;
   }
@@ -226,6 +244,12 @@ export class WsTransport {
       return;
     }
     this.disposed = true;
+    if (this.transportCloseReconnectTimers) {
+      for (const timer of this.transportCloseReconnectTimers) {
+        clearTimeout(timer);
+      }
+      this.transportCloseReconnectTimers.clear();
+    }
     await this.closeSession(this.session);
   }
 
@@ -254,11 +278,23 @@ export class WsTransport {
             this.lastHeartbeatPongAt = Date.now();
             this.lifecycleHandlers?.onHeartbeatPong?.();
           },
+          onClose: (details, context) => {
+            this.lifecycleHandlers?.onClose?.(details, context);
+            if (!context.intentional) {
+              const streamStartSequence = this.streamStartSequence;
+              const timer = setTimeout(() => {
+                this.transportCloseReconnectTimers.delete(timer);
+                this.reconnectAfterTransportClose(sessionId, streamStartSequence);
+              }, TRANSPORT_CLOSE_RECONNECT_FALLBACK_DELAY_MS);
+              this.transportCloseReconnectTimers.add(timer);
+            }
+          },
           onRequestStart: (info) => {
             this.lifecycleHandlers?.onRequestStart?.(info);
             if (!info.stream) {
               return;
             }
+            this.streamStartSequence += 1;
             for (const listener of this.streamRequestStartListeners) {
               listener(info);
             }

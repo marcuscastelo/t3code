@@ -929,6 +929,83 @@ describe("WsTransport", () => {
     await transport.dispose();
   });
 
+  it("re-subscribes live stream listeners after an unintentional socket close", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    const listener = vi.fn();
+    const onResubscribe = vi.fn();
+
+    const unsubscribe = transport.subscribe(
+      (client) => client[WS_METHODS.subscribeServerLifecycle]({}),
+      listener,
+      { onResubscribe },
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+
+    const firstSocket = getSocket();
+    firstSocket.open();
+
+    await waitFor(() => {
+      expect(firstSocket.sent).toHaveLength(1);
+    });
+
+    const firstRequest = JSON.parse(firstSocket.sent[0] ?? "{}") as { id: string };
+    firstSocket.serverMessage(
+      JSON.stringify({
+        _tag: "Chunk",
+        requestId: firstRequest.id,
+        values: [
+          {
+            version: 1,
+            sequence: 1,
+            type: "welcome",
+            payload: {
+              environment: {
+                environmentId: "environment-local",
+                label: "Local environment",
+                platform: { os: "darwin", arch: "arm64" },
+                serverVersion: "0.0.0-test",
+                capabilities: { repositoryIdentity: true },
+              },
+              cwd: "/tmp/one",
+              projectName: "one",
+            },
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(listener).toHaveBeenCalledOnce();
+    });
+
+    firstSocket.close(1006, "network lost");
+
+    await waitFor(() => {
+      expect(sockets.length).toBeGreaterThanOrEqual(2);
+    });
+
+    const secondSocket = getSocket();
+    secondSocket.open();
+
+    await waitFor(() => {
+      expect(secondSocket.sent).toHaveLength(1);
+    });
+
+    const secondRequest = JSON.parse(secondSocket.sent[0] ?? "{}") as {
+      id: string;
+      tag: string;
+    };
+    expect(secondRequest.tag).toBe(WS_METHODS.subscribeServerLifecycle);
+    expect(secondRequest.id).not.toBe(firstRequest.id);
+    expect(onResubscribe).toHaveBeenCalled();
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
   it("does not fire onResubscribe when the first stream attempt exits before any value", async () => {
     const transport = createTransport("ws://localhost:3020");
     const listener = vi.fn();
