@@ -1,6 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { CheckIcon, GitBranchIcon } from "lucide-react";
-import { useGitStatus } from "../../lib/gitStatusState";
+import { useVcsStatus } from "../../lib/vcsStatusState";
 import type { SidebarThreadSummary } from "../../types";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "../Sidebar.logic";
 
@@ -9,7 +9,7 @@ import { resolveThreadStatusPill, type ThreadStatusPill } from "../Sidebar.logic
  *
  * These mirror the mobile design handoff (repo-colored avatars, status pills,
  * diff-stat footers and sync badges) but are wired to the app's real data:
- * per-worktree git status (`useGitStatus`) and the shared thread status logic.
+ * per-worktree git status (`useVcsStatus`) and the shared thread status logic.
  */
 
 // ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ export function useThreadGitStats(
   projectCwd: string | null,
 ): ThreadGitStats | null {
   const cwd = thread.worktreePath ?? projectCwd;
-  const status = useGitStatus({
+  const status = useVcsStatus({
     environmentId: thread.environmentId,
     cwd: thread.branch != null ? cwd : null,
   });
@@ -167,7 +167,7 @@ export function useProjectSync(project: {
   environmentId: EnvironmentId;
   cwd: string;
 }): ProjectSync {
-  const status = useGitStatus({ environmentId: project.environmentId, cwd: project.cwd });
+  const status = useVcsStatus({ environmentId: project.environmentId, cwd: project.cwd });
   const data = status.data;
   if (!data || !data.isRepo) {
     return { kind: "unknown", aheadCount: 0, behindCount: 0 };

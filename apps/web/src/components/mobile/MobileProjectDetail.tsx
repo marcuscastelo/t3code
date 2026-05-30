@@ -2,7 +2,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ArrowLeftIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
 
-import { refreshGitStatus } from "../../lib/gitStatusState";
+import { refreshVcsStatus } from "../../lib/vcsStatusState";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import type { SidebarThreadSummary } from "../../types";
 import { Button } from "../ui/button";
@@ -30,7 +30,7 @@ export function MobileProjectDetail(props: {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await refreshGitStatus({ environmentId: project.environmentId, cwd: project.cwd });
+      await refreshVcsStatus({ environmentId: project.environmentId, cwd: project.cwd });
     } finally {
       setSyncing(false);
     }

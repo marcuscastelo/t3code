@@ -19,7 +19,7 @@ function makeTerminalEvent(
 ): TerminalEvent {
   const base = {
     threadId: THREAD_ID,
-    terminalId: "default",
+    terminalId: "term-1",
     createdAt: "2026-04-02T20:00:00.000Z",
   };
 
@@ -27,10 +27,18 @@ function makeTerminalEvent(
     case "output":
       return { ...base, type, data: "hello\n", ...overrides } as TerminalEvent;
     case "activity":
-      return { ...base, type, hasRunningSubprocess: true, ...overrides } as TerminalEvent;
+      return {
+        ...base,
+        type,
+        hasRunningSubprocess: true,
+        label: "running",
+        ...overrides,
+      } as TerminalEvent;
     case "error":
       return { ...base, type, message: "boom", ...overrides } as TerminalEvent;
     case "cleared":
+      return { ...base, type, ...overrides } as TerminalEvent;
+    case "closed":
       return { ...base, type, ...overrides } as TerminalEvent;
     case "exited":
       return { ...base, type, exitCode: 0, exitSignal: null, ...overrides } as TerminalEvent;
@@ -41,7 +49,8 @@ function makeTerminalEvent(
         type,
         snapshot: {
           threadId: THREAD_ID,
-          terminalId: "default",
+          terminalId: "term-1",
+          label: "term-1",
           cwd: "/tmp/workspace",
           worktreePath: null,
           status: "running",
@@ -79,12 +88,12 @@ describe("terminalStateStore actions", () => {
     expect(terminalState).toEqual({
       terminalOpen: false,
       terminalHeight: 280,
-      terminalIds: ["default"],
+      terminalIds: ["term-1"],
       runningTerminalIds: [],
       runningTerminalStartedAtById: {},
-      activeTerminalId: "default",
-      terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
-      activeTerminalGroupId: "group-default",
+      activeTerminalId: "term-1",
+      terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
+      activeTerminalGroupId: "group-term-1",
     });
   });
 
@@ -98,10 +107,10 @@ describe("terminalStateStore actions", () => {
       THREAD_REF,
     );
     expect(terminalState.terminalOpen).toBe(true);
-    expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "terminal-2"]);
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      { id: "group-term-1", terminalIds: ["term-1", "terminal-2"] },
     ]);
   });
 
@@ -116,14 +125,9 @@ describe("terminalStateStore actions", () => {
       useTerminalStateStore.getState().terminalStateByThreadKey,
       THREAD_REF,
     );
-    expect(terminalState.terminalIds).toEqual([
-      "default",
-      "terminal-2",
-      "terminal-3",
-      "terminal-4",
-    ]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "terminal-2", "terminal-3", "terminal-4"]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2", "terminal-3", "terminal-4"] },
+      { id: "group-term-1", terminalIds: ["term-1", "terminal-2", "terminal-3", "terminal-4"] },
     ]);
   });
 
@@ -134,11 +138,11 @@ describe("terminalStateStore actions", () => {
       useTerminalStateStore.getState().terminalStateByThreadKey,
       THREAD_REF,
     );
-    expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "terminal-2"]);
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.activeTerminalGroupId).toBe("group-terminal-2");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default"] },
+      { id: "group-term-1", terminalIds: ["term-1"] },
       { id: "group-terminal-2", terminalIds: ["terminal-2"] },
     ]);
   });
@@ -152,10 +156,10 @@ describe("terminalStateStore actions", () => {
       THREAD_REF,
     );
     expect(terminalState.terminalOpen).toBe(true);
-    expect(terminalState.terminalIds).toEqual(["default", "setup-setup"]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "setup-setup"]);
     expect(terminalState.activeTerminalId).toBe("setup-setup");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default"] },
+      { id: "group-term-1", terminalIds: ["term-1"] },
       { id: "group-setup-setup", terminalIds: ["setup-setup"] },
     ]);
   });
@@ -176,7 +180,7 @@ describe("terminalStateStore actions", () => {
         useTerminalStateStore.getState().terminalStateByThreadKey,
         OTHER_THREAD_REF,
       ).terminalIds,
-    ).toEqual(["default", "env-b-terminal"]);
+    ).toEqual(["term-1", "env-b-terminal"]);
   });
 
   it("migrates v1 persisted terminal state using the stored version", () => {
@@ -186,20 +190,20 @@ describe("terminalStateStore actions", () => {
           [scopedThreadKey(THREAD_REF)]: {
             terminalOpen: true,
             terminalHeight: 320,
-            terminalIds: ["default"],
+            terminalIds: ["term-1"],
             runningTerminalIds: [],
-            activeTerminalId: "default",
-            terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
-            activeTerminalGroupId: "group-default",
+            activeTerminalId: "term-1",
+            terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
+            activeTerminalGroupId: "group-term-1",
           },
           "legacy-thread-id": {
             terminalOpen: true,
             terminalHeight: 320,
-            terminalIds: ["default"],
+            terminalIds: ["term-1"],
             runningTerminalIds: [],
-            activeTerminalId: "default",
-            terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
-            activeTerminalGroupId: "group-default",
+            activeTerminalId: "term-1",
+            terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
+            activeTerminalGroupId: "group-term-1",
           },
         },
       },
@@ -211,12 +215,12 @@ describe("terminalStateStore actions", () => {
         [scopedThreadKey(THREAD_REF)]: {
           terminalOpen: true,
           terminalHeight: 320,
-          terminalIds: ["default"],
+          terminalIds: ["term-1"],
           runningTerminalIds: [],
           runningTerminalStartedAtById: {},
-          activeTerminalId: "default",
-          terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
-          activeTerminalGroupId: "group-default",
+          activeTerminalId: "term-1",
+          terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
+          activeTerminalGroupId: "group-term-1",
         },
       },
     });
@@ -286,7 +290,7 @@ describe("terminalStateStore actions", () => {
 
   it("resets to default and clears persisted entry when closing the last terminal", () => {
     const store = useTerminalStateStore.getState();
-    store.closeTerminal(THREAD_REF, "default");
+    store.closeTerminal(THREAD_REF, "term-1");
 
     expect(
       useTerminalStateStore.getState().terminalStateByThreadKey[scopedThreadKey(THREAD_REF)],
@@ -296,7 +300,7 @@ describe("terminalStateStore actions", () => {
         useTerminalStateStore.getState().terminalStateByThreadKey,
         THREAD_REF,
       ).terminalIds,
-    ).toEqual(["default"]);
+    ).toEqual(["term-1"]);
   });
 
   it("keeps a valid active terminal after closing an active split terminal", () => {
@@ -310,9 +314,9 @@ describe("terminalStateStore actions", () => {
       THREAD_REF,
     );
     expect(terminalState.activeTerminalId).toBe("terminal-2");
-    expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "terminal-2"]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      { id: "group-term-1", terminalIds: ["term-1", "terminal-2"] },
     ]);
   });
 
@@ -324,7 +328,7 @@ describe("terminalStateStore actions", () => {
     const entries = selectTerminalEventEntries(
       useTerminalStateStore.getState().terminalEventEntriesByKey,
       THREAD_REF,
-      "default",
+      "term-1",
     );
 
     expect(entries).toHaveLength(2);
@@ -341,6 +345,7 @@ describe("terminalStateStore actions", () => {
         snapshot: {
           threadId: THREAD_ID,
           terminalId: "setup-bootstrap",
+          label: "setup-bootstrap",
           cwd: "/tmp/worktree",
           worktreePath: "/tmp/worktree",
           status: "running",
@@ -365,7 +370,7 @@ describe("terminalStateStore actions", () => {
 
     expect(terminalState.terminalOpen).toBe(true);
     expect(terminalState.activeTerminalId).toBe("setup-bootstrap");
-    expect(terminalState.terminalIds).toEqual(["default", "setup-bootstrap"]);
+    expect(terminalState.terminalIds).toEqual(["term-1", "setup-bootstrap"]);
     expect(
       useTerminalStateStore.getState().terminalLaunchContextByThreadKey[
         scopedThreadKey(THREAD_REF)
@@ -427,7 +432,7 @@ describe("terminalStateStore actions", () => {
     const entries = selectTerminalEventEntries(
       useTerminalStateStore.getState().terminalEventEntriesByKey,
       THREAD_REF,
-      "default",
+      "term-1",
     );
 
     expect(entries).toEqual([]);
