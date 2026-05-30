@@ -64,9 +64,11 @@ Keep this table current when creating new feature branches, adding features, mer
 | Worklog details dialog + copy                                              | `origin/clickable-worklog`                                      | Clean, 1 commit              |
 | Provider rate limits UI + Claude probing + pacing                          | `origin/provider-limits-ui`                                     | Clean, 3 commits             |
 | Rate-limit pace delta percent/hours                                        | `origin/t3code/pp-hours`                                        | Stacked on provider limits   |
+| Codex multi-bucket/root rate limit handling                                | `origin/fix/codex-limits-pp`                                    | Stacked, 2 new commits       |
 | Multi-device/thread orchestration events via WebSocket + connected devices | `origin/t3code/multi-device-thread-sync`                        | Stacked, 40 commits          |
 | Commit/push/update-PR git action + tests/base-ref fix                      | `origin/update-pr-action`                                       | Stacked, 41 commits          |
 | Background work in sidebar/timeline                                        | `origin/t3code/background-work-indicator`                       | Clean, 1 commit              |
+| Reconnect live stream listeners after socket close                         | `origin/fix/reconnect-ui-stale`                                 | Stacked on marucs-code       |
 | Fork workflow docs / MCP tooling notes                                     | `origin/marucs-code`                                            | No dedicated clean PR branch |
 
 ## If you REALLY want to contribute still.... read this first
