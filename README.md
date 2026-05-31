@@ -69,6 +69,7 @@ Keep this table current when creating new feature branches, adding features, mer
 | Commit/push/update-PR git action + tests/base-ref fix                      | `origin/update-pr-action`                                       | Stacked, 41 commits          |
 | Background work in sidebar/timeline                                        | `origin/t3code/background-work-indicator`                       | Clean, 1 commit              |
 | Reconnect live stream listeners after socket close                         | `origin/fix/reconnect-ui-stale`                                 | Stacked on marucs-code       |
+| Project hook execution for turn lifecycle events                           | `origin/feature/more-action-hooks`                              | Clean, 1 commit              |
 | Fork workflow docs / MCP tooling notes                                     | `origin/marucs-code`                                            | No dedicated clean PR branch |
 
 ## If you REALLY want to contribute still.... read this first
