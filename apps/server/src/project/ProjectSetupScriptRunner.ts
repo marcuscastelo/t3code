@@ -69,6 +69,22 @@ export const ProjectSetupScriptRunnerError = Schema.Union([
 ]);
 export type ProjectSetupScriptRunnerError = typeof ProjectSetupScriptRunnerError.Type;
 
+export function projectSetupScriptErrorMessage(error: ProjectSetupScriptRunnerError): string {
+  if (error._tag !== "ProjectSetupScriptOperationError") {
+    return error.message;
+  }
+  const cause = error.cause;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "message" in cause &&
+    typeof cause.message === "string"
+  ) {
+    return cause.message;
+  }
+  return String(cause);
+}
+
 export class ProjectSetupScriptRunner extends Context.Service<
   ProjectSetupScriptRunner,
   {
