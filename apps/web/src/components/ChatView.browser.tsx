@@ -2324,6 +2324,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           command: "bun run lint",
           icon: "lint",
           runOnWorktreeCreate: false,
+          runOnEvents: [],
         },
       ]),
     });
@@ -2403,6 +2404,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           command: "bun run test",
           icon: "test",
           runOnWorktreeCreate: false,
+          runOnEvents: [],
         },
       ]),
     });
@@ -2469,6 +2471,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           command: "bun install",
           icon: "configure",
           runOnWorktreeCreate: true,
+          runOnEvents: ["worktree.created"],
         },
       ]),
       resolveRpc: (body) => {
@@ -2597,6 +2600,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           command: "bun install",
           icon: "configure",
           runOnWorktreeCreate: true,
+          runOnEvents: ["worktree.created"],
         },
       ]),
       resolveRpc: (body) => {
@@ -3106,6 +3110,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
           command: "bun install",
           icon: "configure",
           runOnWorktreeCreate: true,
+          runOnEvents: ["worktree.created"],
         },
       ]),
       resolveRpc: (body) => {

@@ -95,10 +95,10 @@ import {
 } from "./observability/Services/BrowserTraceCollector.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
 import {
-  ProjectSetupScriptRunner,
-  ProjectSetupScriptRunnerError,
-  type ProjectSetupScriptRunnerShape,
-} from "./project/Services/ProjectSetupScriptRunner.ts";
+  ProjectHookRunner,
+  ProjectHookRunnerError,
+  type ProjectHookRunnerShape,
+} from "./project/Services/ProjectHookRunner.ts";
 import {
   RepositoryIdentityResolver,
   type RepositoryIdentityResolverShape,
@@ -334,7 +334,7 @@ const buildAppUnderTest = (options?: {
     sourceControlRepositoryService?: Partial<SourceControlRepositoryService.SourceControlRepositoryServiceShape>;
     reviewService?: Partial<ReviewService.ReviewServiceShape>;
     vcsStatusBroadcaster?: Partial<VcsStatusBroadcaster.VcsStatusBroadcasterShape>;
-    projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
+    projectSetupScriptRunner?: Partial<ProjectHookRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
@@ -636,7 +636,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provideMerge(vcsStatusBroadcasterLayer),
       Layer.provide(
-        Layer.mock(ProjectSetupScriptRunner)({
+        Layer.mock(ProjectHookRunner)({
           runForThread: () => Effect.succeed({ status: "no-script" as const }),
           ...options?.layers?.projectSetupScriptRunner,
         }),
@@ -3995,15 +3995,21 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               },
             }),
         );
-        const runForThread = vi.fn(
-          (_: Parameters<ProjectSetupScriptRunnerShape["runForThread"]>[0]) =>
-            Effect.succeed({
-              status: "started" as const,
-              scriptId: "setup",
-              scriptName: "Setup",
-              terminalId: "setup-setup",
-              cwd: "/tmp/bootstrap-worktree",
-            }),
+        const runForThread = vi.fn((_: Parameters<ProjectHookRunnerShape["runForThread"]>[0]) =>
+          Effect.succeed({
+            status: "started" as const,
+            scripts: [
+              {
+                scriptId: "setup",
+                scriptName: "Setup",
+                terminalId: "setup-setup",
+                cwd: "/tmp/bootstrap-worktree",
+              },
+            ],
+            payloadJsonPath: "/tmp/hook-runs/payload.json",
+            transcriptJsonPath: null,
+            transcriptMarkdownPath: null,
+          }),
         );
 
         yield* buildAppUnderTest({
@@ -4086,10 +4092,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           path: null,
         });
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
+          event: "worktree.created",
+          hookRunId: "cmd-bootstrap-turn-start:worktree.created",
           threadId: ThreadId.make("thread-bootstrap"),
           projectId: defaultProjectId,
           projectCwd: "/tmp/project",
           worktreePath: "/tmp/bootstrap-worktree",
+          payload: {
+            threadId: ThreadId.make("thread-bootstrap"),
+            projectId: defaultProjectId,
+            projectCwd: "/tmp/project",
+            worktreePath: "/tmp/bootstrap-worktree",
+          },
         });
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
@@ -4121,9 +4135,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             },
           }),
       );
-      const runForThread = vi.fn(
-        (_: Parameters<ProjectSetupScriptRunnerShape["runForThread"]>[0]) =>
-          Effect.fail(new ProjectSetupScriptRunnerError({ message: "pty unavailable" })),
+      const runForThread = vi.fn((_: Parameters<ProjectHookRunnerShape["runForThread"]>[0]) =>
+        Effect.fail(new ProjectHookRunnerError({ message: "pty unavailable" })),
       );
 
       yield* buildAppUnderTest({
@@ -4215,15 +4228,21 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             },
           }),
       );
-      const runForThread = vi.fn(
-        (_: Parameters<ProjectSetupScriptRunnerShape["runForThread"]>[0]) =>
-          Effect.succeed({
-            status: "started" as const,
-            scriptId: "setup",
-            scriptName: "Setup",
-            terminalId: "setup-setup",
-            cwd: "/tmp/bootstrap-worktree",
-          }),
+      const runForThread = vi.fn((_: Parameters<ProjectHookRunnerShape["runForThread"]>[0]) =>
+        Effect.succeed({
+          status: "started" as const,
+          scripts: [
+            {
+              scriptId: "setup",
+              scriptName: "Setup",
+              terminalId: "setup-setup",
+              cwd: "/tmp/bootstrap-worktree",
+            },
+          ],
+          payloadJsonPath: "/tmp/hook-runs/payload.json",
+          transcriptJsonPath: null,
+          transcriptMarkdownPath: null,
+        }),
       );
       let setupActivityAppendAttempt = 0;
 

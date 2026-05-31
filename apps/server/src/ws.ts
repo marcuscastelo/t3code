@@ -67,7 +67,7 @@ import { VcsStatusBroadcaster } from "./vcs/VcsStatusBroadcaster.ts";
 import { VcsProvisioningService } from "./vcs/VcsProvisioningService.ts";
 import { GitWorkflowService } from "./git/GitWorkflowService.ts";
 import { ReviewService } from "./review/ReviewService.ts";
-import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner.ts";
+import { ProjectHookRunner } from "./project/Services/ProjectHookRunner.ts";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
@@ -164,7 +164,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
-      const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
+      const projectHookRunner = yield* ProjectHookRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
@@ -206,7 +206,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
       const appendSetupScriptActivity = (input: {
         readonly threadId: ThreadId;
-        readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
+        readonly kind:
+          | "setup-script.requested"
+          | "setup-script.started"
+          | "setup-script.failed"
+          | "hook.failed";
         readonly summary: string;
         readonly createdAt: string;
         readonly payload: Record<string, unknown>;
@@ -466,12 +470,20 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               }
               const worktreePath = targetWorktreePath;
               const requestedAt = yield* nowIso;
-              yield* projectSetupScriptRunner
+              yield* projectHookRunner
                 .runForThread({
+                  event: "worktree.created",
+                  hookRunId: `${command.commandId}:worktree.created`,
                   threadId: command.threadId,
                   ...(targetProjectId ? { projectId: targetProjectId } : {}),
                   ...(targetProjectCwd ? { projectCwd: targetProjectCwd } : {}),
                   worktreePath,
+                  payload: {
+                    threadId: command.threadId,
+                    projectId: targetProjectId ?? null,
+                    projectCwd: targetProjectCwd ?? null,
+                    worktreePath,
+                  },
                 })
                 .pipe(
                   Effect.matchEffect({
@@ -481,17 +493,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                         requestedAt,
                         worktreePath,
                       }),
-                    onSuccess: (setupResult) => {
-                      if (setupResult.status !== "started") {
+                    onSuccess: (hookResult) => {
+                      if (hookResult.status !== "started") {
                         return Effect.void;
                       }
-                      return recordSetupScriptStarted({
-                        requestedAt,
-                        worktreePath,
-                        scriptId: setupResult.scriptId,
-                        scriptName: setupResult.scriptName,
-                        terminalId: setupResult.terminalId,
-                      });
+                      return Effect.forEach(
+                        hookResult.scripts,
+                        (script) =>
+                          recordSetupScriptStarted({
+                            requestedAt,
+                            worktreePath,
+                            scriptId: script.scriptId,
+                            scriptName: script.scriptName,
+                            terminalId: script.terminalId,
+                          }),
+                        { concurrency: 1, discard: true },
+                      );
                     },
                   }),
                 );
@@ -607,6 +624,82 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
+      const readEventAtSequence = (sequence: number) =>
+        Stream.take(orchestrationEngine.readEvents(Math.max(0, sequence - 1)), 1).pipe(
+          Stream.runCollect,
+          Effect.map((chunk) => Array.from(chunk)[0] ?? null),
+          Effect.catch(() => Effect.succeed(null)),
+        );
+
+      const runThreadArchivedHook = (input: {
+        readonly command: Extract<OrchestrationCommand, { type: "thread.archive" }>;
+        readonly result: { readonly sequence: number };
+      }) =>
+        Effect.gen(function* () {
+          const archivedEvent = yield* readEventAtSequence(input.result.sequence);
+          if (archivedEvent?.type !== "thread.archived") {
+            return;
+          }
+          const snapshot = yield* projectionSnapshotQuery.getSnapshot();
+          const thread = snapshot.threads.find(
+            (candidate) => candidate.id === input.command.threadId,
+          );
+          if (!thread) {
+            return;
+          }
+          const project = snapshot.projects.find((candidate) => candidate.id === thread.projectId);
+          if (!project) {
+            return;
+          }
+          const hookResult = yield* projectHookRunner
+            .runForThread({
+              event: "thread.archived",
+              hookRunId: archivedEvent.eventId,
+              threadId: thread.id,
+              projectId: project.id,
+              projectCwd: project.workspaceRoot,
+              worktreePath: thread.worktreePath,
+              payload: archivedEvent,
+              transcript: {
+                event: archivedEvent,
+                project,
+                thread,
+              },
+            })
+            .pipe(Effect.result);
+
+          if (hookResult._tag === "Failure") {
+            const detail = hookResult.failure.message;
+            yield* Effect.logWarning("thread archive hook failed to start", {
+              threadId: thread.id,
+              detail,
+            });
+            yield* appendSetupScriptActivity({
+              threadId: thread.id,
+              kind: "hook.failed",
+              summary: "Project hook failed to start",
+              createdAt: yield* nowIso,
+              payload: {
+                hookEvent: "thread.archived",
+                sourceEventId: archivedEvent.eventId,
+                sourceEventType: archivedEvent.type,
+                detail,
+              },
+              tone: "error",
+            }).pipe(Effect.ignoreCause({ log: true }));
+          }
+        }).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.failCause(cause);
+            }
+            return Effect.logWarning("thread archive hook failed", {
+              threadId: input.command.threadId,
+              cause: Cause.pretty(cause),
+            });
+          }),
+        );
+
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
@@ -660,6 +753,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     }),
                   ),
                 );
+                yield* runThreadArchivedHook({
+                  command: normalizedCommand,
+                  result,
+                });
               }
               return result;
             }).pipe(

@@ -188,12 +188,23 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
+export const ProjectScriptHookEvent = Schema.Literals([
+  "worktree.created",
+  "thread.archived",
+  "thread.turn.started",
+  "thread.turn.completed",
+]);
+export type ProjectScriptHookEvent = typeof ProjectScriptHookEvent.Type;
+
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
-  runOnWorktreeCreate: Schema.Boolean,
+  runOnWorktreeCreate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  runOnEvents: Schema.Array(ProjectScriptHookEvent).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 

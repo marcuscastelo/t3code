@@ -1,8 +1,10 @@
 import type {
   ProjectScript,
+  ProjectScriptHookEvent,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { projectScriptHookEvents } from "@t3tools/shared/projectScripts";
 import {
   BugIcon,
   ChevronDownIcon,
@@ -37,6 +39,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import {
   Dialog,
   DialogDescription,
@@ -51,7 +54,6 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
-import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 
 const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
@@ -62,6 +64,20 @@ const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "build", label: "Build" },
   { id: "debug", label: "Debug" },
 ];
+
+const HOOK_EVENT_OPTIONS: Array<{ id: ProjectScriptHookEvent; label: string; badge: string }> = [
+  { id: "worktree.created", label: "Worktree created", badge: "worktree" },
+  { id: "thread.archived", label: "Chat archived", badge: "archive" },
+  { id: "thread.turn.started", label: "Turn started", badge: "start" },
+  { id: "thread.turn.completed", label: "Turn completed", badge: "complete" },
+];
+
+function hookBadges(script: ProjectScript): string[] {
+  const events = projectScriptHookEvents(script);
+  return HOOK_EVENT_OPTIONS.filter((option) => events.includes(option.id)).map(
+    (option) => option.badge,
+  );
+}
 
 function ScriptIcon({
   icon,
@@ -83,6 +99,7 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
+  runOnEvents: ProjectScriptHookEvent[];
   keybinding: string | null;
 }
 
@@ -112,7 +129,7 @@ export default function ProjectScriptsControl({
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
+  const [runOnEvents, setRunOnEvents] = useState<ProjectScriptHookEvent[]>([]);
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -138,6 +155,15 @@ export default function ProjectScriptsControl({
     const next = keybindingFromKeyboardEvent(event, navigator.platform);
     if (!next) return;
     setKeybinding(next);
+  };
+
+  const toggleHookEvent = (hookEvent: ProjectScriptHookEvent, checked: boolean) => {
+    setRunOnEvents((current) => {
+      if (checked) {
+        return current.includes(hookEvent) ? current : [...current, hookEvent];
+      }
+      return current.filter((event) => event !== hookEvent);
+    });
   };
 
   const submitAddScript = async (event: FormEvent) => {
@@ -169,7 +195,8 @@ export default function ProjectScriptsControl({
         name: trimmedName,
         command: trimmedCommand,
         icon,
-        runOnWorktreeCreate,
+        runOnWorktreeCreate: runOnEvents.includes("worktree.created"),
+        runOnEvents,
         keybinding: keybindingRule?.key ?? null,
       } satisfies NewProjectScriptInput;
       if (editingScriptId) {
@@ -190,7 +217,7 @@ export default function ProjectScriptsControl({
     setCommand("");
     setIcon("play");
     setIconPickerOpen(false);
-    setRunOnWorktreeCreate(false);
+    setRunOnEvents([]);
     setKeybinding("");
     setValidationError(null);
     setDialogOpen(true);
@@ -202,7 +229,7 @@ export default function ProjectScriptsControl({
     setCommand(script.command);
     setIcon(script.icon);
     setIconPickerOpen(false);
-    setRunOnWorktreeCreate(script.runOnWorktreeCreate);
+    setRunOnEvents([...projectScriptHookEvents(script)]);
     setKeybinding(keybindingValueForCommand(keybindings, commandForProjectScript(script.id)) ?? "");
     setValidationError(null);
     setDialogOpen(true);
@@ -250,9 +277,15 @@ export default function ProjectScriptsControl({
                     onClick={() => onRunScript(script)}
                   >
                     <ScriptIcon icon={script.icon} className="size-4" />
-                    <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate">{script.name}</span>
+                    {hookBadges(script).map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded border border-border/70 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground"
+                      >
+                        {badge}
+                      </span>
+                    ))}
                     <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
                       {shortcutLabel && (
                         <MenuShortcut className="ms-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
@@ -310,7 +343,7 @@ export default function ProjectScriptsControl({
           setName("");
           setCommand("");
           setIcon("play");
-          setRunOnWorktreeCreate(false);
+          setRunOnEvents([]);
           setKeybinding("");
           setValidationError(null);
         }}
@@ -398,13 +431,23 @@ export default function ProjectScriptsControl({
                   onChange={(event) => setCommand(event.target.value)}
                 />
               </div>
-              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
-                <span>Run automatically on worktree creation</span>
-                <Switch
-                  checked={runOnWorktreeCreate}
-                  onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-                />
-              </label>
+              <div className="space-y-2">
+                <Label>Run on events</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {HOOK_EVENT_OPTIONS.map((option) => (
+                    <label
+                      key={option.id}
+                      className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={runOnEvents.includes(option.id)}
+                        onCheckedChange={(checked) => toggleHookEvent(option.id, checked === true)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               {validationError && <p className="text-sm text-destructive">{validationError}</p>}
             </form>
           </DialogPanel>

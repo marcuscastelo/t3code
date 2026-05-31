@@ -43,7 +43,7 @@ import {
 
 import { GitManagerError } from "@t3tools/contracts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
-import { ProjectSetupScriptRunner } from "../project/Services/ProjectSetupScriptRunner.ts";
+import { ProjectHookRunner } from "../project/Services/ProjectHookRunner.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
@@ -564,7 +564,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const gitCore = yield* GitVcsDriver;
   const sourceControlProviders = yield* SourceControlProviderRegistry;
   const textGeneration = yield* TextGeneration;
-  const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
+  const projectHookRunner = yield* ProjectHookRunner;
   const crypto = yield* Crypto.Crypto;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
@@ -1587,11 +1587,18 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       if (!input.threadId) {
         return Effect.void;
       }
-      return projectSetupScriptRunner
+      return projectHookRunner
         .runForThread({
+          event: "worktree.created",
+          hookRunId: `${input.threadId}:worktree.created`,
           threadId: input.threadId,
           projectCwd: input.cwd,
           worktreePath,
+          payload: {
+            threadId: input.threadId,
+            projectCwd: input.cwd,
+            worktreePath,
+          },
         })
         .pipe(
           Effect.catch((error) =>

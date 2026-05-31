@@ -15,6 +15,7 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  ProjectScript,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -29,6 +30,7 @@ const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFul
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
+const decodeProjectScript = Schema.decodeUnknownEffect(ProjectScript);
 const decodeProjectMetaUpdatedPayload = Schema.decodeUnknownEffect(ProjectMetaUpdatedPayload);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
@@ -135,6 +137,36 @@ it.effect("trims branded ids and command string fields at decode boundaries", ()
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5.2",
     });
+  }),
+);
+
+it.effect("decodes legacy project scripts without runOnEvents", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeProjectScript({
+      id: "setup",
+      name: "Setup",
+      command: "bun install",
+      icon: "configure",
+      runOnWorktreeCreate: true,
+    });
+
+    assert.strictEqual(parsed.runOnWorktreeCreate, true);
+    assert.deepEqual(parsed.runOnEvents, []);
+  }),
+);
+
+it.effect("decodes project script hook events", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeProjectScript({
+      id: "archive",
+      name: "Archive",
+      command: "scripts/archive-chat",
+      icon: "play",
+      runOnEvents: ["thread.archived", "thread.turn.completed"],
+    });
+
+    assert.strictEqual(parsed.runOnWorktreeCreate, false);
+    assert.deepEqual(parsed.runOnEvents, ["thread.archived", "thread.turn.completed"]);
   }),
 );
 

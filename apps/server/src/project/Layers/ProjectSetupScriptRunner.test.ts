@@ -1,12 +1,15 @@
 import { ProjectId, type OrchestrationProject } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { describe, expect, it, vi } from "vitest";
 
+import { ServerConfig } from "../../config.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { TerminalManager } from "../../terminal/Services/Manager.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
 import { ProjectSetupScriptRunner } from "../Services/ProjectSetupScriptRunner.ts";
+import { ProjectHookRunnerLive } from "./ProjectHookRunner.ts";
 import { ProjectSetupScriptRunnerLive } from "./ProjectSetupScriptRunner.ts";
 
 const makeProject = (scripts: OrchestrationProject["scripts"]): OrchestrationProject => ({
@@ -41,6 +44,15 @@ const makeProjectionSnapshotQueryLayer = (project: OrchestrationProject) =>
     getThreadDetailById: () => Effect.die("unused"),
   });
 
+const makeRunnerLayer = (project: OrchestrationProject, terminalManager: TerminalManagerShape) =>
+  ProjectSetupScriptRunnerLive.pipe(
+    Layer.provide(ProjectHookRunnerLive),
+    Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
+    Layer.provideMerge(Layer.succeed(TerminalManager, terminalManager)),
+    Layer.provideMerge(ServerConfig.layerTest("/repo/project", "/tmp/t3-project-hook-runner-test")),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
 describe("ProjectSetupScriptRunner", () => {
   it("returns no-script when no setup script exists", async () => {
     const open = vi.fn();
@@ -49,22 +61,17 @@ describe("ProjectSetupScriptRunner", () => {
     const runner = await Effect.runPromise(
       Effect.service(ProjectSetupScriptRunner).pipe(
         Effect.provide(
-          ProjectSetupScriptRunnerLive.pipe(
-            Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
-            Layer.provideMerge(
-              Layer.succeed(TerminalManager, {
-                open,
-                attachStream: () => Effect.die(new Error("unused")),
-                write,
-                resize: () => Effect.void,
-                clear: () => Effect.void,
-                restart: () => Effect.die(new Error("unused")),
-                close: () => Effect.void,
-                subscribe: () => Effect.succeed(() => undefined),
-                subscribeMetadata: () => Effect.succeed(() => undefined),
-              }),
-            ),
-          ),
+          makeRunnerLayer(project, {
+            open,
+            attachStream: () => Effect.die(new Error("unused")),
+            write,
+            resize: () => Effect.void,
+            clear: () => Effect.void,
+            restart: () => Effect.die(new Error("unused")),
+            close: () => Effect.void,
+            subscribe: () => Effect.succeed(() => undefined),
+            subscribeMetadata: () => Effect.succeed(() => undefined),
+          }),
         ),
       ),
     );
@@ -106,27 +113,23 @@ describe("ProjectSetupScriptRunner", () => {
         command: "bun install",
         icon: "configure",
         runOnWorktreeCreate: true,
+        runOnEvents: ["worktree.created"],
       },
     ]);
     const runner = await Effect.runPromise(
       Effect.service(ProjectSetupScriptRunner).pipe(
         Effect.provide(
-          ProjectSetupScriptRunnerLive.pipe(
-            Layer.provideMerge(makeProjectionSnapshotQueryLayer(project)),
-            Layer.provideMerge(
-              Layer.succeed(TerminalManager, {
-                open,
-                attachStream: () => Effect.die(new Error("unused")),
-                write,
-                resize: () => Effect.void,
-                clear: () => Effect.void,
-                restart: () => Effect.die(new Error("unused")),
-                close: () => Effect.void,
-                subscribe: () => Effect.succeed(() => undefined),
-                subscribeMetadata: () => Effect.succeed(() => undefined),
-              }),
-            ),
-          ),
+          makeRunnerLayer(project, {
+            open,
+            attachStream: () => Effect.die(new Error("unused")),
+            write,
+            resize: () => Effect.void,
+            clear: () => Effect.void,
+            restart: () => Effect.die(new Error("unused")),
+            close: () => Effect.void,
+            subscribe: () => Effect.succeed(() => undefined),
+            subscribeMetadata: () => Effect.succeed(() => undefined),
+          }),
         ),
       ),
     );
@@ -151,10 +154,12 @@ describe("ProjectSetupScriptRunner", () => {
       terminalId: "setup-setup",
       cwd: "/repo/worktrees/a",
       worktreePath: "/repo/worktrees/a",
-      env: {
+      env: expect.objectContaining({
         T3CODE_PROJECT_ROOT: "/repo/project",
         T3CODE_WORKTREE_PATH: "/repo/worktrees/a",
-      },
+        T3CODE_HOOK_EVENT: "worktree.created",
+        T3CODE_HOOK_RUN_ID: "thread-1:worktree.created",
+      }),
     });
     expect(write).toHaveBeenCalledWith({
       threadId: "thread-1",

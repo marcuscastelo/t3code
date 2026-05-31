@@ -36,11 +36,11 @@ import { makeGitManager } from "./GitManager.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
-  ProjectSetupScriptRunner,
-  ProjectSetupScriptRunnerError,
-  type ProjectSetupScriptRunnerInput,
-  type ProjectSetupScriptRunnerShape,
-} from "../project/Services/ProjectSetupScriptRunner.ts";
+  ProjectHookRunner,
+  ProjectHookRunnerError,
+  type ProjectHookRunnerInput,
+  type ProjectHookRunnerShape,
+} from "../project/Services/ProjectHookRunner.ts";
 
 interface FakeGhScenario {
   prListSequence?: string[];
@@ -697,7 +697,7 @@ function preparePullRequestThread(
 function makeManager(input?: {
   ghScenario?: FakeGhScenario;
   textGeneration?: Partial<FakeGitTextGeneration>;
-  setupScriptRunner?: ProjectSetupScriptRunnerShape;
+  setupScriptRunner?: ProjectHookRunnerShape;
 }) {
   const { service: gitHubCli, ghCalls } = createGitHubCliWithFakeGh(input?.ghScenario);
   const textGeneration = createTextGeneration(input?.textGeneration);
@@ -730,7 +730,7 @@ function makeManager(input?: {
   const managerLayer = Layer.mergeAll(
     Layer.succeed(TextGeneration, textGeneration),
     Layer.succeed(
-      ProjectSetupScriptRunner,
+      ProjectHookRunner,
       input?.setupScriptRunner ?? {
         runForThread: () => Effect.succeed({ status: "no-script" as const }),
       },
@@ -2749,7 +2749,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "origin", "HEAD:refs/pull/177/head"]);
       yield* runGit(repoDir, ["checkout", "main"]);
 
-      const setupCalls: ProjectSetupScriptRunnerInput[] = [];
+      const setupCalls: ProjectHookRunnerInput[] = [];
       const { manager } = yield* makeManager({
         ghScenario: {
           pullRequest: {
@@ -2780,9 +2780,16 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       expect(result.worktreePath).not.toBeNull();
       expect(setupCalls).toHaveLength(1);
       expect(setupCalls[0]).toEqual({
+        event: "worktree.created",
+        hookRunId: "thread-pr-setup:worktree.created",
         threadId: "thread-pr-setup",
         projectCwd: repoDir,
         worktreePath: result.worktreePath as string,
+        payload: {
+          threadId: "thread-pr-setup",
+          projectCwd: repoDir,
+          worktreePath: result.worktreePath as string,
+        },
       });
     }),
   );
@@ -2971,7 +2978,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const worktreePath = path.join(repoDir, "..", `pr-existing-${path.basename(repoDir)}`);
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-existing-worktree"]);
 
-      const setupCalls: ProjectSetupScriptRunnerInput[] = [];
+      const setupCalls: ProjectHookRunnerInput[] = [];
       const { manager } = yield* makeManager({
         ghScenario: {
           pullRequest: {
@@ -3211,7 +3218,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         },
         setupScriptRunner: {
           runForThread: () =>
-            Effect.fail(new ProjectSetupScriptRunnerError({ message: "terminal start failed" })),
+            Effect.fail(new ProjectHookRunnerError({ message: "terminal start failed" })),
         },
       });
 
