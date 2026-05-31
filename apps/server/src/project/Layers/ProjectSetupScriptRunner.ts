@@ -1,11 +1,8 @@
-import { ProjectId } from "@t3tools/contracts";
-import { projectScriptRuntimeEnv, setupProjectScript } from "@t3tools/shared/projectScripts";
+import { WORKTREE_CREATED_HOOK_EVENT } from "@t3tools/shared/projectScripts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
-import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { TerminalManager } from "../../terminal/Services/Manager.ts";
+import { ProjectHookRunner } from "../Services/ProjectHookRunner.ts";
 import {
   type ProjectSetupScriptRunnerShape,
   ProjectSetupScriptRunner,
@@ -13,84 +10,44 @@ import {
 } from "../Services/ProjectSetupScriptRunner.ts";
 
 const makeProjectSetupScriptRunner = Effect.gen(function* () {
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-  const terminalManager = yield* TerminalManager;
+  const projectHookRunner = yield* ProjectHookRunner;
 
   const runForThread: ProjectSetupScriptRunnerShape["runForThread"] = (input) =>
-    Effect.gen(function* () {
-      const project =
-        (input.projectId
-          ? yield* projectionSnapshotQuery
-              .getProjectShellById(ProjectId.make(input.projectId))
-              .pipe(Effect.map(Option.getOrUndefined))
-          : null) ??
-        (input.projectCwd
-          ? yield* projectionSnapshotQuery
-              .getActiveProjectByWorkspaceRoot(input.projectCwd)
-              .pipe(Effect.map(Option.getOrUndefined))
-          : null) ??
-        null;
-
-      if (!project) {
-        return yield* new ProjectSetupScriptRunnerError({
-          message: "Project was not found for setup script execution.",
-        });
-      }
-
-      const script = setupProjectScript(project.scripts);
-      if (!script) {
-        return {
-          status: "no-script",
-        } as const;
-      }
-
-      const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
-      const cwd = input.worktreePath;
-      const env = projectScriptRuntimeEnv({
-        project: { cwd: project.workspaceRoot },
-        worktreePath: input.worktreePath,
-      });
-
-      yield* terminalManager.open({
+    projectHookRunner
+      .runForThread({
+        event: WORKTREE_CREATED_HOOK_EVENT,
+        hookRunId: `${input.threadId}:worktree.created`,
         threadId: input.threadId,
-        terminalId,
-        cwd,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.projectCwd ? { projectCwd: input.projectCwd } : {}),
         worktreePath: input.worktreePath,
-        env,
-      });
-      yield* terminalManager.write({
-        threadId: input.threadId,
-        terminalId,
-        data: `${script.command}\r`,
-      });
-
-      return {
-        status: "started",
-        scriptId: script.id,
-        scriptName: script.name,
-        terminalId,
-        cwd,
-      } as const;
-    }).pipe(
-      Effect.mapError((cause) => {
-        if (
-          typeof cause === "object" &&
-          cause !== null &&
-          "_tag" in cause &&
-          cause._tag === "ProjectSetupScriptRunnerError"
-        ) {
-          return cause as ProjectSetupScriptRunnerError;
-        }
-        const message =
-          typeof cause === "object" &&
-          cause !== null &&
-          "message" in cause &&
-          typeof cause.message === "string"
-            ? cause.message
-            : String(cause);
-        return new ProjectSetupScriptRunnerError({ message });
-      }),
-    );
+        ...(input.preferredTerminalId ? { preferredTerminalId: input.preferredTerminalId } : {}),
+        payload: {
+          threadId: input.threadId,
+          projectId: input.projectId ?? null,
+          projectCwd: input.projectCwd ?? null,
+          worktreePath: input.worktreePath,
+        },
+      })
+      .pipe(
+        Effect.map((result) => {
+          if (result.status !== "started") {
+            return result;
+          }
+          const first = result.scripts[0];
+          if (!first) {
+            return { status: "no-script" } as const;
+          }
+          return {
+            status: "started",
+            scriptId: first.scriptId,
+            scriptName: first.scriptName,
+            terminalId: first.terminalId,
+            cwd: first.cwd,
+          } as const;
+        }),
+        Effect.mapError((cause) => new ProjectSetupScriptRunnerError({ message: cause.message })),
+      );
 
   return {
     runForThread,
