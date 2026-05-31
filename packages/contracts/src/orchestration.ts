@@ -188,12 +188,20 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
+export const ProjectScriptHookEvent = Schema.Literals([
+  "worktree.created",
+  "thread.archived",
+  "thread.turn.started",
+  "thread.turn.completed",
+]);
+export type ProjectScriptHookEvent = typeof ProjectScriptHookEvent.Type;
+
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
-  runOnWorktreeCreate: Schema.Boolean,
+  runOnWorktreeCreate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * URL to open in the in-app browser preview when this script runs (or
    * when the user explicitly requests a preview). Optional; only honored on
@@ -205,6 +213,7 @@ export const ProjectScript = Schema.Struct({
    * the moment this script starts. Ignored without `previewUrl` or on web.
    */
   autoOpenPreview: Schema.optional(Schema.Boolean),
+  runOnEvents: Schema.optional(Schema.Array(ProjectScriptHookEvent)),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 

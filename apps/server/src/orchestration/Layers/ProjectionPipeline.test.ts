@@ -2615,6 +2615,7 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
             command: "bun run build",
             icon: "build",
             runOnWorktreeCreate: false,
+            runOnEvents: [],
           },
         ],
         defaultModelSelection: {
