@@ -167,7 +167,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
           autoBootstrapProjectFromCwd: false,
           logWebSocketEvents: false,
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
           port: 0,
           host: undefined,
           desktopBootstrapToken: undefined,

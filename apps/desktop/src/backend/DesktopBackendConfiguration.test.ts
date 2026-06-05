@@ -148,15 +148,15 @@ describe("DesktopBackendConfiguration", () => {
           environment.serverSettingsPath,
           yield* encodePersistedServerObservabilitySettingsDocument({
             observability: {
-              otlpTracesUrl: " http://127.0.0.1:4318/v1/traces ",
-              otlpMetricsUrl: " http://127.0.0.1:4318/v1/metrics ",
+              otlpTracesUrl: " http://127.0.0.1:14318/v1/traces ",
+              otlpMetricsUrl: " http://127.0.0.1:14318/v1/metrics ",
             },
           }),
         );
 
         const config = yield* configuration.resolve;
-        assert.equal(config.bootstrap.otlpTracesUrl, "http://127.0.0.1:4318/v1/traces");
-        assert.equal(config.bootstrap.otlpMetricsUrl, "http://127.0.0.1:4318/v1/metrics");
+        assert.equal(config.bootstrap.otlpTracesUrl, "http://127.0.0.1:14318/v1/traces");
+        assert.equal(config.bootstrap.otlpMetricsUrl, "http://127.0.0.1:14318/v1/metrics");
       }),
     ),
   );

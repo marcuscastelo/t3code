@@ -30,7 +30,7 @@ const makeDesktopBootstrap = (
   host: "127.0.0.1",
   desktopBootstrapToken: "desktop-bootstrap-token",
   tailscaleServeEnabled: false,
-  tailscaleServePort: 443,
+  tailscaleServePort: 8443,
   ...overrides,
 });
 
@@ -60,7 +60,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
       const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-env-base");
-      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:5173"));
+      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:5733"));
       const resolved = yield* resolveServerConfig(
         {
           mode: Option.none(),
@@ -88,7 +88,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_PORT: "4001",
                   T3CODE_HOST: "0.0.0.0",
                   T3CODE_HOME: baseDir,
-                  VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
+                  VITE_DEV_SERVER_URL: "http://127.0.0.1:5733",
                   T3CODE_NO_BROWSER: "true",
                   T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
                   T3CODE_LOG_WS_EVENTS: "true",
@@ -110,14 +110,14 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ...derivedPaths,
         host: "0.0.0.0",
         staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:5173"),
+        devUrl: new URL("http://127.0.0.1:5733"),
         noBrowser: true,
         startupPresentation: "browser",
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: true,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
     }),
   );
@@ -126,7 +126,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
       const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-flags-base");
-      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4173"));
+      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4373"));
       const resolved = yield* resolveServerConfig(
         {
           mode: Option.some("web"),
@@ -134,7 +134,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.some("127.0.0.1"),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.some(new URL("http://127.0.0.1:4173")),
+          devUrl: Option.some(new URL("http://127.0.0.1:4373")),
           noBrowser: Option.some(true),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.some(true),
@@ -154,7 +154,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_PORT: "4001",
                   T3CODE_HOST: "0.0.0.0",
                   T3CODE_HOME: join(NodeOS.tmpdir(), "ignored-base"),
-                  VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
+                  VITE_DEV_SERVER_URL: "http://127.0.0.1:5733",
                   T3CODE_NO_BROWSER: "false",
                   T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
                   T3CODE_LOG_WS_EVENTS: "false",
@@ -176,7 +176,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ...derivedPaths,
         host: "127.0.0.1",
         staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:4173"),
+        devUrl: new URL("http://127.0.0.1:4373"),
         noBrowser: true,
         startupPresentation: "browser",
         desktopBootstrapToken: undefined,
@@ -196,10 +196,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         makeDesktopBootstrap({
           noBrowser: true,
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
         }),
       );
-      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4173"));
+      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4373"));
 
       const resolved = yield* resolveServerConfig(
         {
@@ -208,7 +208,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.some("127.0.0.1"),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.some(new URL("http://127.0.0.1:4173")),
+          devUrl: Option.some(new URL("http://127.0.0.1:4373")),
           noBrowser: Option.some(false),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.some(false),
@@ -245,14 +245,14 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ...derivedPaths,
         host: "127.0.0.1",
         staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:4173"),
+        devUrl: new URL("http://127.0.0.1:4373"),
         noBrowser: false,
         startupPresentation: "browser",
         desktopBootstrapToken: "desktop-bootstrap-token",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
     }),
   );
@@ -269,9 +269,9 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           noBrowser: true,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
-          otlpTracesUrl: "http://localhost:4318/v1/traces",
-          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+          tailscaleServePort: 8443,
+          otlpTracesUrl: "http://localhost:14318/v1/traces",
+          otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         }),
       );
       const derivedPaths = yield* deriveServerPaths(baseDir, undefined);
@@ -310,8 +310,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
-        otlpTracesUrl: "http://localhost:4318/v1/traces",
-        otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        otlpTracesUrl: "http://localhost:14318/v1/traces",
+        otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         mode: "desktop",
         port: 4888,
         cwd: process.cwd(),
@@ -326,7 +326,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
       assert.equal(join(baseDir, "userdata"), resolved.stateDir);
     }),
@@ -346,7 +346,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.none(),
           baseDir: Option.some(baseDir),
           cwd: Option.some(customCwd),
-          devUrl: Option.some(new URL("http://127.0.0.1:5173")),
+          devUrl: Option.some(new URL("http://127.0.0.1:5733")),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
@@ -393,10 +393,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           noBrowser: false,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
         }),
       );
-      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4173"));
+      const derivedPaths = yield* deriveServerPaths(baseDir, new URL("http://127.0.0.1:4373"));
 
       const resolved = yield* resolveServerConfig(
         {
@@ -405,7 +405,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.some("127.0.0.1"),
           baseDir: Option.none(),
           cwd: Option.none(),
-          devUrl: Option.some(new URL("http://127.0.0.1:4173")),
+          devUrl: Option.some(new URL("http://127.0.0.1:4373")),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
@@ -444,14 +444,14 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ...derivedPaths,
         host: "127.0.0.1",
         staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:4173"),
+        devUrl: new URL("http://127.0.0.1:4373"),
         noBrowser: true,
         startupPresentation: "browser",
         desktopBootstrapToken: "desktop-token",
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
     }),
   );
@@ -468,8 +468,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         // @effect-diagnostics-next-line preferSchemaOverJson:off
         `${JSON.stringify({
           observability: {
-            otlpTracesUrl: "http://localhost:4318/v1/traces",
-            otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+            otlpTracesUrl: "http://localhost:14318/v1/traces",
+            otlpMetricsUrl: "http://localhost:14318/v1/metrics",
           },
         })}\n`,
       );
@@ -499,13 +499,13 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ),
       );
 
-      expect(resolved.otlpTracesUrl).toBe("http://localhost:4318/v1/traces");
-      expect(resolved.otlpMetricsUrl).toBe("http://localhost:4318/v1/metrics");
+      expect(resolved.otlpTracesUrl).toBe("http://localhost:14318/v1/traces");
+      expect(resolved.otlpMetricsUrl).toBe("http://localhost:14318/v1/metrics");
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
-        otlpTracesUrl: "http://localhost:4318/v1/traces",
-        otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        otlpTracesUrl: "http://localhost:14318/v1/traces",
+        otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         mode: "desktop",
         port: 4888,
         cwd: process.cwd(),
@@ -520,7 +520,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
     }),
   );
@@ -583,7 +583,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       });
     }),
   );

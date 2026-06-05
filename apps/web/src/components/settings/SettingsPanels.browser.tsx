@@ -157,8 +157,8 @@ vi.mock("../../environments/runtime", () => {
       source: "manual" as const,
       environmentId: EnvironmentId.make("environment-local"),
       target: {
-        httpBaseUrl: "http://localhost:3000",
-        wsBaseUrl: "ws://localhost:3000",
+        httpBaseUrl: "http://localhost:3300",
+        wsBaseUrl: "ws://localhost:3300",
       },
     },
     environmentId: EnvironmentId.make("environment-local"),
@@ -174,7 +174,7 @@ vi.mock("../../environments/runtime", () => {
   };
 
   return {
-    getEnvironmentHttpBaseUrl: () => "http://localhost:3000",
+    getEnvironmentHttpBaseUrl: () => "http://localhost:3300",
     getSavedEnvironmentRecord: () => null,
     getSavedEnvironmentRuntimeState: () => null,
     hasSavedEnvironmentRegistryHydrated: () => true,
@@ -182,7 +182,7 @@ vi.mock("../../environments/runtime", () => {
     resetSavedEnvironmentRegistryStoreForTests: () => undefined,
     resetSavedEnvironmentRuntimeStoreForTests: () => undefined,
     resolveEnvironmentHttpUrl: (_environmentId: unknown, path: string) =>
-      new URL(path, "http://localhost:3000").toString(),
+      new URL(path, "http://localhost:3300").toString(),
     waitForSavedEnvironmentRegistryHydration: async () => undefined,
     addSavedEnvironment: vi.fn(),
     connectDesktopSshEnvironment: mockConnectDesktopSshEnvironment,
@@ -229,7 +229,7 @@ function createBaseServerConfig(): ServerConfig {
     observability: {
       logsDirectoryPath: "/repo/project/.t3/logs",
       localTracingEnabled: true,
-      otlpTracesUrl: "http://localhost:4318/v1/traces",
+      otlpTracesUrl: "http://localhost:14318/v1/traces",
       otlpTracesEnabled: true,
       otlpMetricsEnabled: false,
     },
@@ -424,7 +424,7 @@ const createDesktopBridgeStub = (overrides?: {
         endpointUrl: null,
         advertisedHost: null,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       },
     ),
     setServerExposureMode:
@@ -434,7 +434,7 @@ const createDesktopBridgeStub = (overrides?: {
         endpointUrl: mode === "network-accessible" ? "http://192.168.1.44:3773" : null,
         advertisedHost: mode === "network-accessible" ? "192.168.1.44" : null,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       })),
     setTailscaleServeEnabled: vi.fn().mockImplementation(async (input) => ({
       mode: overrides?.serverExposureState?.mode ?? "network-accessible",
@@ -576,7 +576,7 @@ describe("GeneralSettingsPanel observability", () => {
         endpointUrl: null,
         advertisedHost: null,
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       },
       advertisedEndpoints: [
         {
@@ -648,7 +648,7 @@ describe("GeneralSettingsPanel observability", () => {
         endpointUrl: "http://192.168.86.39:3773",
         advertisedHost: "192.168.86.39",
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       },
       advertisedEndpoints: [
         {
@@ -756,7 +756,7 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(
         page.getByText(
-          "Local trace file. Exporting OTEL traces to http://localhost:4318/v1/traces.",
+          "Local trace file. Exporting OTEL traces to http://localhost:14318/v1/traces.",
         ),
       )
       .toBeInTheDocument();
@@ -769,7 +769,7 @@ describe("GeneralSettingsPanel observability", () => {
         endpointUrl: "http://192.168.1.44:3773",
         advertisedHost: "192.168.1.44",
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       },
     });
     let pairingLinks: Array<AuthAccessSnapshot["pairingLinks"][number]> = [];
@@ -887,7 +887,7 @@ describe("GeneralSettingsPanel observability", () => {
         endpointUrl: "http://192.168.1.44:3773",
         advertisedHost: "192.168.1.44",
         tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
+        tailscaleServePort: 8443,
       },
     });
     let clientSessions: Array<AuthAccessSnapshot["clientSessions"][number]> = [

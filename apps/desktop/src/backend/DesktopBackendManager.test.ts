@@ -68,7 +68,7 @@ const baseConfig: DesktopBackendManager.DesktopBackendStartConfig = {
     host: "127.0.0.1",
     desktopBootstrapToken: "token",
     tailscaleServeEnabled: false,
-    tailscaleServePort: 443,
+    tailscaleServePort: 8443,
   },
   httpBaseUrl: new URL("http://127.0.0.1:3773"),
   captureOutput: true,
@@ -77,7 +77,7 @@ const baseConfig: DesktopBackendManager.DesktopBackendStartConfig = {
 const configWithObservability: DesktopBackendBootstrapValue = {
   ...baseConfig.bootstrap,
   tailscaleServeEnabled: true,
-  otlpTracesUrl: "http://127.0.0.1:4318/v1/traces",
+  otlpTracesUrl: "http://127.0.0.1:14318/v1/traces",
 };
 
 function makeProcess(options?: {

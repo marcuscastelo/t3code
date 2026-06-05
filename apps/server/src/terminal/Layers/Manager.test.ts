@@ -1185,9 +1185,9 @@ it.layer(
         }
       };
 
-      setEnv("PORT", "5173");
+      setEnv("PORT", "5733");
       setEnv("T3CODE_PORT", "3773");
-      setEnv("VITE_DEV_SERVER_URL", "http://localhost:5173");
+      setEnv("VITE_DEV_SERVER_URL", "http://localhost:5733");
       setEnv("TEST_TERMINAL_KEEP", "keep-me");
 
       try {

@@ -60,7 +60,7 @@ const testConfig = {
   autoBootstrapProjectFromCwd: false,
   logWebSocketEvents: false,
   tailscaleServeEnabled: false,
-  tailscaleServePort: 443,
+  tailscaleServePort: 8443,
 } satisfies ServerConfigShape;
 
 function withProcessEnvValue<A, E, R>(

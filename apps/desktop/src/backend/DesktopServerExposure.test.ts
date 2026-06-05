@@ -135,14 +135,14 @@ describe("DesktopServerExposure", () => {
 
         yield* settings.setServerExposureMode("network-accessible");
 
-        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        const state = yield* serverExposure.configureFromSettings({ port: 4373 });
         assert.equal(state.mode, "local-only");
         assert.equal(state.endpointUrl, null);
         assert.equal((yield* settings.get).serverExposureMode, "network-accessible");
 
         const backendConfig = yield* serverExposure.backendConfig;
         assert.equal(backendConfig.bindHost, "127.0.0.1");
-        assert.equal(backendConfig.httpBaseUrl.href, "http://127.0.0.1:4173/");
+        assert.equal(backendConfig.httpBaseUrl.href, "http://127.0.0.1:4373/");
       }),
     ),
   );
@@ -152,11 +152,11 @@ describe("DesktopServerExposure", () => {
       emptyNetworkInterfaces,
       Effect.gen(function* () {
         const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.configureFromSettings({ port: 4373 });
 
         const error = yield* serverExposure.setMode("network-accessible").pipe(Effect.flip);
         assert.ok(error._tag === "DesktopServerExposureNoNetworkAddressError");
-        assert.equal(error.port, 4173);
+        assert.equal(error.port, 4373);
       }),
     ),
   );
@@ -169,21 +169,21 @@ describe("DesktopServerExposure", () => {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
         yield* settings.load;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.configureFromSettings({ port: 4373 });
 
         const change = yield* serverExposure.setMode("network-accessible");
         assert.equal(change.requiresRelaunch, true);
         assert.deepEqual(change.state, {
           mode: "network-accessible",
-          endpointUrl: "http://192.168.1.20:4173",
+          endpointUrl: "http://192.168.1.20:4373",
           advertisedHost: "192.168.1.20",
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
         });
 
         const backendConfig = yield* serverExposure.backendConfig;
         assert.equal(backendConfig.bindHost, "0.0.0.0");
-        assert.equal(backendConfig.httpBaseUrl.href, "http://127.0.0.1:4173/");
+        assert.equal(backendConfig.httpBaseUrl.href, "http://127.0.0.1:4373/");
 
         const persisted = yield* settings.get;
         assert.equal(persisted.serverExposureMode, "network-accessible");
@@ -199,7 +199,7 @@ describe("DesktopServerExposure", () => {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
         yield* settings.load;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.configureFromSettings({ port: 4373 });
 
         const changed = yield* serverExposure.setTailscaleServeEnabled({
           enabled: true,
@@ -227,13 +227,13 @@ describe("DesktopServerExposure", () => {
       { ...lanNetworkInterfaces, ...tailnetNetworkInterfaces },
       Effect.gen(function* () {
         const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.configureFromSettings({ port: 4373 });
         yield* serverExposure.setMode("network-accessible");
 
         const endpoints = yield* serverExposure.getAdvertisedEndpoints;
         assert.deepEqual(
           endpoints.map((endpoint) => endpoint.httpBaseUrl),
-          ["http://127.0.0.1:4173/", "http://192.168.1.20:4173/", "http://100.90.1.2:4173/"],
+          ["http://127.0.0.1:4373/", "http://192.168.1.20:4373/", "http://100.90.1.2:4373/"],
         );
       }),
     ),
@@ -244,16 +244,16 @@ describe("DesktopServerExposure", () => {
       lanNetworkInterfaces,
       Effect.gen(function* () {
         const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+        yield* serverExposure.configureFromSettings({ port: 4373 });
         const change = yield* serverExposure.setMode("network-accessible");
 
         assert.equal(change.state.advertisedHost, "10.0.0.7");
-        assert.equal(change.state.endpointUrl, "http://10.0.0.7:4173");
+        assert.equal(change.state.endpointUrl, "http://10.0.0.7:4373");
 
         const endpoints = yield* serverExposure.getAdvertisedEndpoints;
         assert.deepEqual(
           endpoints.map((endpoint) => endpoint.httpBaseUrl),
-          ["http://127.0.0.1:4173/", "http://10.0.0.7:4173/", "https://public.example.test/"],
+          ["http://127.0.0.1:4373/", "http://10.0.0.7:4373/", "https://public.example.test/"],
         );
       }),
       {

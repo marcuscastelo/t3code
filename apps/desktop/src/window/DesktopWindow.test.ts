@@ -82,7 +82,7 @@ const desktopServerExposureLayer = Layer.succeed(DesktopServerExposure.DesktopSe
     bindHost: "127.0.0.1",
     httpBaseUrl: new URL("http://127.0.0.1:3773"),
     tailscaleServeEnabled: false,
-    tailscaleServePort: 443,
+    tailscaleServePort: 8443,
   }),
   configureFromSettings: () => Effect.die("unexpected configureFromSettings"),
   setMode: () => Effect.die("unexpected setMode"),

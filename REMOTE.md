@@ -48,7 +48,7 @@ Depending on your Tailscale setup, this may include:
 - an HTTPS MagicDNS endpoint when Tailscale Serve is configured for this backend
 
 The Tailscale HTTPS endpoint uses the clean MagicDNS URL, such as
-`https://machine.tailnet.ts.net/`, and is disabled until the app verifies that the URL reaches this
+`https://machine.tailnet.ts.net:8443/`, and is disabled until the app verifies that the URL reaches this
 backend. Use **Setup** on the Tailscale HTTPS row to opt in. The desktop app restarts the backend
 with the same server-side behavior as `t3 serve --tailscale-serve`, then the server asks Tailscale
 Serve to proxy HTTPS traffic to the local backend.
@@ -89,8 +89,8 @@ For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
 npx t3 serve --tailscale-serve
 ```
 
-By default this configures Tailscale Serve on HTTPS port 443 and advertises
-`https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
+By default this configures Tailscale Serve on HTTPS port 8443 and advertises
+`https://machine.tailnet.ts.net:8443/`. Advanced users can choose a different HTTPS port:
 
 ```bash
 npx t3 serve --tailscale-serve --tailscale-serve-port 8443

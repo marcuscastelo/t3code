@@ -82,14 +82,14 @@ node --run dev:desktop
 
 ```bash
 docker run --name lgtm \
-  -p 3000:3000 \
-  -p 4317:4317 \
-  -p 4318:4318 \
+  -p 3301:3000 \
+  -p 14317:4317 \
+  -p 14318:4318 \
   --rm -ti \
   grafana/otel-lgtm
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:3301`.
 
 Default Grafana login:
 
@@ -99,8 +99,8 @@ Default Grafana login:
 #### 2. Export OTLP env vars
 
 ```bash
-export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
-export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics
+export T3CODE_OTLP_TRACES_URL=http://localhost:14318/v1/traces
+export T3CODE_OTLP_METRICS_URL=http://localhost:14318/v1/metrics
 export T3CODE_OTLP_SERVICE_NAME=t3-local
 ```
 
@@ -138,8 +138,8 @@ Launch the actual app executable from the same shell so the desktop app and embe
 macOS app bundle example:
 
 ```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
+T3CODE_OTLP_TRACES_URL=http://localhost:14318/v1/traces \
+T3CODE_OTLP_METRICS_URL=http://localhost:14318/v1/metrics \
 T3CODE_OTLP_SERVICE_NAME=t3-desktop \
 "/Applications/T3 Code.app/Contents/MacOS/T3 Code"
 ```
@@ -147,8 +147,8 @@ T3CODE_OTLP_SERVICE_NAME=t3-desktop \
 Direct binary example:
 
 ```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
+T3CODE_OTLP_TRACES_URL=http://localhost:14318/v1/traces \
+T3CODE_OTLP_METRICS_URL=http://localhost:14318/v1/metrics \
 T3CODE_OTLP_SERVICE_NAME=t3-desktop \
 ./path/to/your/desktop-app-binary
 ```

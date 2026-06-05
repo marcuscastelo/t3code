@@ -6,7 +6,7 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
+export const DEFAULT_TAILSCALE_SERVE_PORT = 8443;
 export const TAILSCALE_STATUS_TIMEOUT_MS = 1_500;
 export const TAILSCALE_SERVE_TIMEOUT_MS = 10_000;
 export const TAILSCALE_PROBE_TIMEOUT_MS = 2_500;
@@ -195,7 +195,7 @@ export function buildTailscaleHttpsBaseUrl(input: {
 }): string {
   const url = new URL(`https://${input.magicDnsName}`);
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
-  if (servePort !== DEFAULT_TAILSCALE_SERVE_PORT) {
+  if (servePort !== 443) {
     url.port = String(servePort);
   }
   url.pathname = "/";

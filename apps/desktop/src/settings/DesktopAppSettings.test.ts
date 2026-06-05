@@ -92,7 +92,7 @@ describe("DesktopSettings", () => {
     assert.deepEqual(resolveDefaultDesktopSettings("0.0.17-nightly.20260415.1"), {
       serverExposureMode: "local-only",
       tailscaleServeEnabled: false,
-      tailscaleServePort: 443,
+      tailscaleServePort: 8443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     } satisfies DesktopSettingsValue);
@@ -231,7 +231,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
           updateChannel: "nightly",
           updateChannelConfiguredByUser: false,
         } satisfies DesktopSettingsValue);
@@ -253,7 +253,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: true,
         } satisfies DesktopSettingsValue);
@@ -274,7 +274,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           serverExposureMode: "local-only",
           tailscaleServeEnabled: true,
-          tailscaleServePort: 443,
+          tailscaleServePort: 8443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
         } satisfies DesktopSettingsValue);

@@ -387,15 +387,15 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const next = yield* serverSettings.updateSettings({
         addProjectBaseDirectory: "  ~/Development  ",
         observability: {
-          otlpTracesUrl: "  http://localhost:4318/v1/traces  ",
-          otlpMetricsUrl: "  http://localhost:4318/v1/metrics  ",
+          otlpTracesUrl: "  http://localhost:14318/v1/traces  ",
+          otlpMetricsUrl: "  http://localhost:14318/v1/metrics  ",
         },
       });
 
       assert.equal(next.addProjectBaseDirectory, "~/Development");
       assert.deepEqual(next.observability, {
-        otlpTracesUrl: "http://localhost:4318/v1/traces",
-        otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        otlpTracesUrl: "http://localhost:14318/v1/traces",
+        otlpMetricsUrl: "http://localhost:14318/v1/metrics",
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -428,8 +428,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const next = yield* serverSettings.updateSettings({
         addProjectBaseDirectory: "~/Development",
         observability: {
-          otlpTracesUrl: "http://localhost:4318/v1/traces",
-          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+          otlpTracesUrl: "http://localhost:14318/v1/traces",
+          otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         },
         providers: {
           codex: {
@@ -450,8 +450,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(JSON.parse(raw), {
         addProjectBaseDirectory: "~/Development",
         observability: {
-          otlpTracesUrl: "http://localhost:4318/v1/traces",
-          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+          otlpTracesUrl: "http://localhost:14318/v1/traces",
+          otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         },
         providers: {
           codex: {

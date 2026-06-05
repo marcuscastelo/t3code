@@ -77,7 +77,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
       tailscaleServeEnabled: false,
-      tailscaleServePort: 443,
+      tailscaleServePort: 8443,
     } satisfies ServerConfigShape;
   });
 
@@ -342,7 +342,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
         "add",
         workspaceRoot,
         "--dev-url",
-        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5733",
       ]).pipe(Effect.flip);
 
       if (!CliError.isCliError(error)) {

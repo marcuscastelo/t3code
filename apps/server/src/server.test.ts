@@ -378,7 +378,7 @@ const buildAppUnderTest = (options?: {
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
       tailscaleServeEnabled: false,
-      tailscaleServePort: 443,
+      tailscaleServePort: 8443,
       ...options?.config,
     };
     const layerConfig = Layer.succeed(ServerConfig, config);
@@ -978,7 +978,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("redirects to dev URL when configured", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
-        config: { devUrl: new URL("http://127.0.0.1:5173") },
+        config: { devUrl: new URL("http://127.0.0.1:5733") },
       });
 
       const response = yield* HttpClient.get("/foo/bar?token=test-token").pipe(
@@ -986,7 +986,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(response.status, 302);
-      assert.equal(response.headers.location, "http://127.0.0.1:5173/foo/bar?token=test-token");
+      assert.equal(response.headers.location, "http://127.0.0.1:5733/foo/bar?token=test-token");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -1003,7 +1003,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       yield* buildAppUnderTest({
-        config: { devUrl: new URL("http://127.0.0.1:5173") },
+        config: { devUrl: new URL("http://127.0.0.1:5733") },
       });
 
       const response = yield* HttpClient.get(
@@ -1028,7 +1028,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
 
       yield* buildAppUnderTest({
-        config: { devUrl: new URL("http://127.0.0.1:5173") },
+        config: { devUrl: new URL("http://127.0.0.1:5733") },
       });
 
       const response = yield* HttpClient.get(
@@ -2162,8 +2162,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         config: {
-          otlpTracesUrl: "http://localhost:4318/v1/traces",
-          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+          otlpTracesUrl: "http://localhost:14318/v1/traces",
+          otlpMetricsUrl: "http://localhost:14318/v1/metrics",
         },
         layers: {
           keybindings: {
@@ -2195,9 +2195,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.providers, providers);
         assert.equal(first.config.observability.logsDirectoryPath.endsWith("/logs"), true);
         assert.equal(first.config.observability.localTracingEnabled, true);
-        assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
+        assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:14318/v1/traces");
         assert.equal(first.config.observability.otlpTracesEnabled, true);
-        assert.equal(first.config.observability.otlpMetricsUrl, "http://localhost:4318/v1/metrics");
+        assert.equal(first.config.observability.otlpMetricsUrl, "http://localhost:14318/v1/metrics");
         assert.equal(first.config.observability.otlpMetricsEnabled, true);
         assert.deepEqual(first.config.settings, DEFAULT_SERVER_SETTINGS);
       }

@@ -33,7 +33,7 @@ export interface DesktopSettingsChange {
   readonly changed: boolean;
 }
 
-export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
+export const DEFAULT_TAILSCALE_SERVE_PORT = 8443;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   serverExposureMode: "local-only",
