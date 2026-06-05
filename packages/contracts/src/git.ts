@@ -329,7 +329,7 @@ export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()(
   command: Schema.String,
   cwd: Schema.String,
   detail: Schema.String,
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
     return `Git command failed in ${this.operation}: ${this.command} (${this.cwd}) - ${this.detail}`;
@@ -341,7 +341,7 @@ export class TextGenerationError extends Schema.TaggedErrorClass<TextGenerationE
   {
     operation: Schema.String,
     detail: Schema.String,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
@@ -352,7 +352,7 @@ export class TextGenerationError extends Schema.TaggedErrorClass<TextGenerationE
 export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()("GitManagerError", {
   operation: Schema.String,
   detail: Schema.String,
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
     return `Git manager failed in ${this.operation}: ${this.detail}`;

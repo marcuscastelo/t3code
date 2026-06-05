@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { AuthStandardClientScopes, ProviderDriverKind } from "@t3tools/contracts";
 
 import {
   countConnectedClientSessions,
@@ -44,7 +44,7 @@ function makeClientSession(input: { sessionId: string; connected: boolean }): Au
   return {
     sessionId: input.sessionId as never,
     subject: `subject-${input.sessionId}` as never,
-    role: "client",
+    scopes: AuthStandardClientScopes,
     method: "browser-session-cookie",
     client: {
       deviceType: "unknown",

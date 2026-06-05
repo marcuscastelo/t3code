@@ -58,6 +58,9 @@ describe("DesktopLifecycle", () => {
         setDesktopName: () => Effect.void,
         setDockIcon: () => Effect.void,
         appendCommandLineSwitch: () => Effect.void,
+        requestSingleInstanceLock: Effect.succeed(true),
+        isDefaultProtocolClient: () => Effect.succeed(false),
+        setAsDefaultProtocolClient: () => Effect.succeed(true),
         on: (eventName, listener) =>
           Effect.sync(() => {
             listeners.set(eventName, listener as (...args: readonly unknown[]) => void);
@@ -126,6 +129,9 @@ describe("DesktopLifecycle", () => {
         setDesktopName: () => Effect.void,
         setDockIcon: () => Effect.void,
         appendCommandLineSwitch: () => Effect.void,
+        requestSingleInstanceLock: Effect.succeed(true),
+        isDefaultProtocolClient: () => Effect.succeed(false),
+        setAsDefaultProtocolClient: () => Effect.succeed(true),
         on: () => Effect.void,
       } satisfies ElectronApp.ElectronAppShape);
 

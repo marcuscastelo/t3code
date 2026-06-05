@@ -8,8 +8,9 @@ import { fileURLToPath } from "node:url";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { AuthControlPlaneRuntimeLive } from "../auth/Layers/AuthControlPlane.ts";
-import { AuthControlPlane } from "../auth/Services/AuthControlPlane.ts";
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
 import { ServerConfig, type ServerConfigShape } from "../config.ts";
 
 export interface ServerTrayHandle {
@@ -78,16 +79,17 @@ const issueTraySessionToken = Effect.fn("server.tray.issueSessionToken")(functio
   config: ServerConfigShape,
 ) {
   return yield* Effect.gen(function* () {
-    const authControlPlane = yield* AuthControlPlane;
-    const issued = yield* authControlPlane.issueSession({
-      role: "owner",
+    const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const issued = yield* environmentAuth.issueSession({
       subject: "tray-server",
       label: "T3 Code tray",
     });
     return issued.token;
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(AuthControlPlaneRuntimeLive).pipe(
+      EnvironmentAuth.layer.pipe(
+        Layer.provideMerge(ServerSecretStore.layer),
+        Layer.provideMerge(SqlitePersistenceLayer),
         Layer.provide(Layer.succeed(ServerConfig, config)),
       ),
     ),

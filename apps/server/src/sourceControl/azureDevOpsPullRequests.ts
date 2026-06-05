@@ -23,6 +23,17 @@ const AzureDevOpsPullRequestSchema = Schema.Struct({
   title: TrimmedNonEmptyString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   url: Schema.optional(Schema.String),
+  repository: Schema.optional(
+    Schema.Struct({
+      name: Schema.optional(Schema.String),
+      webUrl: Schema.optional(Schema.String),
+      project: Schema.optional(
+        Schema.Struct({
+          name: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+  ),
   sourceRefName: TrimmedNonEmptyString,
   targetRefName: TrimmedNonEmptyString,
   status: Schema.String,
@@ -59,6 +70,67 @@ function normalizeAzureDevOpsPullRequestState(status: string): "open" | "closed"
   }
 }
 
+function encodeAzureDevOpsPathSegment(segment: string): string {
+  return encodeURIComponent(segment);
+}
+
+function azureDevOpsOrganizationBaseFromRestApiUrl(
+  value: string | null | undefined,
+): string | null {
+  const rawUrl = trimOptionalString(value);
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase();
+    const pathSegments = url.pathname.split("/").filter((segment) => segment.length > 0);
+    const isAzureRestUrl = pathSegments.some((segment) => segment.toLowerCase() === "_apis");
+    if (!isAzureRestUrl) {
+      return null;
+    }
+
+    if (hostname === "dev.azure.com") {
+      const organization = pathSegments[0];
+      return organization ? `${url.origin}/${organization}` : null;
+    }
+
+    if (hostname.endsWith(".visualstudio.com")) {
+      return url.origin;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAzureDevOpsPullRequestUrl(
+  raw: Schema.Schema.Type<typeof AzureDevOpsPullRequestSchema>,
+): string {
+  const webLink = trimOptionalString(raw._links?.web?.href);
+  if (webLink) {
+    return webLink;
+  }
+
+  const repositoryWebUrl = trimOptionalString(raw.repository?.webUrl);
+  if (repositoryWebUrl) {
+    return `${repositoryWebUrl.replace(/\/+$/, "")}/pullrequest/${raw.pullRequestId}`;
+  }
+
+  const organizationBase = azureDevOpsOrganizationBaseFromRestApiUrl(raw.url);
+  const projectName = trimOptionalString(raw.repository?.project?.name);
+  const repositoryName = trimOptionalString(raw.repository?.name);
+  if (organizationBase && projectName && repositoryName) {
+    const encodedProjectName = encodeAzureDevOpsPathSegment(projectName);
+    const encodedRepositoryName = encodeAzureDevOpsPathSegment(repositoryName);
+    return `${organizationBase}/${encodedProjectName}/_git/${encodedRepositoryName}/pullrequest/${raw.pullRequestId}`;
+  }
+
+  return trimOptionalString(raw.url) ?? "";
+}
+
 function normalizeAzureDevOpsPullRequestRecord(
   raw: Schema.Schema.Type<typeof AzureDevOpsPullRequestSchema>,
 ): NormalizedAzureDevOpsPullRequestRecord {
@@ -66,7 +138,7 @@ function normalizeAzureDevOpsPullRequestRecord(
     number: raw.pullRequestId,
     title: raw.title,
     ...(raw.description !== undefined && raw.description !== null ? { body: raw.description } : {}),
-    url: trimOptionalString(raw._links?.web?.href) ?? trimOptionalString(raw.url) ?? "",
+    url: normalizeAzureDevOpsPullRequestUrl(raw),
     baseRefName: normalizeRefName(raw.targetRefName),
     headRefName: normalizeRefName(raw.sourceRefName),
     state: normalizeAzureDevOpsPullRequestState(raw.status),

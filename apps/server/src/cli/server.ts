@@ -1,3 +1,4 @@
+// @effect-diagnostics anyUnknownInErrorContext:off - CLI Command handlers expose broad Effect types at the library boundary.
 import * as Effect from "effect/Effect";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 
