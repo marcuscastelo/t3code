@@ -28,6 +28,19 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+
+export const ProjectContextId = TrimmedNonEmptyString.pipe(Schema.brand("ProjectContextId"));
+export type ProjectContextId = typeof ProjectContextId.Type;
+
+export const ProjectContext = Schema.Struct({
+  id: ProjectContextId,
+  name: TrimmedNonEmptyString,
+  color: Schema.optionalKey(TrimmedNonEmptyString),
+  icon: Schema.optionalKey(TrimmedNonEmptyString),
+  sortOrder: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+});
+export type ProjectContext = typeof ProjectContext.Type;
+
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -72,6 +85,15 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  projectContexts: Schema.Array(ProjectContext).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  activeProjectContextId: Schema.NullOr(ProjectContextId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  projectContextAssignments: Schema.Record(TrimmedNonEmptyString, ProjectContextId).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -558,6 +580,11 @@ export const ClientSettingsPatch = Schema.Struct({
         ),
       }),
     ),
+  ),
+  projectContexts: Schema.optionalKey(Schema.Array(ProjectContext)),
+  activeProjectContextId: Schema.optionalKey(Schema.NullOr(ProjectContextId)),
+  projectContextAssignments: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, ProjectContextId),
   ),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
