@@ -22,6 +22,9 @@ const clientSettings: ClientSettings = {
   glassOpacity: 80,
   providerModelPreferences: {},
   sidebarAutoSettleAfterDays: 3,
+  projectContexts: [],
+  activeProjectContextId: null,
+  projectContextAssignments: {},
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
