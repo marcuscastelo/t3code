@@ -9,6 +9,7 @@ const traySessionToken = process.env.T3CODE_TRAY_SESSION_TOKEN ?? "";
 const iconPath = process.env.T3CODE_TRAY_ICON_PATH ?? "";
 const restartExecPath = process.env.T3CODE_TRAY_RESTART_EXEC_PATH ?? "";
 const restartCwd = process.env.T3CODE_TRAY_RESTART_CWD ?? process.cwd();
+const trayIconSize = process.platform === "linux" ? 22 : process.platform === "darwin" ? 18 : 16;
 
 let tray = null;
 let contextMenu = null;
@@ -175,11 +176,12 @@ function createTrayImage() {
     return iconPath;
   }
 
-  if (process.platform === "linux") {
-    return image.resize({ width: 22, height: 22 });
+  const resized = image.resize({ width: trayIconSize, height: trayIconSize });
+  if (process.platform === "darwin") {
+    resized.setTemplateImage(true);
   }
 
-  return image;
+  return resized;
 }
 
 function openContextMenu() {
