@@ -20,6 +20,9 @@ const clientSettings: ClientSettings = {
   diffWordWrap: true,
   favorites: [],
   providerModelPreferences: {},
+  projectContexts: [],
+  activeProjectContextId: null,
+  projectContextAssignments: {},
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",

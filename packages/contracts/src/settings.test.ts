@@ -2,11 +2,54 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import {
+  ClientSettingsPatch,
+  ClientSettingsSchema,
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
+  ProjectContextId,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "./settings.ts";
 
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+
+describe("ClientSettings.projectContexts", () => {
+  it("defaults context fields to an empty all-context view", () => {
+    expect(DEFAULT_CLIENT_SETTINGS.projectContexts).toEqual([]);
+    expect(DEFAULT_CLIENT_SETTINGS.activeProjectContextId).toBeNull();
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextAssignments).toEqual({});
+
+    const decoded = decodeClientSettings({});
+    expect(decoded.projectContexts).toEqual([]);
+    expect(decoded.activeProjectContextId).toBeNull();
+    expect(decoded.projectContextAssignments).toEqual({});
+  });
+
+  it("decodes context patches as client-only settings", () => {
+    const patch = decodeClientSettingsPatch({
+      projectContexts: [{ id: " work ", name: " Work ", sortOrder: 2 }],
+      activeProjectContextId: " work ",
+      projectContextAssignments: {
+        "repo:github.com/acme/app": " work ",
+      },
+    });
+
+    expect(patch.projectContexts?.[0]).toEqual({
+      id: ProjectContextId.make("work"),
+      name: "Work",
+      sortOrder: 2,
+    });
+    expect(patch.activeProjectContextId).toBe(ProjectContextId.make("work"));
+    expect(patch.projectContextAssignments?.["repo:github.com/acme/app"]).toBe(
+      ProjectContextId.make("work"),
+    );
+  });
+});
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
