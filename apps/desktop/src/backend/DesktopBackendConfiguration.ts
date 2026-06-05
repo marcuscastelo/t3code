@@ -47,6 +47,7 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_DESKTOP_HTTPS_ENDPOINTS",
   "T3CODE_TAILSCALE_SERVE",
   "T3CODE_TAILSCALE_SERVE_PORT",
+  "T3CODE_SERVER_TRAY",
 ] as const;
 
 const backendChildEnvPatch = (): Record<string, string | undefined> =>
@@ -105,6 +106,7 @@ const resolveBackendStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        T3CODE_SERVER_TRAY: "0",
         T3CODE_TRAY_SUPERVISOR_PID: String(process.pid),
       },
       bootstrap: {

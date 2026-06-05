@@ -60,6 +60,7 @@ Keep this table current when creating new feature branches, adding features, mer
 | Durable Codex session history import                                       | `origin/feat/codex-session-importer/pr-1-importer-sync`         | Includes stale-prompt + docs |
 | Project delete flow with thread count/force                                | `origin/fix/project-delete-force-retry`                         | Clean, 1 commit              |
 | Tray/server controls, keep backend alive, offline state, pairing links     | `origin/t3code/kde-tray-server-controls`                        | Stacked, 20 commits          |
+| Desktop packaged app tray recursion guard                                  | `fix/desktop-tray-recursion`                                    | Stacked on marucs-code       |
 | Mobile-first main UI                                                       | `origin/mobile-design-v1`                                       | Clean, 1 commit              |
 | Worklog details dialog + copy                                              | `origin/clickable-worklog`                                      | Clean, 1 commit              |
 | Provider rate limits UI + Claude probing + pacing                          | `origin/provider-limits-ui`                                     | Clean, 3 commits             |

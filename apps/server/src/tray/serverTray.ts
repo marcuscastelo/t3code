@@ -97,6 +97,10 @@ const issueTraySessionToken = Effect.fn("server.tray.issueSessionToken")(functio
 export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   config: ServerConfigShape,
 ) {
+  if (process.env.T3CODE_TRAY_SUPERVISOR_PID) {
+    return { shutdown: Effect.void };
+  }
+
   if (process.env.T3CODE_TRAY === "0" || process.env.T3CODE_SERVER_TRAY === "0") {
     return { shutdown: Effect.void };
   }
