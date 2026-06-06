@@ -1,4 +1,10 @@
-import { BriefcaseBusinessIcon, CheckIcon, Layers3Icon, PlusIcon } from "lucide-react";
+import {
+  BriefcaseBusinessIcon,
+  CheckIcon,
+  Layers3Icon,
+  PlusIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { ProjectContextId, type ProjectContext } from "@t3tools/contracts/settings";
 import { cn } from "../lib/utils";
@@ -36,6 +42,7 @@ interface ProjectContextSwitcherProps {
   variant?: "desktop" | "mobile";
   onSelectContext: (contextId: ProjectContextId | null) => void;
   onCreateContext: (name: string) => void;
+  onManageContexts?: () => void;
 }
 
 function contextValue(contextId: ProjectContextId | null): string {
@@ -71,6 +78,7 @@ export function ProjectContextSwitcher({
   variant = "desktop",
   onSelectContext,
   onCreateContext,
+  onManageContexts,
 }: ProjectContextSwitcherProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [contextName, setContextName] = useState("");
@@ -157,6 +165,15 @@ export function ProjectContextSwitcher({
             </MenuRadioGroup>
           </MenuGroup>
           <MenuSeparator />
+          {onManageContexts ? (
+            <>
+              <MenuItem onClick={onManageContexts}>
+                <SettingsIcon className="size-4" />
+                Manage workspaces
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          ) : null}
           <MenuItem onClick={openCreateDialog}>
             <PlusIcon className="size-4" />
             New context
