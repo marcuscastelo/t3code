@@ -158,6 +158,9 @@ export function MobileHome() {
     },
     [projectContextSettings.projectContexts, updateSettings],
   );
+  const handleManageProjectContexts = useCallback(() => {
+    void navigate({ to: "/settings/workspaces" });
+  }, [navigate]);
 
   const detailGroup = useMemo(
     () =>
@@ -211,6 +214,7 @@ export function MobileHome() {
               activeContextId={activeProjectContextId}
               onSelectContext={handleProjectContextChange}
               onCreateContext={handleCreateProjectContext}
+              onManageContexts={handleManageProjectContexts}
             />
 
             <label className="mt-3 flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 text-sm text-muted-foreground">

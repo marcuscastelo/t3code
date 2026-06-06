@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   BotIcon,
+  BriefcaseBusinessIcon,
   CloudIcon,
   GitBranchIcon,
   KeyboardIcon,
@@ -27,6 +28,7 @@ import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 
 export type SettingsSectionPath =
   | "/settings/general"
+  | "/settings/workspaces"
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/providers"
@@ -42,6 +44,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   badgeLabel?: string;
 }> = [
   { label: "General", to: "/settings/general", icon: Settings2Icon },
+  { label: "Workspaces", to: "/settings/workspaces", icon: BriefcaseBusinessIcon },
   { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },

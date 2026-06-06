@@ -8,7 +8,11 @@ import {
   buildProjectContextSummaries,
   createProjectContext,
   deriveProjectContextAssignmentKey,
+  deriveProjectContextAssignmentKeys,
   filterProjectsByActiveProjectContext,
+  removeProjectContext,
+  renameProjectContext,
+  reorderProjectContext,
   resolveProjectContextId,
   type ProjectContextSettings,
 } from "./projectContexts";
@@ -123,6 +127,46 @@ describe("projectContexts", () => {
     ).toEqual([localProject, remoteProject]);
   });
 
+  it("keeps path fallback assignments for projects that gain repository identity later", () => {
+    const projectWithoutRepository = makeProject({
+      id: ProjectId.make("project"),
+      environmentId: primaryEnvId,
+      name: "app",
+      cwd: "/workspace/app",
+    });
+    const projectWithRepository = makeProject({
+      id: projectWithoutRepository.id,
+      environmentId: projectWithoutRepository.environmentId,
+      name: projectWithoutRepository.name,
+      cwd: projectWithoutRepository.cwd,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/app",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/acme/app.git",
+        },
+      },
+    });
+
+    const assignments = assignProjectToContext({
+      project: projectWithoutRepository,
+      contextId: startupContextId,
+      assignments: {},
+    });
+
+    expect(deriveProjectContextAssignmentKeys(projectWithRepository)).toEqual([
+      "repo:github.com/acme/app",
+      deriveProjectContextAssignmentKey(projectWithoutRepository),
+    ]);
+    expect(
+      resolveProjectContextId(
+        projectWithRepository,
+        makeSettings({ projectContextAssignments: assignments }),
+      ),
+    ).toBe(startupContextId);
+  });
+
   it("falls back to physical path keys when a repository identity is unavailable", () => {
     const localProject = makeProject({
       id: ProjectId.make("local"),
@@ -209,5 +253,62 @@ describe("projectContexts", () => {
       name: "Empresa Principal",
       sortOrder: 1,
     });
+  });
+
+  it("renames and reorders contexts without changing ids", () => {
+    const renamed = renameProjectContext({
+      contexts: makeSettings().projectContexts,
+      contextId: workContextId,
+      name: "Main Company",
+    });
+    expect(renamed.find((context) => context.id === workContextId)?.name).toBe("Main Company");
+
+    const reordered = reorderProjectContext({
+      contexts: renamed,
+      contextId: startupContextId,
+      direction: "up",
+    });
+
+    expect(reordered.map((context) => [context.id, context.sortOrder])).toEqual([
+      [startupContextId, 0],
+      [workContextId, 1],
+    ]);
+  });
+
+  it("removes contexts and moves assignments to the chosen replacement", () => {
+    const workProject = makeProject({
+      id: ProjectId.make("work-project"),
+      environmentId: primaryEnvId,
+      name: "work",
+      cwd: "/workspace/work",
+    });
+    const startupProject = makeProject({
+      id: ProjectId.make("startup-project"),
+      environmentId: primaryEnvId,
+      name: "startup",
+      cwd: "/workspace/startup",
+    });
+    const settings = makeSettings({
+      activeProjectContextId: startupContextId,
+      projectContextAssignments: assignProjectToContext({
+        project: workProject,
+        contextId: workContextId,
+        assignments: assignProjectToContext({
+          project: startupProject,
+          contextId: startupContextId,
+          assignments: {},
+        }),
+      }),
+    });
+
+    const patch = removeProjectContext({
+      settings,
+      contextId: startupContextId,
+      replacementContextId: workContextId,
+    });
+
+    expect(patch.projectContexts.map((context) => context.id)).toEqual([workContextId]);
+    expect(patch.activeProjectContextId).toBe(workContextId);
+    expect(resolveProjectContextId(startupProject, { ...settings, ...patch })).toBe(workContextId);
   });
 });

@@ -2721,6 +2721,7 @@ interface SidebarProjectsContentProps {
   projectContextSummaries: readonly ProjectContextSummary[];
   onProjectContextChange: (contextId: ProjectContextId | null) => void;
   onCreateProjectContext: (name: string) => void;
+  onManageProjectContexts: () => void;
   isManualProjectSorting: boolean;
   projectDnDSensors: ReturnType<typeof useSensors>;
   projectCollisionDetection: CollisionDetection;
@@ -2768,6 +2769,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     projectContextSummaries,
     onProjectContextChange,
     onCreateProjectContext,
+    onManageProjectContexts,
     isManualProjectSorting,
     projectDnDSensors,
     projectCollisionDetection,
@@ -2876,6 +2878,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             activeContextId={activeProjectContextId}
             onSelectContext={onProjectContextChange}
             onCreateContext={onCreateProjectContext}
+            onManageContexts={onManageProjectContexts}
           />
         </div>
         <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
@@ -3082,6 +3085,9 @@ export default function Sidebar() {
     },
     [projectContextSettings.projectContexts, updateSettings],
   );
+  const handleManageProjectContexts = useCallback(() => {
+    void navigate({ to: "/settings/workspaces" });
+  }, [navigate]);
 
   // Build a mapping from physical project key → logical project key for
   // cross-environment grouping.  Projects that share a repositoryIdentity
@@ -3684,6 +3690,7 @@ export default function Sidebar() {
             projectContextSummaries={projectContextSummaries}
             onProjectContextChange={handleProjectContextChange}
             onCreateProjectContext={handleCreateProjectContext}
+            onManageProjectContexts={handleManageProjectContexts}
             isManualProjectSorting={isManualProjectSorting}
             projectDnDSensors={projectDnDSensors}
             projectCollisionDetection={projectCollisionDetection}

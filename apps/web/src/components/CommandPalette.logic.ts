@@ -95,13 +95,15 @@ export function buildProjectActionItems(input: {
   valuePrefix: string;
   icon: (project: Project) => ReactNode;
   runProject: (project: Project) => Promise<void>;
+  getDescription?: (project: Project) => string;
+  getSearchTerms?: (project: Project) => ReadonlyArray<string>;
 }): CommandPaletteActionItem[] {
   return input.projects.map((project) => ({
     kind: "action",
     value: `${input.valuePrefix}:${project.environmentId}:${project.id}`,
-    searchTerms: [project.name, project.cwd],
+    searchTerms: [project.name, project.cwd, ...(input.getSearchTerms?.(project) ?? [])],
     title: project.name,
-    description: project.cwd,
+    description: input.getDescription?.(project) ?? project.cwd,
     icon: input.icon(project),
     run: async () => {
       await input.runProject(project);
@@ -127,7 +129,9 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   renderLeadingContent?: (thread: TThread) => ReactNode;
   /** Optional content rendered inline after the title text per-thread. */
   renderTrailingContent?: (thread: TThread) => ReactNode;
-  runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
+  runThread: (
+    thread: Pick<SidebarThreadSummary, "environmentId" | "id" | "projectId">,
+  ) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
   const sortedThreads = sortThreads(
