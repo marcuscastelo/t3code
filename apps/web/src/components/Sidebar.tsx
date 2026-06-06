@@ -3102,17 +3102,6 @@ export default function Sidebar() {
       ),
     [orderedProjects],
   );
-  const projectByScopedRef = useMemo(
-    () =>
-      new Map(
-        orderedProjects.map((project) => [
-          scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
-          project,
-        ]),
-      ),
-    [orderedProjects],
-  );
-
   const sidebarProjects = useMemo<SidebarProjectSnapshot[]>(() => {
     return buildSidebarProjectSnapshots({
       projects: contextProjects,
@@ -3146,29 +3135,6 @@ export default function Sidebar() {
       ),
     [sidebarThreads],
   );
-  const activeRouteProject = useMemo(() => {
-    if (!routeThreadKey) {
-      return null;
-    }
-    const activeThread = sidebarThreadByKey.get(routeThreadKey);
-    if (!activeThread) {
-      return null;
-    }
-    return (
-      projectByScopedRef.get(
-        scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId)),
-      ) ?? null
-    );
-  }, [projectByScopedRef, routeThreadKey, sidebarThreadByKey]);
-  useEffect(() => {
-    if (!activeRouteProject || activeProjectContextId === null) {
-      return;
-    }
-    const routeContextId = resolveProjectContextId(activeRouteProject, projectContextSettings);
-    if (routeContextId !== activeProjectContextId) {
-      updateSettings({ activeProjectContextId: routeContextId });
-    }
-  }, [activeProjectContextId, activeRouteProject, projectContextSettings, updateSettings]);
   // Resolve the active route's project key to a logical key so it matches the
   // sidebar's grouped project entries.
   const activeRouteProjectKey = useMemo(() => {
