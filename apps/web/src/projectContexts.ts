@@ -19,6 +19,12 @@ export interface ProjectContextSummary {
   threadCount: number;
 }
 
+export interface ProjectContextSettingsPatch {
+  projectContexts: ProjectContext[];
+  activeProjectContextId: ProjectContextId | null;
+  projectContextAssignments: Record<string, ProjectContextId>;
+}
+
 export function selectProjectContextSettings(settings: UnifiedSettings): ProjectContextSettings {
   return {
     projectContexts: settings.projectContexts,
@@ -47,13 +53,25 @@ export function deriveProjectContextAssignmentKey(
   return repositoryKey ? `repo:${repositoryKey}` : `path:${derivePhysicalProjectKey(project)}`;
 }
 
+export function deriveProjectContextAssignmentKeys(
+  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+): string[] {
+  const pathKey = `path:${derivePhysicalProjectKey(project)}`;
+  const repositoryKey = project.repositoryIdentity?.canonicalKey?.trim();
+  return repositoryKey ? [`repo:${repositoryKey}`, pathKey] : [pathKey];
+}
+
 export function resolveProjectContextId(
   project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
   settings: ProjectContextSettings,
 ): ProjectContextId | null {
-  const contextId =
-    settings.projectContextAssignments[deriveProjectContextAssignmentKey(project)] ?? null;
-  return contextId && validContextIds(settings).has(contextId) ? contextId : null;
+  for (const assignmentKey of deriveProjectContextAssignmentKeys(project)) {
+    const contextId = settings.projectContextAssignments[assignmentKey] ?? null;
+    if (contextId && validContextIds(settings).has(contextId)) {
+      return contextId;
+    }
+  }
+  return null;
 }
 
 export function filterProjectsByActiveProjectContext(
@@ -98,14 +116,98 @@ export function assignProjectToContext(input: {
   contextId: ProjectContextId | null;
   assignments: Record<string, ProjectContextId>;
 }): Record<string, ProjectContextId> {
-  const assignmentKey = deriveProjectContextAssignmentKey(input.project);
   const nextAssignments = { ...input.assignments };
-  if (input.contextId) {
-    nextAssignments[assignmentKey] = input.contextId;
-  } else {
-    delete nextAssignments[assignmentKey];
+  for (const assignmentKey of deriveProjectContextAssignmentKeys(input.project)) {
+    if (input.contextId) {
+      nextAssignments[assignmentKey] = input.contextId;
+    } else {
+      delete nextAssignments[assignmentKey];
+    }
   }
   return nextAssignments;
+}
+
+export function sortProjectContexts(contexts: readonly ProjectContext[]): ProjectContext[] {
+  return contexts
+    .slice()
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+}
+
+export function renameProjectContext(input: {
+  contexts: readonly ProjectContext[];
+  contextId: ProjectContextId;
+  name: string;
+}): ProjectContext[] {
+  const trimmedName = input.name.trim();
+  if (!trimmedName) {
+    return [...input.contexts];
+  }
+  return input.contexts.map((context) =>
+    context.id === input.contextId ? { ...context, name: trimmedName } : context,
+  );
+}
+
+export function reorderProjectContext(input: {
+  contexts: readonly ProjectContext[];
+  contextId: ProjectContextId;
+  direction: "up" | "down";
+}): ProjectContext[] {
+  const sortedContexts = sortProjectContexts(input.contexts);
+  const currentIndex = sortedContexts.findIndex((context) => context.id === input.contextId);
+  if (currentIndex === -1) {
+    return [...input.contexts];
+  }
+  const targetIndex = input.direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= sortedContexts.length) {
+    return sortedContexts;
+  }
+
+  const reordered = [...sortedContexts];
+  const [context] = reordered.splice(currentIndex, 1);
+  reordered.splice(targetIndex, 0, context!);
+  return reordered.map((context, index) => ({ ...context, sortOrder: index }));
+}
+
+export function removeProjectContext(input: {
+  settings: ProjectContextSettings;
+  contextId: ProjectContextId;
+  replacementContextId: ProjectContextId | null;
+}): ProjectContextSettingsPatch {
+  const remainingContexts = sortProjectContexts(input.settings.projectContexts)
+    .filter((context) => context.id !== input.contextId)
+    .map((context, index) => ({ ...context, sortOrder: index }));
+  const remainingContextIds = new Set(remainingContexts.map((context) => context.id));
+  const replacementContextId =
+    input.replacementContextId && remainingContextIds.has(input.replacementContextId)
+      ? input.replacementContextId
+      : null;
+  const projectContextAssignments: Record<string, ProjectContextId> = {};
+
+  for (const [assignmentKey, contextId] of Object.entries(
+    input.settings.projectContextAssignments,
+  )) {
+    if (contextId === input.contextId) {
+      if (replacementContextId) {
+        projectContextAssignments[assignmentKey] = replacementContextId;
+      }
+      continue;
+    }
+    if (remainingContextIds.has(contextId)) {
+      projectContextAssignments[assignmentKey] = contextId;
+    }
+  }
+
+  return {
+    projectContexts: remainingContexts,
+    activeProjectContextId:
+      input.settings.activeProjectContextId === input.contextId
+        ? replacementContextId
+        : resolveActiveProjectContextId({
+            ...input.settings,
+            projectContexts: remainingContexts,
+          }),
+    projectContextAssignments,
+  };
 }
 
 export function buildProjectContextSummaries(input: {
@@ -164,11 +266,8 @@ export function buildProjectContextSummaries(input: {
 
   return [
     ensureSummary(null),
-    ...input.settings.projectContexts
-      .slice()
-      .sort(
-        (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name),
-      )
-      .map((context) => ensureSummary(context.id)),
+    ...sortProjectContexts(input.settings.projectContexts).map((context) =>
+      ensureSummary(context.id),
+    ),
   ];
 }
