@@ -23,6 +23,8 @@ const clientSettings: ClientSettings = {
   projectContexts: [],
   activeProjectContextId: null,
   projectContextAssignments: {},
+  projectContextDefaults: {},
+  projectContextRules: [],
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
