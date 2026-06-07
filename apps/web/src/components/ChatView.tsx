@@ -252,6 +252,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 import {
   deriveLatestProviderRateLimitSnapshot,
   deriveProviderRateLimitSnapshotFromValue,
+  selectBestProviderRateLimitSnapshot,
 } from "~/lib/providerRateLimits";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
@@ -2156,13 +2157,15 @@ function ChatViewContent(props: ChatViewProps) {
         providerInstanceId: activeProviderStatus?.instanceId ?? activeProviderInstanceId,
       },
     );
-    if (latestRuntimeLimits) return latestRuntimeLimits;
-    if (!activeProviderStatus?.accountRateLimits) return null;
-    return deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
-      provider: activeProviderStatus.driver,
-      providerInstanceId: activeProviderStatus.instanceId,
-      updatedAt: activeProviderStatus.checkedAt,
-    });
+    const provider = activeProviderStatus?.driver ?? selectedProvider;
+    const accountSnapshot = activeProviderStatus?.accountRateLimits
+      ? deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
+          provider,
+          providerInstanceId: activeProviderStatus.instanceId,
+          updatedAt: activeProviderStatus.checkedAt,
+        })
+      : null;
+    return selectBestProviderRateLimitSnapshot([latestRuntimeLimits, accountSnapshot], provider);
   }, [activeProviderInstanceId, activeProviderStatus, activeThread?.activities, selectedProvider]);
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;

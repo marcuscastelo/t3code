@@ -12,6 +12,7 @@ import {
   deriveProviderRateLimitSnapshotFromValue,
   formatRateLimitPercent,
   formatRateLimitReset,
+  selectBestProviderRateLimitSnapshot,
   shouldRefreshProviderRateLimits,
 } from "./providerRateLimits";
 
@@ -268,6 +269,92 @@ describe("providerRateLimits", () => {
         ProviderDriverKind.make("claudeAgent"),
       ),
     ).toBe(false);
+  });
+
+  it("selects the newest complete snapshot instead of a stale thread event", () => {
+    const provider = ProviderDriverKind.make("codex");
+    const staleRuntimeSnapshot = deriveLatestProviderRateLimitSnapshot(
+      [
+        makeActivity(
+          "activity-1",
+          {
+            provider: "codex",
+            providerInstanceId: "codex",
+            rateLimits: {
+              primary: { usedPercent: 0, windowDurationMins: 300 },
+              secondary: { usedPercent: 0, windowDurationMins: 10_080 },
+            },
+          },
+          "2026-03-23T00:00:00.000Z",
+        ),
+      ],
+      {
+        provider,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      },
+    );
+    const freshProviderSnapshot = deriveProviderRateLimitSnapshotFromValue(
+      {
+        rateLimits: {
+          primary: { usedPercent: 6, windowDurationMins: 300 },
+          secondary: { usedPercent: 43, windowDurationMins: 10_080 },
+        },
+      },
+      {
+        provider,
+        providerInstanceId: "codex",
+        updatedAt: "2026-03-23T00:01:00.000Z",
+      },
+    );
+
+    const selected = selectBestProviderRateLimitSnapshot(
+      [staleRuntimeSnapshot, freshProviderSnapshot],
+      provider,
+    );
+
+    expect(selected?.windows).toMatchObject([
+      { label: "5h", usedPercent: 6 },
+      { label: "weekly", usedPercent: 43 },
+    ]);
+  });
+
+  it("prefers a complete older snapshot over an incomplete newer snapshot", () => {
+    const provider = ProviderDriverKind.make("codex");
+    const completeSnapshot = deriveProviderRateLimitSnapshotFromValue(
+      {
+        rateLimits: {
+          primary: { usedPercent: 6, windowDurationMins: 300 },
+          secondary: { usedPercent: 43, windowDurationMins: 10_080 },
+        },
+      },
+      {
+        provider,
+        providerInstanceId: "codex",
+        updatedAt: "2026-03-23T00:00:00.000Z",
+      },
+    );
+    const incompleteSnapshot = deriveProviderRateLimitSnapshotFromValue(
+      {
+        rateLimits: {
+          primary: { usedPercent: 7, windowDurationMins: 300 },
+        },
+      },
+      {
+        provider,
+        providerInstanceId: "codex",
+        updatedAt: "2026-03-23T00:01:00.000Z",
+      },
+    );
+
+    const selected = selectBestProviderRateLimitSnapshot(
+      [completeSnapshot, incompleteSnapshot],
+      provider,
+    );
+
+    expect(selected?.windows).toMatchObject([
+      { label: "5h", usedPercent: 6 },
+      { label: "weekly", usedPercent: 43 },
+    ]);
   });
 
   it("filters provider mismatches", () => {
