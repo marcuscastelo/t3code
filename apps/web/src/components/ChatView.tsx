@@ -197,6 +197,7 @@ import {
   type ProviderRateLimitSnapshot,
   deriveLatestProviderRateLimitSnapshot,
   deriveProviderRateLimitSnapshotFromValue,
+  selectBestProviderRateLimitSnapshot,
   shouldRefreshProviderRateLimits,
 } from "~/lib/providerRateLimits";
 
@@ -1691,27 +1692,17 @@ export default function ChatView(props: ChatViewProps) {
         providerInstanceId,
       },
     );
-    if (latestRuntimeLimits) {
-      return latestRuntimeLimits;
-    }
-    if (!activeProviderStatus?.accountRateLimits) {
-      return fallbackSnapshot ?? null;
-    }
-    const accountSnapshot = deriveProviderRateLimitSnapshotFromValue(
-      activeProviderStatus.accountRateLimits,
-      {
-        provider,
-        providerInstanceId,
-        updatedAt: activeProviderStatus.checkedAt,
-      },
+    const accountSnapshot = activeProviderStatus?.accountRateLimits
+      ? deriveProviderRateLimitSnapshotFromValue(activeProviderStatus.accountRateLimits, {
+          provider,
+          providerInstanceId,
+          updatedAt: activeProviderStatus.checkedAt,
+        })
+      : null;
+    return selectBestProviderRateLimitSnapshot(
+      [latestRuntimeLimits, accountSnapshot, fallbackSnapshot],
+      provider,
     );
-    if (accountSnapshot && !shouldRefreshProviderRateLimits(accountSnapshot, provider)) {
-      return accountSnapshot;
-    }
-    if (fallbackSnapshot && !shouldRefreshProviderRateLimits(fallbackSnapshot, provider)) {
-      return fallbackSnapshot;
-    }
-    return accountSnapshot ?? fallbackSnapshot ?? null;
   }, [
     activeProviderInstanceId,
     activeProviderStatus?.accountRateLimits,

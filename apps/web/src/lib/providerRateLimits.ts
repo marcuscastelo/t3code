@@ -412,6 +412,30 @@ export function shouldRefreshProviderRateLimits(
   );
 }
 
+function snapshotTimestampMs(snapshot: ProviderRateLimitSnapshot): number {
+  const parsed = Date.parse(snapshot.updatedAt);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+export function selectBestProviderRateLimitSnapshot(
+  snapshots: ReadonlyArray<ProviderRateLimitSnapshot | null | undefined>,
+  provider: ProviderDriverKind | string | null | undefined,
+): ProviderRateLimitSnapshot | null {
+  const presentSnapshots = snapshots.filter((snapshot): snapshot is ProviderRateLimitSnapshot =>
+    Boolean(snapshot),
+  );
+  if (presentSnapshots.length === 0) return null;
+
+  const completeSnapshots = presentSnapshots.filter(
+    (snapshot) => !shouldRefreshProviderRateLimits(snapshot, provider),
+  );
+  const candidates = completeSnapshots.length > 0 ? completeSnapshots : presentSnapshots;
+
+  return candidates.reduce((best, candidate) =>
+    snapshotTimestampMs(candidate) >= snapshotTimestampMs(best) ? candidate : best,
+  );
+}
+
 export function formatRateLimitPercent(value: number): string {
   if (value < 10) {
     return `${value.toFixed(1).replace(/\.0$/, "")}%`;
