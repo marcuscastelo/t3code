@@ -1,6 +1,11 @@
 import {
   ProjectContextId,
   type ProjectContext,
+  ProjectContextRuleId,
+  type ProjectContextDefaults,
+  type ProjectContextRule,
+  type ProjectContextRuleKind,
+  type ThreadEnvMode,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
@@ -11,6 +16,8 @@ export interface ProjectContextSettings {
   projectContexts: readonly ProjectContext[];
   activeProjectContextId: ProjectContextId | null;
   projectContextAssignments: Record<string, ProjectContextId>;
+  projectContextDefaults: Record<ProjectContextId, ProjectContextDefaults>;
+  projectContextRules: readonly ProjectContextRule[];
 }
 
 export interface ProjectContextSummary {
@@ -23,6 +30,8 @@ export interface ProjectContextSettingsPatch {
   projectContexts: ProjectContext[];
   activeProjectContextId: ProjectContextId | null;
   projectContextAssignments: Record<string, ProjectContextId>;
+  projectContextDefaults: Record<ProjectContextId, ProjectContextDefaults>;
+  projectContextRules: ProjectContextRule[];
 }
 
 export function selectProjectContextSettings(settings: UnifiedSettings): ProjectContextSettings {
@@ -30,6 +39,8 @@ export function selectProjectContextSettings(settings: UnifiedSettings): Project
     projectContexts: settings.projectContexts,
     activeProjectContextId: settings.activeProjectContextId,
     projectContextAssignments: settings.projectContextAssignments,
+    projectContextDefaults: settings.projectContextDefaults,
+    projectContextRules: settings.projectContextRules,
   };
 }
 
@@ -111,6 +122,33 @@ export function createProjectContext(input: {
   };
 }
 
+export function createProjectContextRule(input: {
+  contextId: ProjectContextId;
+  kind: ProjectContextRuleKind;
+  pattern: string;
+  existingRules: readonly Pick<ProjectContextRule, "id" | "sortOrder">[];
+}): ProjectContextRule {
+  const trimmedPattern = input.pattern.trim();
+  const baseId =
+    `${input.kind}-${trimmedPattern}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "rule";
+  const existingIds = new Set<string>(input.existingRules.map((rule) => rule.id));
+  let candidate = baseId;
+  for (let suffix = 2; existingIds.has(candidate); suffix += 1) {
+    candidate = `${baseId}-${suffix}`;
+  }
+
+  return {
+    id: ProjectContextRuleId.make(candidate),
+    contextId: input.contextId,
+    kind: input.kind,
+    pattern: trimmedPattern,
+    sortOrder: Math.max(-1, ...input.existingRules.map((rule) => rule.sortOrder ?? 0)) + 1,
+  };
+}
+
 export function assignProjectToContext(input: {
   project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">;
   contextId: ProjectContextId | null;
@@ -131,6 +169,109 @@ export function sortProjectContexts(contexts: readonly ProjectContext[]): Projec
   return contexts
     .slice()
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+}
+
+export function sortProjectContextRules(
+  rules: readonly ProjectContextRule[],
+): ProjectContextRule[] {
+  return rules
+    .slice()
+    .sort(
+      (left, right) =>
+        left.sortOrder - right.sortOrder || left.pattern.localeCompare(right.pattern),
+    );
+}
+
+export function resolveProjectContextDefaults(
+  settings: ProjectContextSettings,
+  contextId: ProjectContextId | null,
+): ProjectContextDefaults {
+  if (!contextId || !validContextIds(settings).has(contextId)) {
+    return {};
+  }
+  return settings.projectContextDefaults[contextId] ?? {};
+}
+
+export function resolveProjectContextDefaultThreadEnvMode(
+  settings: ProjectContextSettings,
+  contextId: ProjectContextId | null,
+  fallback: ThreadEnvMode,
+): ThreadEnvMode {
+  return resolveProjectContextDefaults(settings, contextId).defaultThreadEnvMode ?? fallback;
+}
+
+export function resolveProjectContextAddProjectBaseDirectory(
+  settings: ProjectContextSettings,
+  contextId: ProjectContextId | null,
+  fallback: string,
+): string {
+  const value = resolveProjectContextDefaults(settings, contextId).addProjectBaseDirectory?.trim();
+  return value && value.length > 0 ? value : fallback;
+}
+
+function normalizeRuleMatchText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function doesProjectMatchContextRule(
+  project: Pick<Project, "cwd" | "repositoryIdentity">,
+  rule: Pick<ProjectContextRule, "kind" | "pattern">,
+): boolean {
+  const pattern = normalizeRuleMatchText(rule.pattern);
+  if (!pattern) {
+    return false;
+  }
+
+  switch (rule.kind) {
+    case "path_prefix":
+      return normalizeRuleMatchText(project.cwd).startsWith(pattern);
+    case "repository_prefix": {
+      const repositoryKey = project.repositoryIdentity?.canonicalKey?.trim();
+      return repositoryKey ? normalizeRuleMatchText(repositoryKey).startsWith(pattern) : false;
+    }
+    case "remote_url_contains": {
+      const remoteUrl = project.repositoryIdentity?.locator.remoteUrl?.trim();
+      return remoteUrl ? normalizeRuleMatchText(remoteUrl).includes(pattern) : false;
+    }
+  }
+}
+
+export function resolveProjectContextRuleMatch(
+  project: Pick<Project, "cwd" | "repositoryIdentity">,
+  settings: ProjectContextSettings,
+): ProjectContextRule | null {
+  const contextIds = validContextIds(settings);
+  return (
+    sortProjectContextRules(settings.projectContextRules).find(
+      (rule) => contextIds.has(rule.contextId) && doesProjectMatchContextRule(project, rule),
+    ) ?? null
+  );
+}
+
+export function applyProjectContextRules(input: {
+  projects: readonly Project[];
+  settings: ProjectContextSettings;
+  overwriteExisting: boolean;
+}): Record<string, ProjectContextId> {
+  let assignments = { ...input.settings.projectContextAssignments };
+  for (const project of input.projects) {
+    if (!input.overwriteExisting && resolveProjectContextId(project, input.settings)) {
+      continue;
+    }
+    const rule = resolveProjectContextRuleMatch(project, {
+      ...input.settings,
+      projectContextAssignments: assignments,
+    });
+    if (!rule) {
+      continue;
+    }
+    assignments = assignProjectToContext({
+      project,
+      contextId: rule.contextId,
+      assignments,
+    });
+  }
+  return assignments;
 }
 
 export function renameProjectContext(input: {
@@ -168,6 +309,36 @@ export function reorderProjectContext(input: {
   return reordered.map((context, index) => ({ ...context, sortOrder: index }));
 }
 
+export function reorderProjectContextRule(input: {
+  rules: readonly ProjectContextRule[];
+  ruleId: ProjectContextRuleId;
+  direction: "up" | "down";
+}): ProjectContextRule[] {
+  const sortedRules = sortProjectContextRules(input.rules);
+  const currentIndex = sortedRules.findIndex((rule) => rule.id === input.ruleId);
+  if (currentIndex === -1) {
+    return [...input.rules];
+  }
+  const targetIndex = input.direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= sortedRules.length) {
+    return sortedRules;
+  }
+
+  const reordered = [...sortedRules];
+  const [rule] = reordered.splice(currentIndex, 1);
+  reordered.splice(targetIndex, 0, rule!);
+  return reordered.map((rule, index) => ({ ...rule, sortOrder: index }));
+}
+
+export function removeProjectContextRule(input: {
+  rules: readonly ProjectContextRule[];
+  ruleId: ProjectContextRuleId;
+}): ProjectContextRule[] {
+  return sortProjectContextRules(input.rules)
+    .filter((rule) => rule.id !== input.ruleId)
+    .map((rule, index) => ({ ...rule, sortOrder: index }));
+}
+
 export function removeProjectContext(input: {
   settings: ProjectContextSettings;
   contextId: ProjectContextId;
@@ -182,6 +353,7 @@ export function removeProjectContext(input: {
       ? input.replacementContextId
       : null;
   const projectContextAssignments: Record<string, ProjectContextId> = {};
+  const projectContextDefaults: Record<ProjectContextId, ProjectContextDefaults> = {};
 
   for (const [assignmentKey, contextId] of Object.entries(
     input.settings.projectContextAssignments,
@@ -197,6 +369,13 @@ export function removeProjectContext(input: {
     }
   }
 
+  for (const [contextId, defaults] of Object.entries(input.settings.projectContextDefaults)) {
+    const typedContextId = ProjectContextId.make(contextId);
+    if (remainingContextIds.has(typedContextId)) {
+      projectContextDefaults[typedContextId] = defaults;
+    }
+  }
+
   return {
     projectContexts: remainingContexts,
     activeProjectContextId:
@@ -207,6 +386,10 @@ export function removeProjectContext(input: {
             projectContexts: remainingContexts,
           }),
     projectContextAssignments,
+    projectContextDefaults,
+    projectContextRules: sortProjectContextRules(input.settings.projectContextRules).filter(
+      (rule) => remainingContextIds.has(rule.contextId),
+    ),
   };
 }
 
@@ -215,7 +398,6 @@ export function buildProjectContextSummaries(input: {
   threads: readonly SidebarThreadSummary[];
   settings: ProjectContextSettings;
 }): ProjectContextSummary[] {
-  const contextIds = validContextIds(input.settings);
   const summaries = new Map<string | null, ProjectContextSummary>();
   const ensureSummary = (contextId: ProjectContextId | null): ProjectContextSummary => {
     const key = contextId ?? null;
@@ -239,9 +421,7 @@ export function buildProjectContextSummaries(input: {
 
   const contextIdByProjectRef = new Map<string, ProjectContextId | null>();
   for (const project of input.projects) {
-    const rawContextId =
-      input.settings.projectContextAssignments[deriveProjectContextAssignmentKey(project)] ?? null;
-    const contextId = rawContextId && contextIds.has(rawContextId) ? rawContextId : null;
+    const contextId = resolveProjectContextId(project, input.settings);
     ensureSummary(null).projectCount += 1;
     if (contextId) {
       ensureSummary(contextId).projectCount += 1;
