@@ -122,7 +122,9 @@ import type { ChatComposerHandle } from "./chat/ChatComposer";
 import {
   assignProjectToContext,
   filterProjectsByActiveProjectContext,
+  resolveProjectContextAddProjectBaseDirectory,
   resolveActiveProjectContextId,
+  resolveProjectContextDefaultThreadEnvMode,
   resolveProjectContextId,
   selectProjectContextSettings,
 } from "../projectContexts";
@@ -413,6 +415,11 @@ function OpenCommandPaletteDialog() {
   const { updateSettings } = useUpdateSettings();
   const projectContextSettings = selectProjectContextSettings(settings);
   const activeProjectContextId = resolveActiveProjectContextId(projectContextSettings);
+  const defaultThreadEnvMode = resolveProjectContextDefaultThreadEnvMode(
+    projectContextSettings,
+    activeProjectContextId,
+    settings.defaultThreadEnvMode,
+  );
   const [includeAllContexts, setIncludeAllContexts] = useState(false);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -511,12 +518,23 @@ function OpenCommandPaletteDialog() {
             ? savedEnvironmentRuntimeById[environmentId]?.serverConfig?.settings
             : null;
       const baseDirectory = environmentSettings?.addProjectBaseDirectory?.trim() ?? "";
-      if (baseDirectory.length === 0) {
+      const workspaceBaseDirectory = resolveProjectContextAddProjectBaseDirectory(
+        projectContextSettings,
+        activeProjectContextId,
+        baseDirectory,
+      );
+      if (workspaceBaseDirectory.length === 0) {
         return "~/";
       }
-      return ensureBrowseDirectoryPath(baseDirectory);
+      return ensureBrowseDirectoryPath(workspaceBaseDirectory);
     },
-    [primaryEnvironmentId, savedEnvironmentRuntimeById, settings],
+    [
+      activeProjectContextId,
+      primaryEnvironmentId,
+      projectContextSettings,
+      savedEnvironmentRuntimeById,
+      settings,
+    ],
   );
 
   const projectCwdById = useMemo(
@@ -691,14 +709,14 @@ function OpenCommandPaletteDialog() {
       }
 
       await handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-        envMode: settings.defaultThreadEnvMode,
+        envMode: defaultThreadEnvMode,
       });
     },
     [
       activateProjectContextForProject,
+      defaultThreadEnvMode,
       handleNewThread,
       navigate,
-      settings.defaultThreadEnvMode,
       settings.sidebarThreadSortOrder,
       threads,
     ],
@@ -744,7 +762,7 @@ function OpenCommandPaletteDialog() {
               activeDraftThread,
               activeThread,
               defaultProjectRef,
-              defaultThreadEnvMode: settings.defaultThreadEnvMode,
+              defaultThreadEnvMode,
               handleNewThread,
             },
             scopeProjectRef(project.environmentId, project.id),
@@ -757,9 +775,9 @@ function OpenCommandPaletteDialog() {
       activateProjectContextForProject,
       contextProjects,
       defaultProjectRef,
+      defaultThreadEnvMode,
       handleNewThread,
       projectContextLabel,
-      settings.defaultThreadEnvMode,
     ],
   );
 
@@ -1103,7 +1121,7 @@ function OpenCommandPaletteDialog() {
             activeDraftThread,
             activeThread,
             defaultProjectRef,
-            defaultThreadEnvMode: settings.defaultThreadEnvMode,
+            defaultThreadEnvMode,
             handleNewThread,
           });
         },
@@ -1222,7 +1240,7 @@ function OpenCommandPaletteDialog() {
           });
         } else {
           await handleNewThread(scopeProjectRef(existing.environmentId, existing.id), {
-            envMode: settings.defaultThreadEnvMode,
+            envMode: defaultThreadEnvMode,
           }).catch(() => undefined);
         }
         setOpen(false);
@@ -1258,7 +1276,7 @@ function OpenCommandPaletteDialog() {
           });
         }
         await handleNewThread(scopeProjectRef(browseEnvironmentId, projectId), {
-          envMode: settings.defaultThreadEnvMode,
+          envMode: defaultThreadEnvMode,
         }).catch(() => undefined);
         setOpen(false);
       } catch (error) {
@@ -1276,12 +1294,12 @@ function OpenCommandPaletteDialog() {
       browseEnvironmentId,
       browseEnvironmentPlatform,
       currentProjectCwdForBrowse,
+      defaultThreadEnvMode,
       handleNewThread,
       navigate,
       projectContextSettings.projectContextAssignments,
       projects,
       setOpen,
-      settings.defaultThreadEnvMode,
       settings.sidebarThreadSortOrder,
       threads,
       updateSettings,

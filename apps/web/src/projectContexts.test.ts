@@ -5,14 +5,19 @@ import type { Project, SidebarThreadSummary } from "./types";
 import { DEFAULT_INTERACTION_MODE } from "./types";
 import {
   assignProjectToContext,
+  applyProjectContextRules,
   buildProjectContextSummaries,
   createProjectContext,
+  createProjectContextRule,
   deriveProjectContextAssignmentKey,
   deriveProjectContextAssignmentKeys,
+  doesProjectMatchContextRule,
   filterProjectsByActiveProjectContext,
   removeProjectContext,
   renameProjectContext,
   reorderProjectContext,
+  resolveProjectContextAddProjectBaseDirectory,
+  resolveProjectContextDefaultThreadEnvMode,
   resolveProjectContextId,
   type ProjectContextSettings,
 } from "./projectContexts";
@@ -64,6 +69,8 @@ function makeSettings(overrides: Partial<ProjectContextSettings> = {}): ProjectC
     ],
     activeProjectContextId: null,
     projectContextAssignments: {},
+    projectContextDefaults: {},
+    projectContextRules: [],
     ...overrides,
   };
 }
@@ -310,5 +317,117 @@ describe("projectContexts", () => {
     expect(patch.projectContexts.map((context) => context.id)).toEqual([workContextId]);
     expect(patch.activeProjectContextId).toBe(workContextId);
     expect(resolveProjectContextId(startupProject, { ...settings, ...patch })).toBe(workContextId);
+    expect(patch.projectContextRules).toEqual([]);
+  });
+
+  it("resolves workspace defaults over global fallbacks", () => {
+    const settings = makeSettings({
+      projectContextDefaults: {
+        [workContextId]: {
+          defaultThreadEnvMode: "worktree",
+          addProjectBaseDirectory: "~/work",
+        },
+      },
+    });
+
+    expect(resolveProjectContextDefaultThreadEnvMode(settings, workContextId, "local")).toBe(
+      "worktree",
+    );
+    expect(resolveProjectContextDefaultThreadEnvMode(settings, startupContextId, "local")).toBe(
+      "local",
+    );
+    expect(resolveProjectContextAddProjectBaseDirectory(settings, workContextId, "~/")).toBe(
+      "~/work",
+    );
+  });
+
+  it("matches projects with path, repository, and remote-url rules", () => {
+    const project = makeProject({
+      id: ProjectId.make("project"),
+      environmentId: primaryEnvId,
+      name: "app",
+      cwd: "/Users/me/work/acme/app",
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/app",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:acme/app.git",
+        },
+      },
+    });
+
+    expect(
+      doesProjectMatchContextRule(project, { kind: "path_prefix", pattern: "/users/me/work" }),
+    ).toBe(true);
+    expect(
+      doesProjectMatchContextRule(project, {
+        kind: "repository_prefix",
+        pattern: "github.com/acme/",
+      }),
+    ).toBe(true);
+    expect(
+      doesProjectMatchContextRule(project, {
+        kind: "remote_url_contains",
+        pattern: "github.com:acme",
+      }),
+    ).toBe(true);
+  });
+
+  it("applies the first matching rule to unassigned projects", () => {
+    const workProject = makeProject({
+      id: ProjectId.make("work-project"),
+      environmentId: primaryEnvId,
+      name: "work",
+      cwd: "/Users/me/work/acme/app",
+    });
+    const startupProject = makeProject({
+      id: ProjectId.make("startup-project"),
+      environmentId: primaryEnvId,
+      name: "startup",
+      cwd: "/Users/me/startup/app",
+      repositoryIdentity: {
+        canonicalKey: "github.com/startup/app",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/startup/app.git",
+        },
+      },
+    });
+    const workRule = createProjectContextRule({
+      contextId: workContextId,
+      kind: "path_prefix",
+      pattern: "/Users/me/work",
+      existingRules: [],
+    });
+    const startupRule = createProjectContextRule({
+      contextId: startupContextId,
+      kind: "repository_prefix",
+      pattern: "github.com/startup/",
+      existingRules: [workRule],
+    });
+    const settings = makeSettings({
+      projectContextRules: [workRule, startupRule],
+    });
+
+    const assignments = applyProjectContextRules({
+      projects: [workProject, startupProject],
+      settings,
+      overwriteExisting: false,
+    });
+
+    expect(
+      resolveProjectContextId(workProject, {
+        ...settings,
+        projectContextAssignments: assignments,
+      }),
+    ).toBe(workContextId);
+    expect(
+      resolveProjectContextId(startupProject, {
+        ...settings,
+        projectContextAssignments: assignments,
+      }),
+    ).toBe(startupContextId);
   });
 });

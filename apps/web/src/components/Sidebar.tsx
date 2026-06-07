@@ -200,6 +200,7 @@ import {
   createProjectContext,
   filterProjectsByActiveProjectContext,
   resolveActiveProjectContextId,
+  resolveProjectContextDefaultThreadEnvMode,
   resolveProjectContextId,
   selectProjectContextSettings,
   type ProjectContextSummary,
@@ -1785,7 +1786,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const seedContext = resolveSidebarNewThreadSeedContext({
         projectId: member.id,
         defaultEnvMode: resolveSidebarNewThreadEnvMode({
-          defaultEnvMode: defaultThreadEnvMode,
+          defaultEnvMode: resolveProjectContextDefaultThreadEnvMode(
+            projectContextSettings,
+            resolveProjectContextId(member, projectContextSettings),
+            defaultThreadEnvMode,
+          ),
         }),
         activeThread:
           currentActiveThread && currentActiveThread.projectId === member.id
@@ -1816,7 +1821,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         envMode: seedContext.envMode,
       });
     },
-    [defaultThreadEnvMode, handleNewThread, isMobile, router, setOpenMobile],
+    [
+      defaultThreadEnvMode,
+      handleNewThread,
+      isMobile,
+      projectContextSettings,
+      router,
+      setOpenMobile,
+    ],
   );
 
   const handleCreateThreadClick = useCallback(

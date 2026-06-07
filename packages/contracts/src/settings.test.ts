@@ -23,11 +23,15 @@ describe("ClientSettings.projectContexts", () => {
     expect(DEFAULT_CLIENT_SETTINGS.projectContexts).toEqual([]);
     expect(DEFAULT_CLIENT_SETTINGS.activeProjectContextId).toBeNull();
     expect(DEFAULT_CLIENT_SETTINGS.projectContextAssignments).toEqual({});
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextDefaults).toEqual({});
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextRules).toEqual([]);
 
     const decoded = decodeClientSettings({});
     expect(decoded.projectContexts).toEqual([]);
     expect(decoded.activeProjectContextId).toBeNull();
     expect(decoded.projectContextAssignments).toEqual({});
+    expect(decoded.projectContextDefaults).toEqual({});
+    expect(decoded.projectContextRules).toEqual([]);
   });
 
   it("decodes context patches as client-only settings", () => {
@@ -37,6 +41,21 @@ describe("ClientSettings.projectContexts", () => {
       projectContextAssignments: {
         "repo:github.com/acme/app": " work ",
       },
+      projectContextDefaults: {
+        work: {
+          defaultThreadEnvMode: "worktree",
+          addProjectBaseDirectory: " ~/work ",
+        },
+      },
+      projectContextRules: [
+        {
+          id: " work-repos ",
+          contextId: " work ",
+          kind: "repository_prefix",
+          pattern: " github.com/acme/ ",
+          sortOrder: 1,
+        },
+      ],
     });
 
     expect(patch.projectContexts?.[0]).toEqual({
@@ -48,6 +67,17 @@ describe("ClientSettings.projectContexts", () => {
     expect(patch.projectContextAssignments?.["repo:github.com/acme/app"]).toBe(
       ProjectContextId.make("work"),
     );
+    expect(patch.projectContextDefaults?.[ProjectContextId.make("work")]).toEqual({
+      defaultThreadEnvMode: "worktree",
+      addProjectBaseDirectory: "~/work",
+    });
+    expect(patch.projectContextRules?.[0]).toEqual({
+      id: "work-repos",
+      contextId: ProjectContextId.make("work"),
+      kind: "repository_prefix",
+      pattern: "github.com/acme/",
+      sortOrder: 1,
+    });
   });
 });
 
