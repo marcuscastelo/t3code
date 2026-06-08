@@ -4,6 +4,9 @@
 - `bun run dev:server` — Starts just the WebSocket server (uses Bun TypeScript execution).
 - `bun run dev:web` — Starts just the Vite dev server for the web app.
 - Dev commands default `T3CODE_STATE_DIR` to `~/.t3/dev` to keep dev state isolated from desktop/prod state.
+- Set `T3CODE_ENVIRONMENT_LABEL` to override the human-readable environment label announced
+  by `/.well-known/t3/environment`; otherwise T3 Code falls back to the host's friendly name,
+  hostname, or current directory name.
 - Override server CLI-equivalent flags from root dev commands with `--`, for example:
   `bun run dev -- --base-dir ~/.t3-2`
 - `bun run start` — Runs the production server (serves built web app as static files).

@@ -34,6 +34,33 @@ afterEach(() => {
 });
 
 describe("resolveServerEnvironmentLabel", () => {
+  it.effect("prefers the explicit environment label", () =>
+    Effect.gen(function* () {
+      const result = yield* resolveServerEnvironmentLabel({
+        cwdBaseName: "t3code",
+        environmentLabel: " frontend ",
+        platform: "darwin",
+        hostname: "macbook-pro",
+      }).pipe(Effect.provide(TestLayer));
+
+      expect(result).toBe("frontend");
+      expect(runMock).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("ignores a blank explicit environment label", () =>
+    Effect.gen(function* () {
+      const result = yield* resolveServerEnvironmentLabel({
+        cwdBaseName: "t3code",
+        environmentLabel: "   ",
+        platform: "win32",
+        hostname: "macbook-pro",
+      }).pipe(Effect.provide(TestLayer));
+
+      expect(result).toBe("macbook-pro");
+    }),
+  );
+
   it.effect("uses hostname fallback regardless of launch mode", () =>
     Effect.gen(function* () {
       const result = yield* resolveServerEnvironmentLabel({

@@ -74,6 +74,7 @@ export const makeServerEnvironment = Effect.fn("makeServerEnvironment")(function
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
   const label = yield* resolveServerEnvironmentLabel({
     cwdBaseName,
+    environmentLabel: process.env.T3CODE_ENVIRONMENT_LABEL ?? null,
   });
 
   const descriptor: ExecutionEnvironmentDescriptor = {

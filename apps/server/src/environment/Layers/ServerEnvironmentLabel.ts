@@ -8,6 +8,7 @@ import { ProcessRunner } from "../../processRunner.ts";
 
 interface ResolveServerEnvironmentLabelInput {
   readonly cwdBaseName: string;
+  readonly environmentLabel?: string | null;
   readonly platform?: NodeJS.Platform;
   readonly hostname?: string | null;
 }
@@ -94,6 +95,11 @@ const resolveFriendlyHostLabel = Effect.fn("resolveFriendlyHostLabel")(function*
 export const resolveServerEnvironmentLabel = Effect.fn("resolveServerEnvironmentLabel")(function* (
   input: ResolveServerEnvironmentLabelInput,
 ) {
+  const environmentLabel = normalizeLabel(input.environmentLabel);
+  if (environmentLabel) {
+    return environmentLabel;
+  }
+
   const platform = input.platform ?? process.platform;
   const friendlyHostLabel = yield* resolveFriendlyHostLabel(platform);
   if (friendlyHostLabel) {

@@ -48,6 +48,33 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
+  it.effect("uses T3CODE_ENVIRONMENT_LABEL for the advertised descriptor label", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-environment-label-test-",
+      });
+      const previousLabel = process.env.T3CODE_ENVIRONMENT_LABEL;
+
+      try {
+        process.env.T3CODE_ENVIRONMENT_LABEL = "backend";
+
+        const descriptor = yield* Effect.gen(function* () {
+          const serverEnvironment = yield* ServerEnvironment;
+          return yield* serverEnvironment.getDescriptor;
+        }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
+
+        expect(descriptor.label).toBe("backend");
+      } finally {
+        if (previousLabel === undefined) {
+          delete process.env.T3CODE_ENVIRONMENT_LABEL;
+        } else {
+          process.env.T3CODE_ENVIRONMENT_LABEL = previousLabel;
+        }
+      }
+    }),
+  );
+
   it.effect("persists the environment id across service restarts", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
