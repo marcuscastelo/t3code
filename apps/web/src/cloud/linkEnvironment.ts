@@ -171,23 +171,25 @@ function decodedRelayClientError(message: string) {
 }
 
 function findRelayProtectedError(cause: unknown): RelayProtectedErrorType | null {
-  if (isRelayProtectedError(cause)) {
-    return cause;
-  }
   if (typeof cause !== "object" || cause === null) {
     return null;
   }
-  return "cause" in cause ? findRelayProtectedError(cause.cause) : null;
+  const record = cause as Record<string, unknown>;
+  if (typeof record._tag === "string" && record._tag.startsWith("Relay")) {
+    return isRelayProtectedError(cause) ? cause : null;
+  }
+  return "cause" in record ? findRelayProtectedError(record.cause) : null;
 }
 
 function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
-  if (isEnvironmentCloudApiError(cause)) {
-    return cause;
-  }
   if (typeof cause !== "object" || cause === null) {
     return null;
   }
-  return "cause" in cause ? findEnvironmentCloudApiError(cause.cause) : null;
+  const record = cause as Record<string, unknown>;
+  if (typeof record._tag === "string" && record._tag.startsWith("Environment")) {
+    return isEnvironmentCloudApiError(cause) ? cause : null;
+  }
+  return "cause" in record ? findEnvironmentCloudApiError(record.cause) : null;
 }
 
 const environmentApiError = (message: string) => (cause: unknown) => {
@@ -451,7 +453,7 @@ export function readPrimaryCloudLinkState(): Effect.Effect<
       return null;
     }
     const client = yield* makeEnvironmentHttpApiClient(resolvePrimaryEnvironmentHttpUrl("/"));
-    return yield* client.cloud
+    return yield* client.connect
       .linkState({ headers: {} })
       .pipe(
         withPrimaryEnvironmentRequestInit,
@@ -465,7 +467,7 @@ export function updatePrimaryCloudPreferences(input: {
 }): Effect.Effect<CloudLinkState, CloudEnvironmentLinkError, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const client = yield* makeEnvironmentHttpApiClient(resolvePrimaryEnvironmentHttpUrl("/"));
-    return yield* client.cloud
+    return yield* client.connect
       .preferences({
         headers: {},
         payload: input,
@@ -488,7 +490,7 @@ export function unlinkPrimaryEnvironmentFromCloud(input: {
       });
     }
     const client = yield* makeEnvironmentHttpApiClient(resolvePrimaryEnvironmentHttpUrl("/"));
-    yield* client.cloud
+    yield* client.connect
       .unlink({ headers: {} })
       .pipe(
         withPrimaryEnvironmentRequestInit,
@@ -568,7 +570,7 @@ export function linkEnvironmentToCloud(input: {
           ),
         ),
       );
-    const proof = yield* environmentClient.cloud
+    const proof = yield* environmentClient.connect
       .linkProof({
         headers,
         payload: {
@@ -604,7 +606,7 @@ export function linkEnvironmentToCloud(input: {
       link,
     });
 
-    yield* environmentClient.cloud
+    yield* environmentClient.connect
       .relayConfig({
         headers,
         payload: {
@@ -656,7 +658,7 @@ export function linkPrimaryEnvironmentToCloud(input: {
           ),
         ),
       );
-    const proof = yield* environmentClient.cloud
+    const proof = yield* environmentClient.connect
       .linkProof({
         headers: {},
         payload: {
@@ -695,7 +697,7 @@ export function linkPrimaryEnvironmentToCloud(input: {
       link,
     });
 
-    yield* environmentClient.cloud
+    yield* environmentClient.connect
       .relayConfig({
         headers: {},
         payload: {

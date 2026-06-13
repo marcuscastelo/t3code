@@ -150,6 +150,10 @@ function getSystemDarkSnapshot(): boolean {
   return cachedSystemDark;
 }
 
+function getSystemDarkServerSnapshot(): boolean {
+  return false;
+}
+
 function subscribeSystemDark(listener: () => void): () => void {
   if (!systemDarkMediaQuery) {
     systemDarkMediaQuery = window.matchMedia(MEDIA_QUERY);
@@ -184,7 +188,11 @@ export function useAppearance() {
     [activeDarkThemeId, customThemes],
   );
 
-  const systemDark = useSyncExternalStore(subscribeSystemDark, getSystemDarkSnapshot);
+  const systemDark = useSyncExternalStore(
+    subscribeSystemDark,
+    getSystemDarkSnapshot,
+    getSystemDarkServerSnapshot,
+  );
 
   const resolvedTheme = useMemo(
     () => resolveAppearanceMode(colorMode, systemDark),

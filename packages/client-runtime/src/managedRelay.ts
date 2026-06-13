@@ -36,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import type { HttpMethod } from "effect/unstable/http/HttpMethod";
+import { HttpClientError } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 export interface ManagedRelayDpopProofInput {
@@ -137,8 +138,25 @@ export class ManagedRelayClient extends Context.Service<
   ManagedRelayClientShape
 >()("@t3tools/client-runtime/managedRelay/ManagedRelayClient") {}
 
+function sanitizeRelayClientErrorCause(cause: unknown): unknown {
+  if (!HttpClientError.isHttpClientError(cause)) {
+    return cause;
+  }
+  return {
+    _tag: "ManagedRelayHttpClientError",
+    message: cause.message,
+    reason: cause.reason._tag,
+    method: cause.request.method,
+    url: cause.request.url,
+    ...(cause.response ? { status: cause.response.status } : {}),
+  };
+}
+
 function relayClientError(message: string, cause?: unknown): ManagedRelayClientError {
-  return new ManagedRelayClientError({ message, ...(cause === undefined ? {} : { cause }) });
+  return new ManagedRelayClientError({
+    message,
+    ...(cause === undefined ? {} : { cause: sanitizeRelayClientErrorCause(cause) }),
+  });
 }
 
 function timeoutRelayRequest(message: string) {

@@ -18,7 +18,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 
 import { ServerConfig } from "../../config.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -156,27 +156,27 @@ const makeLayer = (baseDir: string, terminalManager: TerminalManagerShape) =>
   );
 
 describe("ProjectHookRunner", () => {
-  it("opens terminals, writes commands, and creates archive artifacts", async () => {
-    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-project-hook-runner-"));
-    const open = vi.fn(() =>
-      Effect.succeed({
-        threadId: thread.id,
-        terminalId: "hook-thread-archived-archive-run-1",
-        cwd: "/repo/worktree",
-        worktreePath: "/repo/worktree",
-        status: "running" as const,
-        pid: 123,
-        history: "",
-        exitCode: null,
-        exitSignal: null,
-        label: "hook-thread-archived-archive-run-1",
-        updatedAt: now,
-      }),
-    );
-    const write = vi.fn(() => Effect.void);
+  it.effect("opens terminals, writes commands, and creates archive artifacts", () =>
+    Effect.gen(function* () {
+      const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-project-hook-runner-"));
+      const open = vi.fn(() =>
+        Effect.succeed({
+          threadId: thread.id,
+          terminalId: "hook-thread-archived-archive-run-1",
+          cwd: "/repo/worktree",
+          worktreePath: "/repo/worktree",
+          status: "running" as const,
+          pid: 123,
+          history: "",
+          exitCode: null,
+          exitSignal: null,
+          label: "hook-thread-archived-archive-run-1",
+          updatedAt: now,
+        }),
+      );
+      const write = vi.fn(() => Effect.void);
 
-    const runner = await Effect.runPromise(
-      Effect.service(ProjectHookRunner).pipe(
+      const runner = yield* Effect.service(ProjectHookRunner).pipe(
         Effect.provide(
           makeLayer(baseDir, {
             open,
@@ -190,11 +190,9 @@ describe("ProjectHookRunner", () => {
             subscribeMetadata: () => Effect.succeed(() => undefined),
           }),
         ),
-      ),
-    );
+      );
 
-    const result = await Effect.runPromise(
-      runner.runForThread({
+      const result = yield* runner.runForThread({
         event: "thread.archived",
         hookRunId: archivedEvent.eventId,
         threadId: thread.id,
@@ -206,43 +204,45 @@ describe("ProjectHookRunner", () => {
           project,
           thread,
         },
-      }),
-    );
+      });
 
-    expect(result.status).toBe("started");
-    if (result.status !== "started") return;
+      expect(result.status).toBe("started");
+      if (result.status !== "started") return;
 
-    expect(open).toHaveBeenCalledWith({
-      threadId: thread.id,
-      terminalId: "hook-thread-archived-archive-run-1",
-      cwd: "/repo/worktree",
-      worktreePath: "/repo/worktree",
-      env: expect.objectContaining({
-        T3CODE_PROJECT_ROOT: project.workspaceRoot,
-        T3CODE_WORKTREE_PATH: "/repo/worktree",
-        T3CODE_HOOK_EVENT: "thread.archived",
-        T3CODE_HOOK_RUN_ID: archivedEvent.eventId,
-        T3CODE_HOOK_PAYLOAD_JSON: result.payloadJsonPath,
-        T3CODE_HOOK_TRANSCRIPT_JSON: result.transcriptJsonPath,
-        T3CODE_HOOK_TRANSCRIPT_MD: result.transcriptMarkdownPath,
-      }),
-    });
-    expect(write).toHaveBeenCalledWith({
-      threadId: thread.id,
-      terminalId: "hook-thread-archived-archive-run-1",
-      data: "scripts/archive-chat\r",
-    });
+      expect(open).toHaveBeenCalledWith({
+        threadId: thread.id,
+        terminalId: "hook-thread-archived-archive-run-1",
+        cwd: "/repo/worktree",
+        worktreePath: "/repo/worktree",
+        env: expect.objectContaining({
+          T3CODE_PROJECT_ROOT: project.workspaceRoot,
+          T3CODE_WORKTREE_PATH: "/repo/worktree",
+          T3CODE_HOOK_EVENT: "thread.archived",
+          T3CODE_HOOK_RUN_ID: archivedEvent.eventId,
+          T3CODE_HOOK_PAYLOAD_JSON: result.payloadJsonPath,
+          T3CODE_HOOK_TRANSCRIPT_JSON: result.transcriptJsonPath,
+          T3CODE_HOOK_TRANSCRIPT_MD: result.transcriptMarkdownPath,
+        }),
+      });
+      expect(write).toHaveBeenCalledWith({
+        threadId: thread.id,
+        terminalId: "hook-thread-archived-archive-run-1",
+        data: "scripts/archive-chat\r",
+      });
 
-    expect(fs.readFileSync(result.payloadJsonPath, "utf8")).toContain('"event":"thread.archived"');
-    expect(result.transcriptJsonPath).not.toBeNull();
-    expect(result.transcriptMarkdownPath).not.toBeNull();
-    if (!result.transcriptJsonPath || !result.transcriptMarkdownPath) return;
-    expect(fs.readFileSync(result.transcriptJsonPath, "utf8")).toContain(
-      '"title":"Archive thread"',
-    );
-    const markdown = fs.readFileSync(result.transcriptMarkdownPath, "utf8");
-    expect(markdown).toContain("# Archive thread");
-    expect(markdown).toContain("hello archive");
-    expect(markdown).toContain("screenshot.png");
-  });
+      expect(fs.readFileSync(result.payloadJsonPath, "utf8")).toContain(
+        '"event":"thread.archived"',
+      );
+      expect(result.transcriptJsonPath).not.toBeNull();
+      expect(result.transcriptMarkdownPath).not.toBeNull();
+      if (!result.transcriptJsonPath || !result.transcriptMarkdownPath) return;
+      expect(fs.readFileSync(result.transcriptJsonPath, "utf8")).toContain(
+        '"title":"Archive thread"',
+      );
+      const markdown = fs.readFileSync(result.transcriptMarkdownPath, "utf8");
+      expect(markdown).toContain("# Archive thread");
+      expect(markdown).toContain("hello archive");
+      expect(markdown).toContain("screenshot.png");
+    }),
+  );
 });
