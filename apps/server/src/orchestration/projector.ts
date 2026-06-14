@@ -1,4 +1,9 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
+import type {
+  OrchestrationEvent,
+  OrchestrationReadModel,
+  ThreadId,
+  WorktreeOwnership,
+} from "@t3tools/contracts";
 import {
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
@@ -31,6 +36,13 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
+
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  return worktreeOwnership !== undefined ? worktreeOwnership : worktreePath ? "managed" : null;
+}
 
 function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error") {
   if (status === "error") return "error" as const;
@@ -282,6 +294,10 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            worktreeOwnership: normalizeWorktreeOwnership(
+              payload.worktreePath,
+              payload.worktreeOwnership,
+            ),
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -348,6 +364,14 @@ export function projectEvent(
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.worktreeOwnership !== undefined || payload.worktreePath !== undefined
+              ? {
+                  worktreeOwnership: normalizeWorktreeOwnership(
+                    payload.worktreePath ?? null,
+                    payload.worktreeOwnership,
+                  ),
+                }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

@@ -3,6 +3,7 @@ import {
   type ProjectContext,
   ProjectContextRuleId,
   type ProjectContextDefaults,
+  type ProjectContextProjectOverride,
   type ProjectContextRule,
   type ProjectContextRuleKind,
   type ThreadEnvMode,
@@ -17,7 +18,9 @@ export interface ProjectContextSettings {
   activeProjectContextId: ProjectContextId | null;
   projectContextAssignments: Record<string, ProjectContextId>;
   projectContextDefaults: Record<ProjectContextId, ProjectContextDefaults>;
+  projectContextProjectOverrides: Record<string, ProjectContextProjectOverride>;
   projectContextRules: readonly ProjectContextRule[];
+  managedWorktreeBaseDirectory: string;
 }
 
 export interface ProjectContextSummary {
@@ -31,7 +34,9 @@ export interface ProjectContextSettingsPatch {
   activeProjectContextId: ProjectContextId | null;
   projectContextAssignments: Record<string, ProjectContextId>;
   projectContextDefaults: Record<ProjectContextId, ProjectContextDefaults>;
+  projectContextProjectOverrides: Record<string, ProjectContextProjectOverride>;
   projectContextRules: ProjectContextRule[];
+  managedWorktreeBaseDirectory: string;
 }
 
 export function selectProjectContextSettings(settings: UnifiedSettings): ProjectContextSettings {
@@ -40,7 +45,9 @@ export function selectProjectContextSettings(settings: UnifiedSettings): Project
     activeProjectContextId: settings.activeProjectContextId,
     projectContextAssignments: settings.projectContextAssignments,
     projectContextDefaults: settings.projectContextDefaults,
+    projectContextProjectOverrides: settings.projectContextProjectOverrides,
     projectContextRules: settings.projectContextRules,
+    managedWorktreeBaseDirectory: settings.managedWorktreeBaseDirectory,
   };
 }
 
@@ -207,6 +214,72 @@ export function resolveProjectContextAddProjectBaseDirectory(
 ): string {
   const value = resolveProjectContextDefaults(settings, contextId).addProjectBaseDirectory?.trim();
   return value && value.length > 0 ? value : fallback;
+}
+
+export function resolveManagedWorktreeBaseDirectory(
+  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+  settings: ProjectContextSettings,
+): string | null {
+  for (const assignmentKey of deriveProjectContextAssignmentKeys(project)) {
+    const value =
+      settings.projectContextProjectOverrides[assignmentKey]?.managedWorktreeBaseDirectory?.trim();
+    if (value && value.length > 0) {
+      return value;
+    }
+  }
+
+  const contextId = resolveProjectContextId(project, settings);
+  const workspaceValue = resolveProjectContextDefaults(
+    settings,
+    contextId,
+  ).managedWorktreeBaseDirectory?.trim();
+  if (workspaceValue && workspaceValue.length > 0) {
+    return workspaceValue;
+  }
+
+  const globalValue = settings.managedWorktreeBaseDirectory.trim();
+  return globalValue.length > 0 ? globalValue : null;
+}
+
+function slugPathSegment(value: string, fallback: string): string {
+  const slug = value
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : fallback;
+}
+
+function basename(value: string): string {
+  const parts = value.split(/[\\/]+/).filter((part) => part.length > 0);
+  return parts.at(-1) ?? value;
+}
+
+function joinLocalPath(base: string, ...parts: readonly string[]): string {
+  const separator = base.includes("\\") && !base.includes("/") ? "\\" : "/";
+  return [
+    base.replace(/[\\/]+$/g, ""),
+    ...parts.map((part) => part.replace(/^[\\/]+|[\\/]+$/g, "")),
+  ]
+    .filter((part) => part.length > 0)
+    .join(separator);
+}
+
+export function resolveManagedWorktreePath(input: {
+  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">;
+  settings: ProjectContextSettings;
+  branch: string;
+}): string | null {
+  const baseDirectory = resolveManagedWorktreeBaseDirectory(input.project, input.settings);
+  if (baseDirectory === null) {
+    return null;
+  }
+  const repoSlug = slugPathSegment(
+    input.project.repositoryIdentity?.name ?? basename(input.project.cwd),
+    "repo",
+  );
+  const branchSlug = slugPathSegment(input.branch, "branch");
+  return joinLocalPath(baseDirectory, repoSlug, branchSlug);
 }
 
 function normalizeRuleMatchText(value: string): string {
@@ -387,9 +460,11 @@ export function removeProjectContext(input: {
           }),
     projectContextAssignments,
     projectContextDefaults,
+    projectContextProjectOverrides: input.settings.projectContextProjectOverrides,
     projectContextRules: sortProjectContextRules(input.settings.projectContextRules).filter(
       (rule) => remainingContextIds.has(rule.contextId),
     ),
+    managedWorktreeBaseDirectory: input.settings.managedWorktreeBaseDirectory,
   };
 }
 
