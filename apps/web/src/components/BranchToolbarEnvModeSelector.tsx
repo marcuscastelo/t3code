@@ -26,6 +26,7 @@ interface BranchToolbarEnvModeSelectorProps {
   onEnvModeChange: (mode: EnvMode) => void;
   previousWorktreeLabel?: string | null;
   onUsePreviousWorktree?: () => void;
+  onExistingWorktreeAttachRequest?: (() => void) | undefined;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -35,6 +36,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   onEnvModeChange,
   previousWorktreeLabel,
   onUsePreviousWorktree,
+  onExistingWorktreeAttachRequest,
 }: BranchToolbarEnvModeSelectorProps) {
   const showPreviousWorktree = Boolean(previousWorktreeLabel && onUsePreviousWorktree);
   const envModeItems = useMemo(
@@ -44,8 +46,16 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       ...(showPreviousWorktree && previousWorktreeLabel
         ? [{ value: PREVIOUS_WORKTREE_SELECT_VALUE, label: previousWorktreeLabel }]
         : []),
+      ...(onExistingWorktreeAttachRequest
+        ? [{ value: "existing-worktree", label: "Existing worktree" }]
+        : []),
     ],
-    [activeWorktreePath, previousWorktreeLabel, showPreviousWorktree],
+    [
+      activeWorktreePath,
+      onExistingWorktreeAttachRequest,
+      previousWorktreeLabel,
+      showPreviousWorktree,
+    ],
   );
 
   if (envLocked) {
@@ -75,7 +85,13 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           onUsePreviousWorktree?.();
           return;
         }
-        onEnvModeChange(value as EnvMode);
+        if (value === "existing-worktree") {
+          onExistingWorktreeAttachRequest?.();
+          return;
+        }
+        if (value === "local" || value === "worktree") {
+          onEnvModeChange(value);
+        }
       }}
       items={envModeItems}
     >
@@ -113,6 +129,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               <span className="inline-flex items-center gap-1.5">
                 <HistoryIcon className="size-3" />
                 {previousWorktreeLabel}
+              </span>
+            </SelectItem>
+          ) : null}
+          {onExistingWorktreeAttachRequest ? (
+            <SelectItem value="existing-worktree">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderGitIcon className="size-3" />
+                Existing worktree
               </span>
             </SelectItem>
           ) : null}
