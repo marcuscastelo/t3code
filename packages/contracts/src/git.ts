@@ -142,6 +142,12 @@ export const VcsCreateWorktreeInput = Schema.Struct({
 });
 export type VcsCreateWorktreeInput = typeof VcsCreateWorktreeInput.Type;
 
+export const VcsValidateWorktreeAttachInput = Schema.Struct({
+  projectCwd: TrimmedNonEmptyStringSchema,
+  worktreePath: TrimmedNonEmptyStringSchema,
+});
+export type VcsValidateWorktreeAttachInput = typeof VcsValidateWorktreeAttachInput.Type;
+
 export const GitPullRequestRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   reference: GitPullRequestReference,
@@ -265,6 +271,18 @@ export const VcsCreateWorktreeResult = Schema.Struct({
   worktree: VcsWorktree,
 });
 export type VcsCreateWorktreeResult = typeof VcsCreateWorktreeResult.Type;
+
+export const VcsValidateWorktreeAttachResult = Schema.Struct({
+  canAttachExternal: Schema.Boolean,
+  canManage: Schema.Boolean,
+  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  detail: Schema.optional(TrimmedNonEmptyStringSchema),
+  projectRepositoryRoot: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  worktreeRepositoryRoot: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  projectMetadataPath: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  worktreeMetadataPath: Schema.NullOr(TrimmedNonEmptyStringSchema),
+});
+export type VcsValidateWorktreeAttachResult = typeof VcsValidateWorktreeAttachResult.Type;
 
 export const GitResolvePullRequestResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,

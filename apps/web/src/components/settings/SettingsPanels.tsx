@@ -836,6 +836,35 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Managed worktrees start in"
+          description="Leave empty to keep the server's current worktree location."
+          resetAction={
+            settings.managedWorktreeBaseDirectory !==
+            DEFAULT_UNIFIED_SETTINGS.managedWorktreeBaseDirectory ? (
+              <SettingResetButton
+                label="managed worktree base directory"
+                onClick={() =>
+                  updateSettings({
+                    managedWorktreeBaseDirectory:
+                      DEFAULT_UNIFIED_SETTINGS.managedWorktreeBaseDirectory,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              className="w-full sm:w-72"
+              value={settings.managedWorktreeBaseDirectory}
+              onCommit={(next) => updateSettings({ managedWorktreeBaseDirectory: next })}
+              placeholder="Server default"
+              spellCheck={false}
+              aria-label="Managed worktree base directory"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Archive confirmation"
           description="Require a second click on the inline archive action before a thread is archived."
           resetAction={

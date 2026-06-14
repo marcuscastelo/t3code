@@ -23,6 +23,7 @@ const clientSettings: ClientSettings = {
   projectContexts: [],
   activeProjectContextId: null,
   projectContextAssignments: {},
+  projectContextProjectOverrides: {},
   projectContextDefaults: {},
   projectContextRules: [],
   sidebarProjectGroupingMode: "repository_path",
