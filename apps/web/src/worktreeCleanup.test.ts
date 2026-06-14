@@ -30,6 +30,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    worktreeOwnership: null,
     ...overrides,
   };
 }
@@ -47,9 +48,25 @@ describe("getOrphanedWorktreePathForThread", () => {
   });
 
   it("returns the path when no other thread links to that worktree", () => {
-    const threads = [makeThread({ worktreePath: "/tmp/repo/worktrees/feature-a" })];
+    const threads = [
+      makeThread({
+        worktreePath: "/tmp/repo/worktrees/feature-a",
+        worktreeOwnership: "managed",
+      }),
+    ];
     const result = getOrphanedWorktreePathForThread(threads, ThreadId.make("thread-1"));
     expect(result).toBe("/tmp/repo/worktrees/feature-a");
+  });
+
+  it("returns null for external worktrees", () => {
+    const threads = [
+      makeThread({
+        worktreePath: "/tmp/repo/worktrees/feature-a",
+        worktreeOwnership: "external",
+      }),
+    ];
+    const result = getOrphanedWorktreePathForThread(threads, ThreadId.make("thread-1"));
+    expect(result).toBeNull();
   });
 
   it("returns null when another thread links to the same worktree", () => {
@@ -57,10 +74,12 @@ describe("getOrphanedWorktreePathForThread", () => {
       makeThread({
         id: ThreadId.make("thread-1"),
         worktreePath: "/tmp/repo/worktrees/feature-a",
+        worktreeOwnership: "managed",
       }),
       makeThread({
         id: ThreadId.make("thread-2"),
         worktreePath: "/tmp/repo/worktrees/feature-a",
+        worktreeOwnership: "managed",
       }),
     ];
     const result = getOrphanedWorktreePathForThread(threads, ThreadId.make("thread-1"));
@@ -72,10 +91,12 @@ describe("getOrphanedWorktreePathForThread", () => {
       makeThread({
         id: ThreadId.make("thread-1"),
         worktreePath: "/tmp/repo/worktrees/feature-a",
+        worktreeOwnership: "managed",
       }),
       makeThread({
         id: ThreadId.make("thread-2"),
         worktreePath: "/tmp/repo/worktrees/feature-b",
+        worktreeOwnership: "managed",
       }),
     ];
     const result = getOrphanedWorktreePathForThread(threads, ThreadId.make("thread-1"));

@@ -11,7 +11,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { memo, useState } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
-import { ArrowLeftIcon, DiffIcon, EllipsisVerticalIcon, TerminalSquareIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  DiffIcon,
+  EllipsisVerticalIcon,
+  FolderCogIcon,
+  TerminalSquareIcon,
+} from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
@@ -53,6 +59,7 @@ interface ChatHeaderProps {
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
+  onConfigureProjectWorktreeBase?: () => void;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -94,6 +101,7 @@ export const ChatHeader = memo(function ChatHeader({
   onDeleteProjectScript,
   onToggleTerminal,
   onToggleDiff,
+  onConfigureProjectWorktreeBase,
 }: ChatHeaderProps) {
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -135,6 +143,23 @@ export const ChatHeader = memo(function ChatHeader({
           activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
           {...(draftId ? { draftId } : {})}
         />
+      )}
+      {onConfigureProjectWorktreeBase && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="Configure project worktree base"
+                onClick={onConfigureProjectWorktreeBase}
+              >
+                <FolderCogIcon className="size-4" />
+              </button>
+            }
+          />
+          <TooltipPopup>Project worktree base</TooltipPopup>
+        </Tooltip>
       )}
     </>
   ) : undefined;
@@ -248,6 +273,23 @@ export const ChatHeader = memo(function ChatHeader({
               activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
               {...(draftId ? { draftId } : {})}
             />
+          )}
+          {onConfigureProjectWorktreeBase && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Configure project worktree base"
+                    onClick={onConfigureProjectWorktreeBase}
+                  >
+                    <FolderCogIcon className="size-4" />
+                  </button>
+                }
+              />
+              <TooltipPopup>Project worktree base</TooltipPopup>
+            </Tooltip>
           )}
           <Tooltip>
             <TooltipTrigger

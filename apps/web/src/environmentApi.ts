@@ -36,10 +36,14 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       onStatus: (input, callback, options) => rpcClient.vcs.onStatus(input, callback, options),
       listRefs: rpcClient.vcs.listRefs,
       createWorktree: rpcClient.vcs.createWorktree,
+      validateWorktreeAttach: rpcClient.vcs.validateWorktreeAttach,
       removeWorktree: rpcClient.vcs.removeWorktree,
       createRef: rpcClient.vcs.createRef,
       switchRef: rpcClient.vcs.switchRef,
       init: rpcClient.vcs.init,
+    },
+    worktree: {
+      promoteThread: rpcClient.worktree.promoteThread,
     },
     git: {
       resolvePullRequest: rpcClient.git.resolvePullRequest,

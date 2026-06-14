@@ -132,6 +132,7 @@ export function useProjectActions() {
             interactionMode: input.interactionMode,
             branch: input.branch,
             worktreePath: isWorktree ? null : input.worktreePath,
+            worktreeOwnership: isWorktree || input.worktreePath !== null ? "managed" : null,
             createdAt,
           },
           ...(isWorktree

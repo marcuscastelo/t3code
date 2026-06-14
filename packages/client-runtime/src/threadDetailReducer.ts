@@ -10,6 +10,7 @@ import type {
   OrchestrationThread,
   OrchestrationThreadActivity,
   TurnId,
+  WorktreeOwnership,
 } from "@t3tools/contracts";
 
 /**
@@ -52,6 +53,16 @@ const activityOrder = O.combineAll<OrchestrationThreadActivity>([
   O.mapInput(O.String, (a) => a.id),
 ]);
 
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  if (worktreePath === null) {
+    return null;
+  }
+  return worktreeOwnership !== undefined ? worktreeOwnership : "managed";
+}
+
 /**
  * Apply a single orchestration event to an `OrchestrationThread`, returning
  * the updated thread, a deletion signal, or an "unchanged" marker when the
@@ -86,6 +97,10 @@ export function applyThreadDetailEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          worktreeOwnership: normalizeWorktreeOwnership(
+            event.payload.worktreePath,
+            event.payload.worktreeOwnership,
+          ),
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -132,6 +147,16 @@ export function applyThreadDetailEvent(
           ...(event.payload.worktreePath !== undefined
             ? { worktreePath: event.payload.worktreePath }
             : {}),
+          ...(event.payload.worktreeOwnership !== undefined
+            ? { worktreeOwnership: event.payload.worktreeOwnership }
+            : event.payload.worktreePath !== undefined
+              ? {
+                  worktreeOwnership: normalizeWorktreeOwnership(
+                    event.payload.worktreePath,
+                    undefined,
+                  ),
+                }
+              : {}),
           updatedAt: event.payload.updatedAt,
         },
       };

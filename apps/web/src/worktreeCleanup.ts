@@ -16,6 +16,9 @@ export function getOrphanedWorktreePathForThread(
   if (!targetThread) {
     return null;
   }
+  if (targetThread.worktreeOwnership !== "managed") {
+    return null;
+  }
 
   const targetWorktreePath = normalizeWorktreePath(targetThread.worktreePath);
   if (!targetWorktreePath) {

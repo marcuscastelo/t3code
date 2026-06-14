@@ -17,6 +17,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
   ScopedThreadRef,
+  WorktreeOwnership,
 } from "@t3tools/contracts";
 import { isProviderDriverKind, ProviderDriverKind } from "@t3tools/contracts";
 import type { ThreadId, TurnId } from "@t3tools/contracts";
@@ -149,6 +150,16 @@ function normalizeModelSelection<T extends { instanceId: string; model: string }
   };
 }
 
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  if (worktreePath === null) {
+    return null;
+  }
+  return worktreeOwnership !== undefined ? worktreeOwnership : "managed";
+}
+
 function mapProjectScripts(scripts: ReadonlyArray<Project["scripts"][number]>): Project["scripts"] {
   return scripts.map((script) => ({ ...script }));
 }
@@ -257,6 +268,7 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    worktreeOwnership: normalizeWorktreeOwnership(thread.worktreePath, thread.worktreeOwnership),
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
     activities: thread.activities.map((activity) => ({ ...activity })),
   };
@@ -286,6 +298,7 @@ function mapThreadShell(
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    worktreeOwnership: normalizeWorktreeOwnership(thread.worktreePath, thread.worktreeOwnership),
   };
   const session = thread.session ? mapSession(thread.session) : null;
   const turnState: ThreadTurnState = {
@@ -305,6 +318,7 @@ function mapThreadShell(
     latestTurn: thread.latestTurn,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    worktreeOwnership: normalizeWorktreeOwnership(thread.worktreePath, thread.worktreeOwnership),
     latestUserMessageAt: thread.latestUserMessageAt,
     hasPendingApprovals: thread.hasPendingApprovals,
     hasPendingUserInput: thread.hasPendingUserInput,
@@ -334,6 +348,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    worktreeOwnership: normalizeWorktreeOwnership(thread.worktreePath, thread.worktreeOwnership),
   };
 }
 
@@ -406,6 +421,7 @@ function sidebarThreadSummariesEqual(
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
+    left.worktreeOwnership === right.worktreeOwnership &&
     left.latestUserMessageAt === right.latestUserMessageAt &&
     left.hasPendingApprovals === right.hasPendingApprovals &&
     left.hasPendingUserInput === right.hasPendingUserInput &&
@@ -429,7 +445,8 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
-    left.worktreePath === right.worktreePath
+    left.worktreePath === right.worktreePath &&
+    left.worktreeOwnership === right.worktreeOwnership
   );
 }
 
@@ -1271,6 +1288,10 @@ function applyEnvironmentOrchestrationEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          worktreeOwnership: normalizeWorktreeOwnership(
+            event.payload.worktreePath,
+            event.payload.worktreeOwnership,
+          ),
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1315,6 +1336,16 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
           : {}),
+        ...(event.payload.worktreeOwnership !== undefined
+          ? { worktreeOwnership: event.payload.worktreeOwnership }
+          : event.payload.worktreePath !== undefined
+            ? {
+                worktreeOwnership: normalizeWorktreeOwnership(
+                  event.payload.worktreePath,
+                  undefined,
+                ),
+              }
+            : {}),
         updatedAt: event.payload.updatedAt,
       }));
 
@@ -1948,6 +1979,10 @@ export function setThreadBranch(
         ...thread,
         branch,
         worktreePath,
+        worktreeOwnership:
+          worktreePath === null
+            ? null
+            : normalizeWorktreeOwnership(worktreePath, thread.worktreeOwnership),
         ...(cwdChanged ? { session: null } : {}),
       };
     },

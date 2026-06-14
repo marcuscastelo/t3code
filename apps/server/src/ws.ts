@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -108,6 +109,17 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
+function normalizeGitMetadataPath(
+  pathService: Path.Path,
+  rootPath: string | null,
+  metadataPath: string | null,
+): string | null {
+  if (rootPath === null || metadataPath === null) {
+    return null;
+  }
+  return pathService.resolve(rootPath, metadataPath);
+}
+
 const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
   [ORCHESTRATION_WS_METHODS.getTurnDiff, AuthOrchestrationReadScope],
@@ -146,10 +158,12 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.gitPreparePullRequestThread, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsListRefs, AuthOrchestrationReadScope],
   [WS_METHODS.vcsCreateWorktree, AuthOrchestrationOperateScope],
+  [WS_METHODS.vcsValidateWorktreeAttach, AuthOrchestrationReadScope],
   [WS_METHODS.vcsRemoveWorktree, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsCreateRef, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsSwitchRef, AuthOrchestrationOperateScope],
   [WS_METHODS.vcsInit, AuthOrchestrationOperateScope],
+  [WS_METHODS.worktreePromoteThread, AuthOrchestrationOperateScope],
   [WS_METHODS.reviewGetDiffPreview, AuthReviewWriteScope],
   [WS_METHODS.terminalOpen, AuthTerminalOperateScope],
   [WS_METHODS.terminalAttach, AuthTerminalOperateScope],
@@ -219,6 +233,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
       const gitWorkflow = yield* GitWorkflowService;
       const review = yield* ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService;
+      const vcsDriverRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
@@ -231,6 +246,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
       const workspaceFileSystem = yield* WorkspaceFileSystem;
       const projectHookRunner = yield* ProjectHookRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
+      const pathService = yield* Path.Path;
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const sourceControlDiscovery = yield* SourceControlDiscoveryLayer.SourceControlDiscovery;
@@ -323,6 +339,8 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
       const serverEventId = randomUUID.pipe(Effect.map(EventId.make));
       const serverCommandId = (tag: string) =>
         randomUUID.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
+      const dispatchCommandError = (message: string, cause?: unknown) =>
+        new OrchestrationDispatchCommandError({ message, cause });
 
       const loadAuthAccessSnapshot = () =>
         Effect.all({
@@ -660,6 +678,9 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                worktreeOwnership:
+                  bootstrap.createThread.worktreeOwnership ??
+                  (bootstrap.createThread.worktreePath !== null ? "managed" : null),
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;
@@ -670,7 +691,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
                 cwd: bootstrap.prepareWorktree.projectCwd,
                 refName: bootstrap.prepareWorktree.baseBranch,
                 newRefName: bootstrap.prepareWorktree.branch,
-                path: null,
+                path: bootstrap.prepareWorktree.path ?? null,
               });
               targetWorktreePath = worktree.worktree.path;
               yield* orchestrationEngine.dispatch({
@@ -679,6 +700,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
                 threadId: command.threadId,
                 branch: worktree.worktree.refName,
                 worktreePath: targetWorktreePath,
+                worktreeOwnership: "managed",
               });
               yield* refreshGitStatus(targetWorktreePath);
             }
@@ -761,7 +783,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
         Stream.take(orchestrationEngine.readEvents(Math.max(0, sequence - 1)), 1).pipe(
           Stream.runCollect,
           Effect.map((chunk) => Array.from(chunk)[0] ?? null),
-          Effect.catch(() => Effect.succeed(null)),
+          Effect.orElseSucceed(() => null),
         );
 
       const runThreadArchivedHook = (input: {
@@ -832,6 +854,225 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
             });
           }),
         );
+
+      const validateWorktreeAttach = (input: {
+        readonly projectCwd: string;
+        readonly worktreePath: string;
+      }) =>
+        Effect.gen(function* () {
+          const [projectHandle, worktreeHandle] = yield* Effect.all([
+            vcsDriverRegistry
+              .detect({ cwd: input.projectCwd })
+              .pipe(Effect.orElseSucceed(() => null)),
+            vcsDriverRegistry
+              .detect({ cwd: input.worktreePath })
+              .pipe(Effect.orElseSucceed(() => null)),
+          ]);
+
+          const projectRepositoryRoot = projectHandle?.repository.rootPath ?? null;
+          const worktreeRepositoryRoot = worktreeHandle?.repository.rootPath ?? null;
+          const projectMetadataPath = normalizeGitMetadataPath(
+            pathService,
+            projectRepositoryRoot,
+            projectHandle?.repository.metadataPath ?? null,
+          );
+          const worktreeMetadataPath = normalizeGitMetadataPath(
+            pathService,
+            worktreeRepositoryRoot,
+            worktreeHandle?.repository.metadataPath ?? null,
+          );
+          const branch =
+            worktreeHandle !== null
+              ? yield* gitWorkflow.localStatus({ cwd: input.worktreePath }).pipe(
+                  Effect.map((status) => (status.isRepo ? status.refName : null)),
+                  Effect.orElseSucceed(() => null),
+                )
+              : null;
+
+          if (projectHandle === null) {
+            return {
+              canAttachExternal: false,
+              canManage: false,
+              branch,
+              detail: "Selected project is not a Git repository.",
+              projectRepositoryRoot,
+              worktreeRepositoryRoot,
+              projectMetadataPath,
+              worktreeMetadataPath,
+            };
+          }
+
+          if (worktreeHandle === null) {
+            return {
+              canAttachExternal: false,
+              canManage: false,
+              branch,
+              detail: "Selected path is not a Git repository.",
+              projectRepositoryRoot,
+              worktreeRepositoryRoot,
+              projectMetadataPath,
+              worktreeMetadataPath,
+            };
+          }
+
+          const [projectIdentity, worktreeIdentity] = yield* Effect.all([
+            repositoryIdentityResolver.resolve(input.projectCwd),
+            repositoryIdentityResolver.resolve(input.worktreePath),
+          ]);
+          const sameCanonicalRepository =
+            projectIdentity !== null &&
+            worktreeIdentity !== null &&
+            projectIdentity.canonicalKey === worktreeIdentity.canonicalKey;
+          const sameWorktreeSet =
+            projectMetadataPath !== null &&
+            worktreeMetadataPath !== null &&
+            projectMetadataPath === worktreeMetadataPath;
+          const canAttachExternal = sameCanonicalRepository || sameWorktreeSet;
+          const canManage = sameWorktreeSet;
+
+          return {
+            canAttachExternal,
+            canManage,
+            branch,
+            ...(canAttachExternal
+              ? {}
+              : { detail: "Selected path does not match the selected project repository." }),
+            projectRepositoryRoot,
+            worktreeRepositoryRoot,
+            projectMetadataPath,
+            worktreeMetadataPath,
+          };
+        });
+
+      const promoteWorktreeThread = (input: {
+        readonly threadId: ThreadId;
+        readonly runSetupScript: boolean;
+      }) =>
+        Effect.gen(function* () {
+          const threadOption = yield* projectionSnapshotQuery
+            .getThreadDetailById(input.threadId)
+            .pipe(
+              Effect.mapError((cause) =>
+                dispatchCommandError("Failed to load thread before promoting worktree.", cause),
+              ),
+            );
+          if (Option.isNone(threadOption)) {
+            return yield* dispatchCommandError(`Thread ${input.threadId} was not found.`);
+          }
+
+          const thread = threadOption.value;
+          if (thread.worktreeOwnership !== "external" || thread.worktreePath === null) {
+            return yield* dispatchCommandError(
+              "Only external worktree threads can be made managed.",
+            );
+          }
+
+          const projectOption = yield* projectionSnapshotQuery
+            .getProjectShellById(thread.projectId)
+            .pipe(
+              Effect.mapError((cause) =>
+                dispatchCommandError("Failed to load project before promoting worktree.", cause),
+              ),
+            );
+          if (Option.isNone(projectOption)) {
+            return yield* dispatchCommandError(`Project ${thread.projectId} was not found.`);
+          }
+
+          const commandId = yield* serverCommandId("worktree-promote-thread");
+          yield* orchestrationEngine
+            .dispatch({
+              type: "thread.meta.update",
+              commandId,
+              threadId: input.threadId,
+              worktreeOwnership: "managed",
+            })
+            .pipe(
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to promote thread worktree ownership."),
+              ),
+            );
+
+          if (input.runSetupScript) {
+            const project = projectOption.value;
+            const requestedAt = yield* nowIso;
+            yield* projectHookRunner
+              .runForThread({
+                event: "worktree.created",
+                hookRunId: `${commandId}:worktree.created`,
+                threadId: thread.id,
+                projectId: project.id,
+                projectCwd: project.workspaceRoot,
+                worktreePath: thread.worktreePath,
+                payload: {
+                  threadId: thread.id,
+                  projectId: project.id,
+                  projectCwd: project.workspaceRoot,
+                  worktreePath: thread.worktreePath,
+                },
+              })
+              .pipe(
+                Effect.matchEffect({
+                  onFailure: (error) => {
+                    const detail =
+                      error instanceof Error ? error.message : "Unknown setup failure.";
+                    return appendSetupScriptActivity({
+                      threadId: thread.id,
+                      kind: "setup-script.failed",
+                      summary: "Setup script failed to start",
+                      createdAt: requestedAt,
+                      payload: {
+                        detail,
+                        worktreePath: thread.worktreePath,
+                      },
+                      tone: "error",
+                    }).pipe(Effect.ignoreCause({ log: true }));
+                  },
+                  onSuccess: (hookResult) => {
+                    if (hookResult.status !== "started") {
+                      return Effect.void;
+                    }
+                    return Effect.forEach(
+                      hookResult.scripts,
+                      (script) =>
+                        Effect.gen(function* () {
+                          const startedAt = yield* nowIso;
+                          const payload = {
+                            scriptId: script.scriptId,
+                            scriptName: script.scriptName,
+                            terminalId: script.terminalId,
+                            worktreePath: thread.worktreePath,
+                          };
+                          yield* appendSetupScriptActivity({
+                            threadId: thread.id,
+                            kind: "setup-script.requested",
+                            summary: "Starting setup script",
+                            createdAt: requestedAt,
+                            payload,
+                            tone: "info",
+                          });
+                          yield* appendSetupScriptActivity({
+                            threadId: thread.id,
+                            kind: "setup-script.started",
+                            summary: "Setup script started",
+                            createdAt: startedAt,
+                            payload,
+                            tone: "info",
+                          });
+                        }),
+                      { concurrency: 1, discard: true },
+                    ).pipe(Effect.ignoreCause({ log: true }));
+                  },
+                }),
+              );
+          }
+
+          yield* refreshGitStatus(thread.worktreePath);
+          return {
+            threadId: input.threadId,
+            worktreeOwnership: "managed" as const,
+            setupScriptRequested: input.runSetupScript,
+          };
+        });
 
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
@@ -1377,6 +1618,10 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
             gitWorkflow.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
+        [WS_METHODS.vcsValidateWorktreeAttach]: (input) =>
+          observeRpcEffect(WS_METHODS.vcsValidateWorktreeAttach, validateWorktreeAttach(input), {
+            "rpc.aggregate": "vcs",
+          }),
         [WS_METHODS.vcsRemoveWorktree]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsRemoveWorktree,
@@ -1403,6 +1648,10 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
               .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
+        [WS_METHODS.worktreePromoteThread]: (input) =>
+          observeRpcEffect(WS_METHODS.worktreePromoteThread, promoteWorktreeThread(input), {
+            "rpc.aggregate": "worktree",
+          }),
         [WS_METHODS.reviewGetDiffPreview]: (input) =>
           observeRpcEffect(WS_METHODS.reviewGetDiffPreview, review.getDiffPreview(input), {
             "rpc.aggregate": "review",

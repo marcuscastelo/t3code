@@ -3,6 +3,7 @@ import {
   type ChatAttachment,
   type OrchestrationEvent,
   ThreadId,
+  type WorktreeOwnership,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -68,6 +69,13 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
 
 type ProjectorName =
   (typeof ORCHESTRATION_PROJECTOR_NAMES)[keyof typeof ORCHESTRATION_PROJECTOR_NAMES];
+
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  return worktreeOwnership !== undefined ? worktreeOwnership : worktreePath ? "managed" : null;
+}
 
 interface ProjectorDefinition {
   readonly name: ProjectorName;
@@ -578,6 +586,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            worktreeOwnership: normalizeWorktreeOwnership(
+              event.payload.worktreePath,
+              event.payload.worktreeOwnership,
+            ),
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -636,6 +648,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
+              : {}),
+            ...(event.payload.worktreeOwnership !== undefined ||
+            event.payload.worktreePath !== undefined
+              ? {
+                  worktreeOwnership: normalizeWorktreeOwnership(
+                    event.payload.worktreePath ?? null,
+                    event.payload.worktreeOwnership,
+                  ),
+                }
               : {}),
             updatedAt: event.payload.updatedAt,
           });

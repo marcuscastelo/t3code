@@ -3,6 +3,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type WorktreeOwnership,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -22,6 +23,13 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  return worktreeOwnership !== undefined ? worktreeOwnership : worktreePath ? "managed" : null;
+}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -239,6 +247,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          worktreeOwnership: normalizeWorktreeOwnership(
+            command.worktreePath,
+            command.worktreeOwnership,
+          ),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -335,6 +347,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.worktreeOwnership !== undefined || command.worktreePath !== undefined
+            ? {
+                worktreeOwnership: normalizeWorktreeOwnership(
+                  command.worktreePath ?? null,
+                  command.worktreeOwnership,
+                ),
+              }
+            : {}),
           updatedAt: occurredAt,
         },
       };

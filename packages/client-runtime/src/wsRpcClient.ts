@@ -107,10 +107,14 @@ export interface WsRpcClient {
     ) => () => void;
     readonly listRefs: RpcUnaryMethod<typeof WS_METHODS.vcsListRefs>;
     readonly createWorktree: RpcUnaryMethod<typeof WS_METHODS.vcsCreateWorktree>;
+    readonly validateWorktreeAttach: RpcUnaryMethod<typeof WS_METHODS.vcsValidateWorktreeAttach>;
     readonly removeWorktree: RpcUnaryMethod<typeof WS_METHODS.vcsRemoveWorktree>;
     readonly createRef: RpcUnaryMethod<typeof WS_METHODS.vcsCreateRef>;
     readonly switchRef: RpcUnaryMethod<typeof WS_METHODS.vcsSwitchRef>;
     readonly init: RpcUnaryMethod<typeof WS_METHODS.vcsInit>;
+  };
+  readonly worktree: {
+    readonly promoteThread: RpcUnaryMethod<typeof WS_METHODS.worktreePromoteThread>;
   };
   readonly git: {
     readonly runStackedAction: (
@@ -252,6 +256,8 @@ export function createWsRpcClient(
       listRefs: (input) => transport.request((client) => client[WS_METHODS.vcsListRefs](input)),
       createWorktree: (input) =>
         transport.request((client) => client[WS_METHODS.vcsCreateWorktree](input)),
+      validateWorktreeAttach: (input) =>
+        transport.request((client) => client[WS_METHODS.vcsValidateWorktreeAttach](input)),
       removeWorktree: (input) =>
         transport.request((client) => client[WS_METHODS.vcsRemoveWorktree](input)),
       createRef: (input) => transport.request((client) => client[WS_METHODS.vcsCreateRef](input)),
@@ -282,6 +288,10 @@ export function createWsRpcClient(
         transport.request((client) => client[WS_METHODS.gitResolvePullRequest](input)),
       preparePullRequestThread: (input) =>
         transport.request((client) => client[WS_METHODS.gitPreparePullRequestThread](input)),
+    },
+    worktree: {
+      promoteThread: (input) =>
+        transport.request((client) => client[WS_METHODS.worktreePromoteThread](input)),
     },
     review: {
       getDiffPreview: (input) =>
