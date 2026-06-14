@@ -53,6 +53,7 @@ function makeThread(
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    worktreeOwnership: null,
     latestUserMessageAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
@@ -69,8 +70,10 @@ function makeSettings(overrides: Partial<ProjectContextSettings> = {}): ProjectC
     ],
     activeProjectContextId: null,
     projectContextAssignments: {},
+    projectContextProjectOverrides: {},
     projectContextDefaults: {},
     projectContextRules: [],
+    managedWorktreeBaseDirectory: "",
     ...overrides,
   };
 }

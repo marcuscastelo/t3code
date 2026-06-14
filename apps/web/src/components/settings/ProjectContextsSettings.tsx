@@ -6,6 +6,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { ProviderInstanceId, type EnvironmentId, type ModelSelection } from "@t3tools/contracts";
 import {
   ProjectContextId,
   type ProjectContextDefaults,
@@ -20,12 +21,14 @@ import {
   buildProjectContextSummaries,
   createProjectContext,
   createProjectContextRule,
+  deriveProjectContextAssignmentKey,
   removeProjectContext,
   removeProjectContextRule,
   renameProjectContext,
   reorderProjectContext,
   reorderProjectContextRule,
   resolveActiveProjectContextId,
+  resolveProjectContextId,
   selectProjectContextSettings,
   sortProjectContextRules,
   sortProjectContexts,
@@ -56,7 +59,10 @@ const THREAD_ENV_MODE_OPTIONS: ReadonlyArray<{ value: ThreadEnvMode; label: stri
 
 type ProjectContextDefaultsPatch = {
   defaultThreadEnvMode?: ThreadEnvMode | undefined;
+  defaultEnvironmentId?: EnvironmentId | undefined;
+  defaultModelSelection?: ModelSelection | undefined;
   addProjectBaseDirectory?: string | undefined;
+  managedWorktreeBaseDirectory?: string | undefined;
 };
 
 function contextSelectValue(contextId: ProjectContextId | null): string {
@@ -71,6 +77,10 @@ function contextIdFromSelectValue(value: string): ProjectContextId | null {
 
 function formatCount(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatModelSelection(selection: ModelSelection | undefined): string {
+  return selection ? `${selection.instanceId}:${selection.model}` : "";
 }
 
 export function ProjectContextsSettingsPanel() {
@@ -117,6 +127,21 @@ export function ProjectContextsSettingsPanel() {
   );
   const selectedNewRuleContextId =
     newRuleContextId ?? activeContextId ?? sortedContexts[0]?.id ?? null;
+  const environmentIds = useMemo(
+    () => [...new Set(projects.map((project) => project.environmentId))].sort(),
+    [projects],
+  );
+  const projectsByContextId = useMemo(() => {
+    const map = new Map<ProjectContextId, typeof projects>();
+    for (const project of projects) {
+      const contextId = resolveProjectContextId(project, projectContextSettings);
+      if (contextId === null) {
+        continue;
+      }
+      map.set(contextId, [...(map.get(contextId) ?? []), project]);
+    }
+    return map;
+  }, [projectContextSettings, projects]);
 
   const createContext = useCallback(() => {
     const trimmedName = newContextName.trim();
@@ -147,8 +172,22 @@ export function ProjectContextsSettingsPanel() {
           delete nextDefaults.addProjectBaseDirectory;
         }
       }
+      if (nextDefaults.managedWorktreeBaseDirectory !== undefined) {
+        const trimmed = nextDefaults.managedWorktreeBaseDirectory.trim();
+        if (trimmed) {
+          nextDefaults.managedWorktreeBaseDirectory = trimmed;
+        } else {
+          delete nextDefaults.managedWorktreeBaseDirectory;
+        }
+      }
       if (nextDefaults.defaultThreadEnvMode === undefined) {
         delete nextDefaults.defaultThreadEnvMode;
+      }
+      if (nextDefaults.defaultEnvironmentId === undefined) {
+        delete nextDefaults.defaultEnvironmentId;
+      }
+      if (nextDefaults.defaultModelSelection === undefined) {
+        delete nextDefaults.defaultModelSelection;
       }
 
       const projectContextDefaults = { ...projectContextSettings.projectContextDefaults };
@@ -156,8 +195,17 @@ export function ProjectContextsSettingsPanel() {
         ...(nextDefaults.defaultThreadEnvMode !== undefined
           ? { defaultThreadEnvMode: nextDefaults.defaultThreadEnvMode }
           : {}),
+        ...(nextDefaults.defaultEnvironmentId !== undefined
+          ? { defaultEnvironmentId: nextDefaults.defaultEnvironmentId }
+          : {}),
+        ...(nextDefaults.defaultModelSelection !== undefined
+          ? { defaultModelSelection: nextDefaults.defaultModelSelection }
+          : {}),
         ...(nextDefaults.addProjectBaseDirectory !== undefined
           ? { addProjectBaseDirectory: nextDefaults.addProjectBaseDirectory }
+          : {}),
+        ...(nextDefaults.managedWorktreeBaseDirectory !== undefined
+          ? { managedWorktreeBaseDirectory: nextDefaults.managedWorktreeBaseDirectory }
           : {}),
       };
 
@@ -169,6 +217,70 @@ export function ProjectContextsSettingsPanel() {
       updateSettings({ projectContextDefaults });
     },
     [projectContextSettings.projectContextDefaults, updateSettings],
+  );
+
+  const commitDefaultModelSelection = useCallback(
+    (contextId: ProjectContextId, value: string) => {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        updateContextDefaults(contextId, { defaultModelSelection: undefined });
+        return;
+      }
+      const separatorIndex = trimmed.indexOf(":");
+      if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Invalid model default",
+            description: "Use provider:model, for example codex:gpt-5.",
+          }),
+        );
+        return;
+      }
+      try {
+        updateContextDefaults(contextId, {
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make(trimmed.slice(0, separatorIndex).trim()),
+            model: trimmed.slice(separatorIndex + 1).trim(),
+          },
+        });
+      } catch {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Invalid provider id",
+            description: "Use the provider instance id shown in provider settings.",
+          }),
+        );
+      }
+    },
+    [updateContextDefaults],
+  );
+
+  const updateProjectManagedWorktreeBaseDirectory = useCallback(
+    (project: Parameters<typeof deriveProjectContextAssignmentKey>[0], value: string) => {
+      const assignmentKey = deriveProjectContextAssignmentKey(project);
+      const current = projectContextSettings.projectContextProjectOverrides[assignmentKey];
+      const projectContextProjectOverrides = {
+        ...projectContextSettings.projectContextProjectOverrides,
+      };
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        projectContextProjectOverrides[assignmentKey] = {
+          ...current,
+          managedWorktreeBaseDirectory: trimmed,
+        };
+      } else if (current) {
+        const { managedWorktreeBaseDirectory: _removed, ...rest } = current;
+        if (Object.keys(rest).length > 0) {
+          projectContextProjectOverrides[assignmentKey] = rest;
+        } else {
+          delete projectContextProjectOverrides[assignmentKey];
+        }
+      }
+      updateSettings({ projectContextProjectOverrides });
+    },
+    [projectContextSettings.projectContextProjectOverrides, updateSettings],
   );
 
   const renameContext = useCallback(
@@ -386,6 +498,7 @@ export function ProjectContextsSettingsPanel() {
           const replacementContextId = replacementByContextId[context.id] ?? null;
           const replacementOptions = sortedContexts.filter((item) => item.id !== context.id);
           const defaults = projectContextSettings.projectContextDefaults[context.id] ?? {};
+          const contextProjects = projectsByContextId.get(context.id) ?? [];
 
           return (
             <SettingsRow
@@ -508,6 +621,54 @@ export function ProjectContextsSettingsPanel() {
 
                 <label className="flex min-w-0 flex-col gap-1.5">
                   <span className="text-[11px] font-medium text-muted-foreground">
+                    Default environment
+                  </span>
+                  <Select
+                    value={defaults.defaultEnvironmentId ?? "inherit"}
+                    onValueChange={(value) => {
+                      if (value === null) return;
+                      updateContextDefaults(
+                        context.id,
+                        value === "inherit"
+                          ? { defaultEnvironmentId: undefined }
+                          : { defaultEnvironmentId: value as EnvironmentId },
+                      );
+                    }}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      aria-label={`${context.name} default environment`}
+                    >
+                      <SelectValue>{defaults.defaultEnvironmentId ?? "Use current"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="inherit">
+                        Use current
+                      </SelectItem>
+                      {environmentIds.map((environmentId) => (
+                        <SelectItem hideIndicator key={environmentId} value={environmentId}>
+                          {environmentId}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </label>
+
+                <label className="flex min-w-0 flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Default provider/model
+                  </span>
+                  <DraftInput
+                    value={formatModelSelection(defaults.defaultModelSelection)}
+                    placeholder="Use project default"
+                    spellCheck={false}
+                    aria-label={`${context.name} default provider model`}
+                    onCommit={(value) => commitDefaultModelSelection(context.id, value)}
+                  />
+                </label>
+
+                <label className="flex min-w-0 flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
                     Add project starts in
                   </span>
                   <DraftInput
@@ -522,7 +683,57 @@ export function ProjectContextsSettingsPanel() {
                     }
                   />
                 </label>
+
+                <label className="flex min-w-0 flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Managed worktrees start in
+                  </span>
+                  <DraftInput
+                    value={defaults.managedWorktreeBaseDirectory ?? ""}
+                    placeholder="Use global default"
+                    spellCheck={false}
+                    aria-label={`${context.name} managed worktree base directory`}
+                    onCommit={(value) =>
+                      updateContextDefaults(context.id, {
+                        managedWorktreeBaseDirectory: value,
+                      })
+                    }
+                  />
+                </label>
               </div>
+              {contextProjects.length > 0 ? (
+                <div className="border-t border-border/50 py-3">
+                  <div className="mb-2 text-[11px] font-medium text-muted-foreground">
+                    Project worktree overrides
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {contextProjects.map((project) => {
+                      const assignmentKey = deriveProjectContextAssignmentKey(project);
+                      const override =
+                        projectContextSettings.projectContextProjectOverrides[assignmentKey];
+                      return (
+                        <label
+                          key={`${project.environmentId}:${project.id}`}
+                          className="flex min-w-0 flex-col gap-1.5"
+                        >
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {project.name}
+                          </span>
+                          <DraftInput
+                            value={override?.managedWorktreeBaseDirectory ?? ""}
+                            placeholder="Use workspace base"
+                            spellCheck={false}
+                            aria-label={`${project.name} managed worktree base directory override`}
+                            onCommit={(value) =>
+                              updateProjectManagedWorktreeBaseDirectory(project, value)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </SettingsRow>
           );
         })}
