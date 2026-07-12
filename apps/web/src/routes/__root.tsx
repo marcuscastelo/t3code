@@ -27,6 +27,7 @@ import {
   toastManager,
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
+import { useAppearance } from "../hooks/useAppearance";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -88,6 +89,8 @@ function RootRouteView() {
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
 
+  useAppearance();
+
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       syncBrowserChromeTheme();
@@ -122,7 +125,6 @@ function RootRouteView() {
       </AppSidebarLayout>
     </CommandPalette>
   );
-
   return (
     <ToastProvider>
       <AnchoredToastProvider>

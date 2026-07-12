@@ -385,6 +385,10 @@ export function useSettingsRestore(onRestored?: () => void) {
   const changedSettingLabels = useMemo(
     () => [
       ...(theme !== "system" ? ["Theme"] : []),
+      ...(settings.colorMode !== "system" ? ["Color mode"] : []),
+      ...(settings.activeLightThemeId !== "t3code-light" ? ["Light appearance theme"] : []),
+      ...(settings.activeDarkThemeId !== "t3code-dark" ? ["Dark appearance theme"] : []),
+      ...(settings.customThemes.length > 0 ? ["Custom themes"] : []),
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Time format"]
         : []),
@@ -425,9 +429,13 @@ export function useSettingsRestore(onRestored?: () => void) {
     ],
     [
       isGitWritingModelDirty,
+      settings.activeLightThemeId,
+      settings.activeDarkThemeId,
       settings.autoOpenPlanSidebar,
+      settings.colorMode,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
+      settings.customThemes.length,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -453,6 +461,10 @@ export function useSettingsRestore(onRestored?: () => void) {
 
     setTheme("system");
     updateSettings({
+      colorMode: "system",
+      activeLightThemeId: "t3code-light",
+      activeDarkThemeId: "t3code-dark",
+      customThemes: [],
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,

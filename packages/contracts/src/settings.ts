@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import { ThemeDocumentSchema } from "./appearanceTheme.ts";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
@@ -96,6 +97,12 @@ export const ClientSettingsSchema = Schema.Struct({
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
+
+export const ColorMode = Schema.Literals(["light", "dark", "system"]);
+export type ColorMode = typeof ColorMode.Type;
+export const DEFAULT_COLOR_MODE: ColorMode = "system";
+export const DEFAULT_ACTIVE_LIGHT_THEME_ID = "t3code-light";
+export const DEFAULT_ACTIVE_DARK_THEME_ID = "t3code-dark";
 
 // ── Server Settings (server-authoritative) ────────────────────
 
@@ -387,6 +394,17 @@ export const ServerSettings = Schema.Struct({
     ),
   ),
 
+  colorMode: ColorMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_COLOR_MODE))),
+  activeLightThemeId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_LIGHT_THEME_ID)),
+  ),
+  activeDarkThemeId: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_DARK_THEME_ID)),
+  ),
+  customThemes: Schema.Array(ThemeDocumentSchema).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+
   // Legacy single-instance-per-driver settings. Continues to be the source
   // of truth until `providerInstances` (below) lands per-driver migration
   // shims and the server starts hydrating instances from it. Driver-specific
@@ -510,6 +528,10 @@ export const ServerSettingsPatch = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  colorMode: Schema.optionalKey(ColorMode),
+  activeLightThemeId: Schema.optionalKey(Schema.String),
+  activeDarkThemeId: Schema.optionalKey(Schema.String),
+  customThemes: Schema.optionalKey(Schema.Array(ThemeDocumentSchema)),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),
