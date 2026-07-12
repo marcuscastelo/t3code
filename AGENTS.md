@@ -6,6 +6,36 @@
   - If changing native mobile code, `vp run lint:mobile` must also pass.
 - Use `vp test` for the built-in Vite+ test command and `vp run test` when you specifically need the `test` package script.
 
+## Fork And Git Workflow
+
+This checkout is a personal fork workflow.
+
+Remotes:
+
+- `origin`: `https://github.com/marcuscastelo/t3code`
+- `upstream`: `https://github.com/pingdotgg/t3code`
+
+Branch roles:
+
+- `upstream/main` is the read-only source of truth for new work.
+- `main` means local `main`.
+- local `main` tracks and must stay identical to `origin/main`.
+- `origin/main` must not diverge from local `main`.
+
+New branches:
+
+- Always create new work branches from `upstream/main`.
+- Do not base new branches on local `main` or another personal branch unless explicitly requested.
+- This keeps unrelated fork customizations out of new work and preserves the option to make upstream PRs later.
+
+Integration flow:
+
+- Push work branches to `origin`.
+- Merge work branches into local `main`.
+- Push local `main` to `origin/main`.
+- Periodically sync from `upstream/main` into local `main`, then push local `main` to `origin/main`.
+- Never push to `upstream`; treat it as read-only.
+
 ## Project Snapshot
 
 T3 Code is a minimal web GUI for using coding agents like Codex and Claude.

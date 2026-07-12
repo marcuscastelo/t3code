@@ -1,5 +1,28 @@
 # Contributing
 
+## Fork Workflow
+
+This repository is used through a personal fork.
+
+Remotes:
+
+- `origin`: `https://github.com/marcuscastelo/t3code`
+- `upstream`: `https://github.com/pingdotgg/t3code`
+
+Rules:
+
+- `upstream/main` is read-only.
+- local `main` is the same branch as `origin/main`.
+- `origin/main` must not diverge from local `main`.
+- Create all new work branches from `upstream/main`.
+- Push work branches to `origin`.
+- Merge work branches into local `main`.
+- Push local `main` to `origin/main`.
+- Periodically pull `upstream/main` into local `main`, then push local `main` to `origin/main`.
+- Do not base new branches on fork-only customizations unless explicitly intended.
+
+Reason: new branches should stay clean against upstream so fork-only changes do not leak into unrelated work. This keeps future upstream PRs possible.
+
 ## Read This First
 
 We are not actively accepting contributions right now.
