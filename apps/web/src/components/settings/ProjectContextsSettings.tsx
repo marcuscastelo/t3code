@@ -13,8 +13,7 @@ import {
   type ProjectContextRuleKind,
   type ThreadEnvMode,
 } from "@t3tools/contracts/settings";
-import { useShallow } from "zustand/react/shallow";
-import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import {
   applyProjectContextRules,
@@ -33,11 +32,7 @@ import {
   sortProjectContextRules,
   sortProjectContexts,
 } from "../../projectContexts";
-import {
-  selectProjectsAcrossEnvironments,
-  selectSidebarThreadsAcrossEnvironments,
-  useStore,
-} from "../../store";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
@@ -84,12 +79,12 @@ function formatModelSelection(selection: ModelSelection | undefined): string {
 }
 
 export function ProjectContextsSettingsPanel() {
-  const settings = useSettings();
+  const settings = usePrimarySettings();
   const projectContextSettings = selectProjectContextSettings(settings);
   const activeContextId = resolveActiveProjectContextId(projectContextSettings);
-  const { updateSettings } = useUpdateSettings();
-  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
-  const threads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const updateSettings = useUpdatePrimarySettings();
+  const projects = useProjects();
+  const threads = useThreadShells();
   const [newContextName, setNewContextName] = useState("");
   const [replacementByContextId, setReplacementByContextId] = useState<
     Record<string, ProjectContextId | null>
@@ -717,13 +712,13 @@ export function ProjectContextsSettingsPanel() {
                           className="flex min-w-0 flex-col gap-1.5"
                         >
                           <span className="truncate text-[11px] text-muted-foreground">
-                            {project.name}
+                            {project.title}
                           </span>
                           <DraftInput
                             value={override?.managedWorktreeBaseDirectory ?? ""}
                             placeholder="Use workspace base"
                             spellCheck={false}
-                            aria-label={`${project.name} managed worktree base directory override`}
+                            aria-label={`${project.title} managed worktree base directory override`}
                             onCommit={(value) =>
                               updateProjectManagedWorktreeBaseDirectory(project, value)
                             }
