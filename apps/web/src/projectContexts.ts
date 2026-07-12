@@ -9,7 +9,7 @@ import {
   type ThreadEnvMode,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { SidebarThreadSummary, Project } from "./types";
 import { derivePhysicalProjectKey } from "./logicalProject";
 
@@ -39,7 +39,12 @@ export interface ProjectContextSettingsPatch {
   managedWorktreeBaseDirectory: string;
 }
 
-export function selectProjectContextSettings(settings: UnifiedSettings): ProjectContextSettings {
+export function selectProjectContextSettings(
+  settings: Pick<
+    ProjectContextSettings,
+    Exclude<keyof ProjectContextSettings, "managedWorktreeBaseDirectory">
+  > & { readonly managedWorktreeBaseDirectory?: string },
+): ProjectContextSettings {
   return {
     projectContexts: settings.projectContexts,
     activeProjectContextId: settings.activeProjectContextId,
@@ -47,7 +52,7 @@ export function selectProjectContextSettings(settings: UnifiedSettings): Project
     projectContextDefaults: settings.projectContextDefaults,
     projectContextProjectOverrides: settings.projectContextProjectOverrides,
     projectContextRules: settings.projectContextRules,
-    managedWorktreeBaseDirectory: settings.managedWorktreeBaseDirectory,
+    managedWorktreeBaseDirectory: settings.managedWorktreeBaseDirectory ?? "",
   };
 }
 
@@ -65,14 +70,14 @@ export function resolveActiveProjectContextId(
 }
 
 export function deriveProjectContextAssignmentKey(
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">,
 ): string {
   const repositoryKey = project.repositoryIdentity?.canonicalKey?.trim();
   return repositoryKey ? `repo:${repositoryKey}` : `path:${derivePhysicalProjectKey(project)}`;
 }
 
 export function deriveProjectContextAssignmentKeys(
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">,
 ): string[] {
   const pathKey = `path:${derivePhysicalProjectKey(project)}`;
   const repositoryKey = project.repositoryIdentity?.canonicalKey?.trim();
@@ -80,7 +85,7 @@ export function deriveProjectContextAssignmentKeys(
 }
 
 export function resolveProjectContextId(
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">,
   settings: ProjectContextSettings,
 ): ProjectContextId | null {
   for (const assignmentKey of deriveProjectContextAssignmentKeys(project)) {
@@ -157,7 +162,7 @@ export function createProjectContextRule(input: {
 }
 
 export function assignProjectToContext(input: {
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">;
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">;
   contextId: ProjectContextId | null;
   assignments: Record<string, ProjectContextId>;
 }): Record<string, ProjectContextId> {
@@ -217,7 +222,7 @@ export function resolveProjectContextAddProjectBaseDirectory(
 }
 
 export function resolveManagedWorktreeBaseDirectory(
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">,
   settings: ProjectContextSettings,
 ): string | null {
   for (const assignmentKey of deriveProjectContextAssignmentKeys(project)) {
@@ -266,7 +271,7 @@ function joinLocalPath(base: string, ...parts: readonly string[]): string {
 }
 
 export function resolveManagedWorktreePath(input: {
-  project: Pick<Project, "cwd" | "environmentId" | "repositoryIdentity">;
+  project: Pick<Project, "workspaceRoot" | "environmentId" | "repositoryIdentity">;
   settings: ProjectContextSettings;
   branch: string;
 }): string | null {
@@ -275,7 +280,7 @@ export function resolveManagedWorktreePath(input: {
     return null;
   }
   const repoSlug = slugPathSegment(
-    input.project.repositoryIdentity?.name ?? basename(input.project.cwd),
+    input.project.repositoryIdentity?.name ?? basename(input.project.workspaceRoot),
     "repo",
   );
   const branchSlug = slugPathSegment(input.branch, "branch");
@@ -287,7 +292,7 @@ function normalizeRuleMatchText(value: string): string {
 }
 
 export function doesProjectMatchContextRule(
-  project: Pick<Project, "cwd" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "repositoryIdentity">,
   rule: Pick<ProjectContextRule, "kind" | "pattern">,
 ): boolean {
   const pattern = normalizeRuleMatchText(rule.pattern);
@@ -297,7 +302,7 @@ export function doesProjectMatchContextRule(
 
   switch (rule.kind) {
     case "path_prefix":
-      return normalizeRuleMatchText(project.cwd).startsWith(pattern);
+      return normalizeRuleMatchText(project.workspaceRoot).startsWith(pattern);
     case "repository_prefix": {
       const repositoryKey = project.repositoryIdentity?.canonicalKey?.trim();
       return repositoryKey ? normalizeRuleMatchText(repositoryKey).startsWith(pattern) : false;
@@ -310,7 +315,7 @@ export function doesProjectMatchContextRule(
 }
 
 export function resolveProjectContextRuleMatch(
-  project: Pick<Project, "cwd" | "repositoryIdentity">,
+  project: Pick<Project, "workspaceRoot" | "repositoryIdentity">,
   settings: ProjectContextSettings,
 ): ProjectContextRule | null {
   const contextIds = validContextIds(settings);
