@@ -15,6 +15,7 @@ Rules:
 - local `main` is the same branch as `origin/main`.
 - `origin/main` must not diverge from local `main`.
 - Create all new work branches from `upstream/main`.
+- Name stacked feature branches explicitly: `feat/<feature-name>/pr-1-<description>`, `feat/<feature-name>/pr-2-<description>`, and so on.
 - Push work branches to `origin`.
 - Merge work branches into local `main`.
 - Push local `main` to `origin/main`.

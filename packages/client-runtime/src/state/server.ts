@@ -343,5 +343,9 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
     }),
+    syncCodexThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:sync-codex-thread",
+      tag: WS_METHODS.serverSyncCodexThread,
+    }),
   };
 }
