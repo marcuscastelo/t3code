@@ -1,11 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { spawn, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import { AuthAdministrativeScopes } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -24,30 +25,30 @@ function normalizeServerHost(host: string | undefined): string {
 }
 
 function resolveTrayHostPath(): string | null {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const currentDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
   const candidates = [
-    path.join(currentDir, "trayHost.cjs"),
-    path.join(process.cwd(), "src", "trayHost.cjs"),
-    path.join(process.cwd(), "apps", "server", "src", "trayHost.cjs"),
-    path.join(process.cwd(), "dist", "trayHost.cjs"),
-    path.join(process.cwd(), "apps", "server", "dist", "trayHost.cjs"),
+    NodePath.join(currentDir, "trayHost.cjs"),
+    NodePath.join(process.cwd(), "src", "trayHost.cjs"),
+    NodePath.join(process.cwd(), "apps", "server", "src", "trayHost.cjs"),
+    NodePath.join(process.cwd(), "dist", "trayHost.cjs"),
+    NodePath.join(process.cwd(), "apps", "server", "dist", "trayHost.cjs"),
   ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  return candidates.find((candidate) => NodeFS.existsSync(candidate)) ?? null;
 }
 
 function resolveTrayIconPath(config: ServerConfig.ServerConfig["Service"]): string | null {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const currentDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
   const candidates = [
-    path.join(config.staticDir ?? "", "favicon-32x32.png"),
-    path.join(currentDir, "client", "favicon-32x32.png"),
-    path.join(process.cwd(), "apps", "desktop", "resources", "icon.png"),
-    path.join(process.cwd(), "..", "desktop", "resources", "icon.png"),
-    path.join(config.staticDir ?? "", "favicon.ico"),
-    path.join(currentDir, "client", "favicon.ico"),
-    path.join(process.cwd(), "apps", "desktop", "resources", "icon.ico"),
-    path.join(process.cwd(), "..", "desktop", "resources", "icon.ico"),
+    NodePath.join(config.staticDir ?? "", "favicon-32x32.png"),
+    NodePath.join(currentDir, "client", "favicon-32x32.png"),
+    NodePath.join(process.cwd(), "apps", "desktop", "resources", "icon.png"),
+    NodePath.join(process.cwd(), "..", "desktop", "resources", "icon.png"),
+    NodePath.join(config.staticDir ?? "", "favicon.ico"),
+    NodePath.join(currentDir, "client", "favicon.ico"),
+    NodePath.join(process.cwd(), "apps", "desktop", "resources", "icon.ico"),
+    NodePath.join(process.cwd(), "..", "desktop", "resources", "icon.ico"),
   ].filter((candidate) => candidate.length > 0);
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  return candidates.find((candidate) => NodeFS.existsSync(candidate)) ?? null;
 }
 
 function resolveElectronPath(): string | null {
@@ -55,12 +56,12 @@ function resolveElectronPath(): string | null {
     process.env.T3CODE_ELECTRON_PATH,
     "/usr/bin/electron",
     process.execPath,
-    path.join(process.cwd(), "node_modules", ".bin", "electron"),
-    path.join(process.cwd(), "..", "..", "node_modules", ".bin", "electron"),
-  ].find((candidate) => Boolean(candidate && existsSync(candidate)));
+    NodePath.join(process.cwd(), "node_modules", ".bin", "electron"),
+    NodePath.join(process.cwd(), "..", "..", "node_modules", ".bin", "electron"),
+  ].find((candidate) => Boolean(candidate && NodeFS.existsSync(candidate)));
 
   try {
-    const require = createRequire(import.meta.url);
+    const require = NodeModule.createRequire(import.meta.url);
     const electron = require("electron") as string | { default?: string };
     if (typeof electron === "string") {
       return electron;
@@ -112,6 +113,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   }
 
   const serverUrl = `http://${normalizeServerHost(config.host)}:${config.port}`;
+  const hostPlatform = yield* HostProcessPlatform;
   const traySessionToken = yield* issueTraySessionToken(config).pipe(
     Effect.catch((cause) =>
       Effect.logWarning("server tray could not issue pairing session token", { cause }).pipe(
@@ -123,6 +125,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
     ...process.env,
     T3CODE_TRAY_ICON_PATH: iconPath,
     T3CODE_TRAY_PARENT_PID: String(process.pid),
+    T3CODE_TRAY_PLATFORM: hostPlatform,
     T3CODE_TRAY_SESSION_TOKEN: traySessionToken,
     T3CODE_TRAY_SUPERVISOR_PID: process.env.T3CODE_TRAY_SUPERVISOR_PID,
     // @effect-diagnostics-next-line preferSchemaOverJson:off - argv is passed only to the local tray helper process
@@ -134,7 +137,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   delete trayEnv.ELECTRON_RUN_AS_NODE;
 
   const child = yield* Effect.sync(() =>
-    spawn(electronPath, [trayHostPath], {
+    NodeChildProcess.spawn(electronPath, [trayHostPath], {
       cwd: process.cwd(),
       detached: false,
       env: trayEnv,
@@ -166,7 +169,7 @@ export const launchServerTray = Effect.fn("server.tray.launch")(function* (
   };
 });
 
-function shutdownTrayChild(child: ChildProcess): void {
+function shutdownTrayChild(child: NodeChildProcess.ChildProcess): void {
   if (child.exitCode !== null || child.killed) {
     return;
   }

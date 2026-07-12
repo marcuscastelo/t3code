@@ -6,6 +6,7 @@ const parentPid = Number.parseInt(process.env.T3CODE_TRAY_PARENT_PID ?? "", 10);
 const supervisorPid = Number.parseInt(process.env.T3CODE_TRAY_SUPERVISOR_PID ?? "", 10);
 const serverUrl = process.env.T3CODE_TRAY_SERVER_URL ?? "";
 const traySessionToken = process.env.T3CODE_TRAY_SESSION_TOKEN ?? "";
+const trayPlatform = process.env.T3CODE_TRAY_PLATFORM ?? "unknown";
 const iconPath = process.env.T3CODE_TRAY_ICON_PATH ?? "";
 const restartExecPath = process.env.T3CODE_TRAY_RESTART_EXEC_PATH ?? "";
 const restartCwd = process.env.T3CODE_TRAY_RESTART_CWD ?? process.cwd();
@@ -174,7 +175,7 @@ function createTrayImage() {
     return iconPath;
   }
 
-  if (process.platform === "linux") {
+  if (trayPlatform === "linux") {
     return image.resize({ width: 22, height: 22 });
   }
 
@@ -207,7 +208,7 @@ app.whenReady().then(() => {
     }
     openWebApp();
   });
-  if (process.platform === "linux") {
+  if (trayPlatform === "linux") {
     tray.setTitle("T3");
   }
 

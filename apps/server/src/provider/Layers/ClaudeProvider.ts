@@ -21,6 +21,7 @@ import {
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   query as claudeQuery,
   type SlashCommand as ClaudeSlashCommand,
@@ -832,6 +833,7 @@ export function parseClaudeCliUsageRateLimits(text: string): ClaudeRateLimitProb
 function captureClaudeCliUsage(
   claudeSettings: ClaudeSettings,
   claudeEnvironment: NodeJS.ProcessEnv,
+  hostPlatform: NodeJS.Platform,
 ): Effect.Effect<string, ClaudeCliUsageProbeError> {
   let cleanup = noopCleanup;
   let stopped = false;
@@ -863,7 +865,7 @@ function captureClaudeCliUsage(
                   ? claudeEnvironment.HOME
                   : process.cwd(),
               env: claudeEnvironment,
-              name: process.platform === "win32" ? "xterm-color" : "xterm-256color",
+              name: hostPlatform === "win32" ? "xterm-color" : "xterm-256color",
             });
             cleanup = () => {
               stopped = true;
@@ -902,8 +904,9 @@ const probeClaudeCliRateLimits = (
   environment: NodeJS.ProcessEnv = process.env,
 ) =>
   Effect.gen(function* () {
+    const hostPlatform = yield* HostProcessPlatform;
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-    const output = yield* captureClaudeCliUsage(claudeSettings, claudeEnvironment);
+    const output = yield* captureClaudeCliUsage(claudeSettings, claudeEnvironment, hostPlatform);
     return parseClaudeCliUsageRateLimits(output);
   }).pipe(
     Effect.timeoutOption(CLAUDE_USAGE_PROBE_TIMEOUT_MS + 2_000),

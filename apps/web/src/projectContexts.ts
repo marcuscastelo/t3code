@@ -7,7 +7,6 @@ import {
   type ProjectContextRule,
   type ProjectContextRuleKind,
   type ThreadEnvMode,
-  type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { SidebarThreadSummary, Project } from "./types";

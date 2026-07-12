@@ -381,6 +381,7 @@ describe("ProviderCommandReactor", () => {
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(reactor.drain);
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       engine.dispatch({
         type: "project.create",
@@ -392,6 +393,7 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       engine.dispatch({
         type: "thread.create",
@@ -431,6 +433,7 @@ describe("ProviderCommandReactor", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.turn.start",
@@ -472,6 +475,7 @@ describe("ProviderCommandReactor", () => {
     const seededTitle = "Please investigate reconnect failures after restar...";
     harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Generated title" }));
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.meta.update",
@@ -2125,6 +2129,7 @@ describe("ProviderCommandReactor", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.activity.append",
@@ -2146,6 +2151,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.approval.respond",
@@ -2186,6 +2192,7 @@ describe("ProviderCommandReactor", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.session.set",
@@ -2205,6 +2212,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- legacy async harness exposes promise-based setup
     await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.session.stop",
