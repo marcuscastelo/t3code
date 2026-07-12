@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+  countConnectedClientSessions,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
@@ -11,6 +12,7 @@ import {
   isContextMenuPointerDown,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
+  reduceAuthAccessClientSessions,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -22,6 +24,7 @@ import {
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
 import {
+  AuthClientSession,
   EnvironmentId,
   OrchestrationLatestTurn,
   ProjectId,
@@ -75,6 +78,23 @@ describe("resolveSidebarStageBadgeLabel", () => {
   });
 });
 
+function makeClientSession(input: { sessionId: string; connected: boolean }): AuthClientSession {
+  return {
+    sessionId: input.sessionId as never,
+    subject: `subject-${input.sessionId}` as never,
+    scopes: [],
+    method: "browser-session-cookie",
+    client: {
+      deviceType: "unknown",
+    },
+    issuedAt: "2026-03-09T10:00:00.000Z" as never,
+    expiresAt: "2026-03-10T10:00:00.000Z" as never,
+    lastConnectedAt: "2026-03-09T10:00:00.000Z" as never,
+    connected: input.connected,
+    current: false,
+  };
+}
+
 function makeLatestTurn(overrides?: {
   completedAt?: string | null;
   startedAt?: string | null;
@@ -116,6 +136,50 @@ describe("hasUnseenCompletion", () => {
         session: null,
       }),
     ).toBe(false);
+  });
+});
+
+describe("auth access connected device count", () => {
+  it("counts only connected client sessions", () => {
+    expect(
+      countConnectedClientSessions([
+        makeClientSession({ sessionId: "session-1", connected: true }),
+        makeClientSession({ sessionId: "session-2", connected: false }),
+        makeClientSession({ sessionId: "session-3", connected: true }),
+      ]),
+    ).toBe(2);
+  });
+
+  it("updates client sessions from realtime auth access events", () => {
+    const sessionOne = makeClientSession({ sessionId: "session-1", connected: true });
+    const sessionTwo = makeClientSession({ sessionId: "session-2", connected: false });
+    const sessionTwoConnected = makeClientSession({ sessionId: "session-2", connected: true });
+
+    const afterSnapshot = reduceAuthAccessClientSessions([], {
+      version: 1,
+      revision: 1,
+      type: "snapshot",
+      payload: {
+        pairingLinks: [],
+        clientSessions: [sessionOne, sessionTwo],
+      },
+    });
+    const afterUpsert = reduceAuthAccessClientSessions(afterSnapshot, {
+      version: 1,
+      revision: 2,
+      type: "clientUpserted",
+      payload: sessionTwoConnected,
+    });
+    const afterRemove = reduceAuthAccessClientSessions(afterUpsert, {
+      version: 1,
+      revision: 3,
+      type: "clientRemoved",
+      payload: { sessionId: sessionOne.sessionId },
+    });
+
+    expect(countConnectedClientSessions(afterSnapshot)).toBe(1);
+    expect(countConnectedClientSessions(afterUpsert)).toBe(2);
+    expect(countConnectedClientSessions(afterRemove)).toBe(1);
   });
 });
 
@@ -611,6 +675,18 @@ describe("resolveThreadStatusPill", () => {
     expect(
       resolveThreadStatusPill({
         thread: baseThread,
+      }),
+    ).toMatchObject({ label: "Working", pulse: true });
+  });
+
+  it("keeps working while session is running even when latest turn snapshot is stale", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          latestTurn: makeLatestTurn(),
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+        },
       }),
     ).toMatchObject({ label: "Working", pulse: true });
   });

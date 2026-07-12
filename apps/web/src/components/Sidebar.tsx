@@ -119,6 +119,7 @@ import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { serverEnvironment } from "../state/server";
+import { authEnvironment } from "../state/auth";
 import {
   buildThreadRouteParams,
   resolveThreadRouteRef,
@@ -186,6 +187,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useOpenAddProjectCommandPalette } from "../commandPaletteContext";
 import {
   getSidebarThreadIdsToPrewarm,
+  countConnectedClientSessions,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   isTrailingDoubleClick,
@@ -2838,6 +2840,7 @@ function T3Wordmark() {
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  const connectedDeviceCount = useConnectedDeviceCount();
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2849,6 +2852,21 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="p-2">
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
+      <div
+        className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground/65"
+        title={
+          connectedDeviceCount === null
+            ? "Connected devices are loading."
+            : `${connectedDeviceCount} connected device${connectedDeviceCount === 1 ? "" : "s"}.`
+        }
+      >
+        <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+        <span className="truncate">
+          {connectedDeviceCount === null
+            ? "Devices syncing"
+            : `${connectedDeviceCount} device${connectedDeviceCount === 1 ? "" : "s"} connected`}
+        </span>
+      </div>
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
@@ -2864,6 +2882,22 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     </SidebarFooter>
   );
 });
+
+function useConnectedDeviceCount(): number | null {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const authAccess = useEnvironmentQuery(
+    primaryEnvironmentId === null
+      ? null
+      : authEnvironment.accessChanges({
+          environmentId: primaryEnvironmentId,
+          input: null,
+        }),
+  );
+  const event = authAccess.data;
+  return event?.type === "snapshot"
+    ? countConnectedClientSessions(event.payload.clientSessions)
+    : null;
+}
 
 interface SidebarProjectsContentProps {
   showArm64IntelBuildWarning: boolean;
