@@ -3,6 +3,8 @@ import type {
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
   VcsCreateWorktreeResult,
+  VcsValidateWorktreeAttachInput,
+  VcsValidateWorktreeAttachResult,
   VcsInitInput,
   VcsListRefsInput,
   VcsListRefsResult,
@@ -57,6 +59,7 @@ import type {
   TerminalSessionSnapshot,
   TerminalWriteInput,
 } from "./terminal.ts";
+import type { WorktreePromoteThreadInput, WorktreePromoteThreadResult } from "./orchestration.ts";
 import type { ServerRemoveKeybindingInput, ServerUpsertKeybindingInput } from "./server.ts";
 import * as Schema from "effect/Schema";
 import type {
@@ -1189,6 +1192,9 @@ export interface EnvironmentApi {
   vcs: {
     listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;
     createWorktree: (input: VcsCreateWorktreeInput) => Promise<VcsCreateWorktreeResult>;
+    validateWorktreeAttach: (
+      input: VcsValidateWorktreeAttachInput,
+    ) => Promise<VcsValidateWorktreeAttachResult>;
     removeWorktree: (input: VcsRemoveWorktreeInput) => Promise<void>;
     createRef: (input: VcsCreateRefInput) => Promise<VcsCreateRefResult>;
     switchRef: (input: VcsSwitchRefInput) => Promise<VcsSwitchRefResult>;
@@ -1202,6 +1208,9 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+  };
+  worktree: {
+    promoteThread: (input: WorktreePromoteThreadInput) => Promise<WorktreePromoteThreadResult>;
   };
   git: {
     resolvePullRequest: (input: GitPullRequestRefInput) => Promise<GitResolvePullRequestResult>;

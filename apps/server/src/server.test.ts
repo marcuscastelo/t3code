@@ -160,6 +160,7 @@ const makeDefaultOrchestrationReadModel = () => {
         runtimeMode: "full-access" as const,
         branch: null,
         worktreePath: null,
+        worktreeOwnership: null,
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -188,6 +189,7 @@ const makeDefaultOrchestrationThreadShell = (
     interactionMode: "default",
     branch: null,
     worktreePath: null,
+    worktreeOwnership: null,
     latestTurn: null,
     createdAt: now,
     updatedAt: now,
@@ -5493,6 +5495,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             runtimeMode: "full-access" as const,
             branch: null,
             worktreePath: null,
+            worktreeOwnership: null,
             createdAt: now,
             updatedAt: now,
             archivedAt: null,
@@ -6210,6 +6213,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   interactionMode: "default",
                   branch: "main",
                   worktreePath: null,
+                  worktreeOwnership: null,
                   createdAt,
                 },
                 prepareWorktree: {
@@ -6354,6 +6358,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 interactionMode: "default",
                 branch: "main",
                 worktreePath: null,
+                worktreeOwnership: null,
                 createdAt,
               },
               prepareWorktree: {
@@ -6475,6 +6480,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 interactionMode: "default",
                 branch: "main",
                 worktreePath: null,
+                worktreeOwnership: null,
                 createdAt,
               },
               prepareWorktree: {
@@ -6559,6 +6565,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 interactionMode: "default",
                 branch: "main",
                 worktreePath: null,
+                worktreeOwnership: null,
                 createdAt,
               },
               prepareWorktree: {
