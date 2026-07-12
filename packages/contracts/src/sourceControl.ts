@@ -25,7 +25,6 @@ export const ChangeRequest = Schema.Struct({
   provider: SourceControlProviderKind,
   number: PositiveInt,
   title: TrimmedNonEmptyString,
-  body: Schema.optional(Schema.String),
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
@@ -156,6 +155,10 @@ export class SourceControlProviderError extends Schema.TaggedErrorClass<SourceCo
   {
     provider: SourceControlProviderKind,
     operation: Schema.String,
+    cwd: Schema.String,
+    command: Schema.optional(Schema.String),
+    repository: Schema.optional(Schema.String),
+    reference: Schema.optional(Schema.String),
     detail: Schema.String,
     cause: Schema.optional(Schema.Defect()),
   },

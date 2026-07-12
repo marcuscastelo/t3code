@@ -124,8 +124,6 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
-export const WorktreeOwnership = Schema.Literals(["managed", "external"]);
-export type WorktreeOwnership = typeof WorktreeOwnership.Type;
 export const ProviderRequestKind = Schema.Literals(["command", "file-read", "file-change"]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const AssistantDeliveryMode = Schema.Literals(["buffered", "streaming"]);
@@ -190,23 +188,23 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
-export const ProjectScriptHookEvent = Schema.Literals([
-  "worktree.created",
-  "thread.archived",
-  "thread.turn.started",
-  "thread.turn.completed",
-]);
-export type ProjectScriptHookEvent = typeof ProjectScriptHookEvent.Type;
-
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
-  runOnWorktreeCreate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  runOnEvents: Schema.Array(ProjectScriptHookEvent).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
+  runOnWorktreeCreate: Schema.Boolean,
+  /**
+   * URL to open in the in-app browser preview when this script runs (or
+   * when the user explicitly requests a preview). Optional; only honored on
+   * the desktop build.
+   */
+  previewUrl: Schema.optional(TrimmedNonEmptyString),
+  /**
+   * When true, automatically open the preview panel pointed at `previewUrl`
+   * the moment this script starts. Ignored without `previewUrl` or on web.
+   */
+  autoOpenPreview: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
@@ -354,7 +352,6 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -401,7 +398,6 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -455,8 +451,29 @@ export const OrchestrationShellStreamItem = Schema.Union([
 ]);
 export type OrchestrationShellStreamItem = typeof OrchestrationShellStreamItem.Type;
 
+export const OrchestrationSubscribeShellInput = Schema.Struct({
+  /**
+   * When provided, the server skips the initial full shell snapshot and instead
+   * replays shell events after this sequence before streaming live events.
+   * Clients that already hold a cached (or HTTP-loaded) shell snapshot pass its
+   * sequence here so the subscription resumes without re-sending the entire
+   * projects/threads list (overlapping events are deduped by sequence on the
+   * client).
+   */
+  afterSequence: Schema.optionalKey(NonNegativeInt),
+});
+export type OrchestrationSubscribeShellInput = typeof OrchestrationSubscribeShellInput.Type;
+
 export const OrchestrationSubscribeThreadInput = Schema.Struct({
   threadId: ThreadId,
+  /**
+   * When provided, the server skips the initial snapshot frame and instead
+   * replays events after this sequence before streaming live events. Clients
+   * that load the snapshot over HTTP pass the snapshot's sequence here so the
+   * live subscription resumes without a gap (overlapping events are deduped by
+   * sequence on the client).
+   */
+  afterSequence: Schema.optionalKey(NonNegativeInt),
 });
 export type OrchestrationSubscribeThreadInput = typeof OrchestrationSubscribeThreadInput.Type;
 
@@ -507,7 +524,6 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
 });
 
@@ -536,8 +552,8 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -564,7 +580,6 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
 });
 
@@ -572,7 +587,7 @@ const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
   projectCwd: TrimmedNonEmptyString,
   baseBranch: TrimmedNonEmptyString,
   branch: Schema.optional(TrimmedNonEmptyString),
-  path: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  startFromOrigin: Schema.optional(Schema.Boolean),
 });
 
 const ThreadTurnStartBootstrap = Schema.Struct({
@@ -854,7 +869,6 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -881,7 +895,6 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreeOwnership: Schema.optional(Schema.NullOr(WorktreeOwnership)),
   updatedAt: IsoDateTime,
 });
 
@@ -1197,19 +1210,6 @@ export const DispatchResult = Schema.Struct({
 });
 export type DispatchResult = typeof DispatchResult.Type;
 
-export const WorktreePromoteThreadInput = Schema.Struct({
-  threadId: ThreadId,
-  runSetupScript: Schema.Boolean,
-});
-export type WorktreePromoteThreadInput = typeof WorktreePromoteThreadInput.Type;
-
-export const WorktreePromoteThreadResult = Schema.Struct({
-  threadId: ThreadId,
-  worktreeOwnership: WorktreeOwnership,
-  setupScriptRequested: Schema.Boolean,
-});
-export type WorktreePromoteThreadResult = typeof WorktreePromoteThreadResult.Type;
-
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({
     threadId: ThreadId,
@@ -1266,7 +1266,7 @@ export const OrchestrationRpcSchemas = {
     output: OrchestrationThreadStreamItem,
   },
   subscribeShell: {
-    input: Schema.Struct({}),
+    input: OrchestrationSubscribeShellInput,
     output: OrchestrationShellStreamItem,
   },
 } as const;

@@ -65,16 +65,13 @@ export interface WorkLogEntry {
   createdAt: string;
   turnId?: TurnId | null;
   label: string;
-  status?: "running" | "completed";
   detail?: string;
-  toolOutput?: string;
-  stdout?: string;
-  stderr?: string;
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
+  toolData?: unknown;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -87,8 +84,6 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
   toolCallId?: string;
-  taskId?: string;
-  lifecycleFallbackKey?: string;
 }
 
 export interface PendingApproval {
@@ -294,7 +289,7 @@ export function formatElapsed(startIso: string, endIso: string | undefined): str
 }
 
 type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;
-type SessionActivityState = Pick<ThreadSession, "orchestrationStatus" | "activeTurnId">;
+type SessionActivityState = Pick<NonNullable<Thread["session"]>, "status" | "activeTurnId">;
 
 export function isLatestTurnSettled(
   latestTurn: LatestTurnTiming | null,
@@ -303,7 +298,7 @@ export function isLatestTurnSettled(
   if (!latestTurn?.startedAt) return false;
   if (!latestTurn.completedAt) return false;
   if (!session) return true;
-  if (session.orchestrationStatus === "running") return false;
+  if (session.status === "running") return false;
   return true;
 }
 
@@ -312,8 +307,7 @@ export function deriveActiveWorkStartedAt(
   session: SessionActivityState | null,
   sendStartedAt: string | null,
 ): string | null {
-  const runningTurnId =
-    session?.orchestrationStatus === "running" ? (session.activeTurnId ?? null) : null;
+  const runningTurnId = session?.status === "running" ? session.activeTurnId : null;
   if (runningTurnId !== null) {
     if (latestTurn?.turnId === runningTurnId) {
       return latestTurn.startedAt ?? sendStartedAt;
@@ -324,16 +318,6 @@ export function deriveActiveWorkStartedAt(
     return latestTurn?.startedAt ?? sendStartedAt;
   }
   return sendStartedAt;
-}
-
-export function deriveActiveWorkTurnId(
-  latestTurn: Pick<OrchestrationLatestTurn, "turnId"> | null,
-  session: SessionActivityState | null,
-): TurnId | null {
-  if (session?.orchestrationStatus === "running") {
-    return session.activeTurnId ?? latestTurn?.turnId ?? null;
-  }
-  return latestTurn?.turnId ?? null;
 }
 
 function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
@@ -646,21 +630,15 @@ export function deriveWorkLogEntries(
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
+    if (activity.kind === "tool.started") continue;
     if (activity.kind === "task.started") continue;
     if (activity.kind === "context-window.updated") continue;
-    if (activity.kind === "account.rate-limits.updated") continue;
     if (activity.summary === "Checkpoint captured") continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
   return collapseDerivedWorkLogEntries(entries).map((entry) => {
-    const {
-      activityKind,
-      collapseKey: _collapseKey,
-      taskId: _taskId,
-      lifecycleFallbackKey: _lifecycleFallbackKey,
-      ...rest
-    } = entry;
+    const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
     return Object.assign(rest, { sourceActivityKind: activityKind });
   });
 }
@@ -702,8 +680,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       ? (activity.payload as Record<string, unknown>)
       : null;
   const commandPreview = extractToolCommand(payload);
-  const output = extractToolOutput(payload);
-  const toolOutput = extractToolResponse(payload);
   const changedFiles = extractChangedFiles(payload);
   const title = extractToolTitle(payload);
   const isTaskActivity = activity.kind === "task.progress" || activity.kind === "task.completed";
@@ -728,16 +704,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null
     : extractToolDetail(payload, title ?? activity.summary);
   const toolCallId = isTaskActivity ? null : extractToolCallId(payload);
-  const taskId = isTaskActivity ? asTrimmedString(payload?.taskId) : null;
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
     createdAt: activity.createdAt,
     turnId: activity.turnId,
     label: taskLabel || activity.summary,
-    status:
-      activity.kind === "tool.completed" || activity.kind === "task.completed"
-        ? "completed"
-        : "running",
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -749,19 +720,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   if (detail) {
-    const commandDetail = commandPreview.rawCommand ?? commandPreview.command;
-    if (normalizePreviewForComparison(detail) !== normalizePreviewForComparison(commandDetail)) {
-      entry.detail = detail;
-    }
-  }
-  if (output.stdout) {
-    entry.stdout = output.stdout;
-  }
-  if (output.stderr) {
-    entry.stderr = output.stderr;
-  }
-  if (toolOutput) {
-    entry.toolOutput = toolOutput;
+    entry.detail = detail;
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
@@ -775,6 +734,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (title) {
     entry.toolTitle = title;
   }
+  if (itemType === "mcp_tool_call") {
+    const data = asRecord(payload?.data);
+    if (data?.item !== undefined) {
+      entry.toolData = data.item;
+    }
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -783,9 +748,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (toolCallId) {
     entry.toolCallId = toolCallId;
-  }
-  if (taskId) {
-    entry.taskId = taskId;
   }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
@@ -798,10 +760,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (collapseKey) {
     entry.collapseKey = collapseKey;
   }
-  const lifecycleFallbackKey = deriveLifecycleFallbackKey(entry);
-  if (lifecycleFallbackKey) {
-    entry.lifecycleFallbackKey = lifecycleFallbackKey;
-  }
   return entry;
 }
 
@@ -810,9 +768,9 @@ function collapseDerivedWorkLogEntries(
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
   for (const entry of entries) {
-    const collapseIndex = findLifecycleCollapseIndex(collapsed, entry);
-    if (collapseIndex !== null) {
-      collapsed[collapseIndex] = mergeDerivedWorkLogEntries(collapsed[collapseIndex]!, entry);
+    const previous = collapsed.at(-1);
+    if (previous && shouldCollapseToolLifecycleEntries(previous, entry)) {
+      collapsed[collapsed.length - 1] = mergeDerivedWorkLogEntries(previous, entry);
       continue;
     }
     collapsed.push(entry);
@@ -820,51 +778,17 @@ function collapseDerivedWorkLogEntries(
   return collapsed;
 }
 
-function findLifecycleCollapseIndex(
-  collapsed: ReadonlyArray<DerivedWorkLogEntry>,
-  next: DerivedWorkLogEntry,
-): number | null {
-  const previous = collapsed.at(-1);
-  if (previous && shouldCollapseAdjacentLifecycleEntries(previous, next)) {
-    return collapsed.length - 1;
-  }
-
-  const fallbackKey = next.lifecycleFallbackKey;
-  if (
-    !fallbackKey ||
-    next.activityKind === "tool.started" ||
-    next.activityKind === "task.started"
-  ) {
-    return null;
-  }
-
-  for (let index = collapsed.length - 1; index >= 0; index -= 1) {
-    const candidate = collapsed[index];
-    if (!candidate) continue;
-    if (candidate.status !== "running" || candidate.lifecycleFallbackKey !== fallbackKey) continue;
-    if (
-      candidate.activityKind === "tool.completed" ||
-      candidate.activityKind === "task.completed"
-    ) {
-      continue;
-    }
-    return index;
-  }
-
-  return null;
-}
-
-function shouldCollapseAdjacentLifecycleEntries(
+function shouldCollapseToolLifecycleEntries(
   previous: DerivedWorkLogEntry,
   next: DerivedWorkLogEntry,
 ): boolean {
-  if (!areSameLifecycleFamily(previous.activityKind, next.activityKind)) {
+  if (previous.activityKind !== "tool.updated" && previous.activityKind !== "tool.completed") {
     return false;
   }
-  if (
-    isCompletedLifecycleKind(previous.activityKind) ||
-    isStartedLifecycleKind(next.activityKind)
-  ) {
+  if (next.activityKind !== "tool.updated" && next.activityKind !== "tool.completed") {
+    return false;
+  }
+  if (previous.activityKind === "tool.completed") {
     return false;
   }
   if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {
@@ -884,40 +808,30 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
-  const turnId = next.turnId ?? previous.turnId;
   const detail = next.detail ?? previous.detail;
-  const toolOutput = next.toolOutput ?? previous.toolOutput;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
-  const stdout = next.stdout ?? previous.stdout;
-  const stderr = next.stderr ?? previous.stderr;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolCallId = next.toolCallId ?? previous.toolCallId;
-  const taskId = next.taskId ?? previous.taskId;
-  const lifecycleFallbackKey = next.lifecycleFallbackKey ?? previous.lifecycleFallbackKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
+  const toolData = next.toolData ?? previous.toolData;
   return {
     ...previous,
     ...next,
-    ...(turnId ? { turnId } : {}),
     ...(detail ? { detail } : {}),
-    ...(toolOutput ? { toolOutput } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
-    ...(stdout ? { stdout } : {}),
-    ...(stderr ? { stderr } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolCallId ? { toolCallId } : {}),
-    ...(taskId ? { taskId } : {}),
-    ...(lifecycleFallbackKey ? { lifecycleFallbackKey } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
+    ...(toolData !== undefined ? { toolData } : {}),
   };
 }
 
@@ -933,10 +847,7 @@ function mergeChangedFiles(
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
-  if (entry.activityKind.startsWith("task.")) {
-    return entry.taskId ? `task:${entry.taskId}` : undefined;
-  }
-  if (!isToolLifecycleWorkKind(entry.activityKind)) {
+  if (entry.activityKind !== "tool.updated" && entry.activityKind !== "tool.completed") {
     return undefined;
   }
   if (entry.toolCallId) {
@@ -949,40 +860,6 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
     return undefined;
   }
   return [itemType, normalizedLabel, detail].join("\u001f");
-}
-
-function isToolLifecycleWorkKind(kind: string): boolean {
-  return kind === "tool.started" || kind === "tool.updated" || kind === "tool.completed";
-}
-
-function isTaskLifecycleWorkKind(kind: string): boolean {
-  return kind === "task.started" || kind === "task.progress" || kind === "task.completed";
-}
-
-function isStartedLifecycleKind(kind: string): boolean {
-  return kind === "tool.started" || kind === "task.started";
-}
-
-function isCompletedLifecycleKind(kind: string): boolean {
-  return kind === "tool.completed" || kind === "task.completed";
-}
-
-function areSameLifecycleFamily(leftKind: string, rightKind: string): boolean {
-  return (
-    (isToolLifecycleWorkKind(leftKind) && isToolLifecycleWorkKind(rightKind)) ||
-    (isTaskLifecycleWorkKind(leftKind) && isTaskLifecycleWorkKind(rightKind))
-  );
-}
-
-function deriveLifecycleFallbackKey(entry: DerivedWorkLogEntry): string | undefined {
-  if (isToolLifecycleWorkKind(entry.activityKind)) {
-    if (!entry.itemType) return undefined;
-    return ["tool", entry.itemType].join("\u001f");
-  }
-  if (isTaskLifecycleWorkKind(entry.activityKind)) {
-    return ["task", entry.taskId ?? entry.label].join("\u001f");
-  }
-  return undefined;
 }
 
 function normalizeCompactToolLabel(value: string): string {
@@ -1011,22 +888,6 @@ function asTrimmedString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function asDisplayDetail(value: unknown): string | null {
-  const text = asTrimmedString(value);
-  if (text) {
-    return text;
-  }
-  if (value === undefined || value === null) {
-    return null;
-  }
-  try {
-    const json = JSON.stringify(value, null, 2);
-    return asTrimmedString(json);
-  } catch {
-    return null;
-  }
 }
 
 function asNumber(value: unknown): number | null {
@@ -1222,10 +1083,7 @@ function extractToolTitle(payload: Record<string, unknown> | null): string | nul
 
 function extractToolCallId(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  return asTrimmedString(
-    payload?.itemId ?? payload?.toolCallId ?? data?.toolCallId ?? data?.itemId ?? item?.id,
-  );
+  return asTrimmedString(data?.toolCallId);
 }
 
 function normalizeInlinePreview(value: string): string {
@@ -1291,42 +1149,6 @@ function summarizeToolRawOutput(payload: Record<string, unknown> | null): string
   return null;
 }
 
-function extractToolOutput(payload: Record<string, unknown> | null): {
-  stdout: string | null;
-  stderr: string | null;
-} {
-  const data = asRecord(payload?.data);
-  const rawOutput = asRecord(data?.rawOutput);
-  return {
-    stdout: asDisplayDetail(rawOutput?.stdout),
-    stderr: asDisplayDetail(rawOutput?.stderr),
-  };
-}
-
-function extractToolResponse(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  const rawOutput = asRecord(data?.rawOutput);
-  const direct =
-    asDisplayDetail(rawOutput?.content) ??
-    asDisplayDetail(rawOutput?.output) ??
-    asDisplayDetail(rawOutput?.result) ??
-    asDisplayDetail(rawOutput?.text);
-  if (direct) {
-    return direct;
-  }
-  const content = data?.content;
-  if (Array.isArray(content) && content.length > 0) {
-    return asDisplayDetail(content);
-  }
-  if (!rawOutput) {
-    return null;
-  }
-  const onlyCommandStreams = Object.keys(rawOutput).every((key) =>
-    ["exitCode", "stdout", "stderr"].includes(key),
-  );
-  return onlyCommandStreams ? null : asDisplayDetail(rawOutput);
-}
-
 function isCommandToolDetail(payload: Record<string, unknown> | null, heading: string): boolean {
   const data = asRecord(payload?.data);
   const kind = asTrimmedString(data?.kind)?.toLowerCase();
@@ -1343,7 +1165,7 @@ function extractToolDetail(
   payload: Record<string, unknown> | null,
   heading: string,
 ): string | null {
-  const rawDetail = asDisplayDetail(payload?.detail) ?? asTrimmedString(payload?.message);
+  const rawDetail = asTrimmedString(payload?.detail);
   const detail = rawDetail ? stripTrailingExitCode(rawDetail).output : null;
   const normalizedHeading = normalizePreviewForComparison(heading);
   const normalizedDetail = normalizePreviewForComparison(detail);
@@ -1474,7 +1296,7 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   return changedFiles;
 }
 
-export function compareActivitiesByOrder(
+function compareActivitiesByOrder(
   left: OrchestrationThreadActivity,
   right: OrchestrationThreadActivity,
 ): number {
@@ -1516,9 +1338,9 @@ function compareActivityLifecycleRank(kind: string): number {
 }
 
 export function deriveTimelineEntries(
-  messages: ChatMessage[],
-  proposedPlans: ProposedPlan[],
-  workEntries: WorkLogEntry[],
+  messages: ReadonlyArray<ChatMessage>,
+  proposedPlans: ReadonlyArray<ProposedPlan>,
+  workEntries: ReadonlyArray<WorkLogEntry>,
 ): TimelineEntry[] {
   const messageRows: TimelineEntry[] = messages.map((message) => ({
     id: message.id,
@@ -1544,7 +1366,7 @@ export function deriveTimelineEntries(
 }
 
 export function inferCheckpointTurnCountByTurnId(
-  summaries: TurnDiffSummary[],
+  summaries: ReadonlyArray<TurnDiffSummary>,
 ): Record<TurnId, number> {
   const sorted = [...summaries].toSorted((a, b) => a.completedAt.localeCompare(b.completedAt));
   const result: Record<TurnId, number> = {};
@@ -1557,8 +1379,15 @@ export function inferCheckpointTurnCountByTurnId(
 }
 
 export function derivePhase(session: ThreadSession | null): SessionPhase {
-  if (!session || session.status === "closed") return "disconnected";
-  if (session.status === "connecting") return "connecting";
+  if (
+    !session ||
+    session.status === "stopped" ||
+    session.status === "interrupted" ||
+    session.status === "error"
+  ) {
+    return "disconnected";
+  }
+  if (session.status === "starting") return "connecting";
   if (session.status === "running") return "running";
   return "ready";
 }

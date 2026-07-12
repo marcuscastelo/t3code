@@ -1,4 +1,4 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -11,9 +11,8 @@ import {
 import { memo, useMemo } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
+import { useProject, useThread } from "../state/entities";
 import { useIsMobile } from "../hooks/useMediaQuery";
-import { useStore } from "../store";
-import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
 import {
   type EnvMode,
   type EnvironmentOption,
@@ -30,7 +29,6 @@ import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
-  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -47,10 +45,11 @@ interface BranchToolbarProps {
   effectiveEnvModeOverride?: EnvMode;
   activeThreadBranchOverride?: string | null;
   onActiveThreadBranchOverrideChange?: (branch: string | null) => void;
+  startFromOrigin: boolean;
+  onStartFromOriginChange: (startFromOrigin: boolean) => void;
   envLocked: boolean;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
-  onExistingWorktreeAttachRequest?: (() => void) | undefined;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
@@ -65,7 +64,6 @@ interface MobileRunContextSelectorProps {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
-  onExistingWorktreeAttachRequest?: (() => void) | undefined;
 }
 
 const MobileRunContextSelector = memo(function MobileRunContextSelector({
@@ -78,7 +76,6 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
-  onExistingWorktreeAttachRequest,
 }: MobileRunContextSelectorProps) {
   const activeEnvironment = useMemo(
     () => availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
@@ -187,15 +184,6 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
               </span>
             </MenuRadioItem>
           </MenuRadioGroup>
-          {onExistingWorktreeAttachRequest ? (
-            <>
-              <MenuSeparator />
-              <MenuItem onClick={onExistingWorktreeAttachRequest}>
-                <FolderGitIcon className="size-3" />
-                Existing worktree
-              </MenuItem>
-            </>
-          ) : null}
         </MenuGroup>
       </MenuPopup>
     </Menu>
@@ -210,10 +198,11 @@ export const BranchToolbar = memo(function BranchToolbar({
   effectiveEnvModeOverride,
   activeThreadBranchOverride,
   onActiveThreadBranchOverrideChange,
+  startFromOrigin,
+  onStartFromOriginChange,
   envLocked,
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
-  onExistingWorktreeAttachRequest,
   availableEnvironments,
   onEnvironmentChange,
 }: BranchToolbarProps) {
@@ -221,8 +210,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
   );
-  const serverThreadSelector = useMemo(() => createThreadSelectorByRef(threadRef), [threadRef]);
-  const serverThread = useStore(serverThreadSelector);
+  const serverThread = useThread(threadRef);
   const draftThread = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : store.getDraftThreadByRef(threadRef),
   );
@@ -231,21 +219,17 @@ export const BranchToolbar = memo(function BranchToolbar({
     : draftThread
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
-  const activeProjectSelector = useMemo(
-    () => createProjectSelectorByRef(activeProjectRef),
-    [activeProjectRef],
-  );
-  const activeProject = useStore(activeProjectSelector);
-  const hasActiveThread = serverThread !== undefined || draftThread !== null;
+  const activeProject = useProject(activeProjectRef);
+  const hasActiveThread = serverThread !== null || draftThread !== null;
   const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
     resolveEffectiveEnvMode({
       activeWorktreePath,
-      hasServerThread: serverThread !== undefined,
+      hasServerThread: serverThread !== null,
       draftThreadEnvMode: draftThread?.envMode,
     });
-  const envModeLocked = envLocked || (serverThread !== undefined && activeWorktreePath !== null);
+  const envModeLocked = envLocked || (serverThread !== null && activeWorktreePath !== null);
 
   const showEnvironmentPicker = Boolean(
     availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange,
@@ -255,7 +239,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   if (!hasActiveThread || !activeProject) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-208 items-center gap-2 px-2.5 pb-3 pt-1 sm:px-3">
+    <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-2.5 pb-3 pt-1 sm:px-3">
       {isMobile ? (
         <MobileRunContextSelector
           envLocked={envLocked}
@@ -267,7 +251,6 @@ export const BranchToolbar = memo(function BranchToolbar({
           effectiveEnvMode={effectiveEnvMode}
           activeWorktreePath={activeWorktreePath}
           onEnvModeChange={onEnvModeChange}
-          onExistingWorktreeAttachRequest={onExistingWorktreeAttachRequest}
         />
       ) : (
         <div className="flex min-w-0 shrink-0 items-center gap-1">
@@ -287,7 +270,6 @@ export const BranchToolbar = memo(function BranchToolbar({
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
             onEnvModeChange={onEnvModeChange}
-            onExistingWorktreeAttachRequest={onExistingWorktreeAttachRequest}
           />
         </div>
       )}
@@ -301,6 +283,8 @@ export const BranchToolbar = memo(function BranchToolbar({
         {...(effectiveEnvModeOverride ? { effectiveEnvModeOverride } : {})}
         {...(activeThreadBranchOverride !== undefined ? { activeThreadBranchOverride } : {})}
         {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
+        startFromOrigin={startFromOrigin}
+        onStartFromOriginChange={onStartFromOriginChange}
         {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
         {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
       />

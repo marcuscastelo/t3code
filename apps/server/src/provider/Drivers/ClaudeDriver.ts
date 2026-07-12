@@ -18,23 +18,20 @@ import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeClaudeAdapter } from "../Layers/ClaudeAdapter.ts";
 import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
   probeClaudeCapabilities,
-  probeClaudeCliRateLimits,
 } from "../Layers/ClaudeProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -43,7 +40,6 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
-import type { ServerProviderShape } from "../Services/ServerProvider.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
@@ -52,6 +48,11 @@ import {
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
+import {
+  haveProviderSnapshotSettingsChanged,
+  makeProviderSnapshotSettingsSource,
+  type ProviderSnapshotSettings,
+} from "../providerUpdateSettings.ts";
 import { makeClaudeCapabilitiesCacheKey, makeClaudeContinuationGroupKey } from "./ClaudeHome.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -87,7 +88,8 @@ export type ClaudeDriverEnv =
   | HttpClient.HttpClient
   | Path.Path
   | ProviderEventLoggers
-  | ServerConfig;
+  | ServerConfig
+  | ServerSettingsService;
 
 const withInstanceIdentity =
   (input: {
@@ -118,6 +120,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const path = yield* Path.Path;
       const httpClient = yield* HttpClient.HttpClient;
+      const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
@@ -156,36 +159,30 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           ),
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig);
-      const rateLimitProbeRequestedRef = yield* Ref.make(false);
 
       const checkProvider = checkClaudeProviderStatus(
         effectiveConfig,
         () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
         processEnv,
-        (settings) =>
-          Ref.get(rateLimitProbeRequestedRef).pipe(
-            Effect.flatMap((requested) =>
-              requested
-                ? probeClaudeCliRateLimits(settings, processEnv)
-                : Effect.succeed(Option.none()),
-            ),
-          ),
       ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(Path.Path, path),
       );
 
-      const managedSnapshot = yield* makeManagedServerProvider<ClaudeSettings>({
+      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ClaudeSettings>>({
         maintenanceCapabilities,
-        getSettings: Effect.succeed(effectiveConfig),
-        streamSettings: Stream.never,
-        haveSettingsChanged: () => false,
+        getSettings: snapshotSettings.getSettings,
+        streamSettings: snapshotSettings.streamSettings,
+        haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          makePendingClaudeProvider(settings).pipe(Effect.map(stampIdentity)),
+          makePendingClaudeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
         checkProvider,
-        enrichSnapshot: ({ snapshot, publishSnapshot }) =>
-          enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities).pipe(
+        enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
+          enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities, {
+            enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
+          }).pipe(
             Effect.provideService(HttpClient.HttpClient, httpClient),
             Effect.flatMap((enrichedSnapshot) => publishSnapshot(enrichedSnapshot)),
           ),
@@ -201,15 +198,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             }),
         ),
       );
-      const refreshAccountRateLimits: NonNullable<ServerProviderShape["refreshAccountRateLimits"]> =
-        Effect.gen(function* () {
-          yield* Ref.set(rateLimitProbeRequestedRef, true);
-          return yield* managedSnapshot.refresh;
-        }).pipe(Effect.ensuring(Ref.set(rateLimitProbeRequestedRef, false)));
-      const snapshot = {
-        ...managedSnapshot,
-        refreshAccountRateLimits,
-      } satisfies ServerProviderShape;
 
       return {
         instanceId,

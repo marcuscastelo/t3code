@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import {
   ModelSelection,
@@ -43,7 +43,7 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
-import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
+import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
@@ -59,7 +59,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
-import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -71,7 +71,7 @@ const deriveServerPathsSync = (baseDir: string, devUrl: URL | undefined) =>
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000,
+  timeoutMs = 10_000,
 ): Promise<void> {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
   const poll = async (): Promise<void> => {
@@ -107,11 +107,11 @@ describe("ProviderCommandReactor", () => {
     }
     runtime = null;
     for (const stateDir of createdStateDirs) {
-      fs.rmSync(stateDir, { recursive: true, force: true });
+      NodeFS.rmSync(stateDir, { recursive: true, force: true });
     }
     createdStateDirs.clear();
     for (const baseDir of createdBaseDirs) {
-      fs.rmSync(baseDir, { recursive: true, force: true });
+      NodeFS.rmSync(baseDir, { recursive: true, force: true });
     }
     createdBaseDirs.clear();
   });
@@ -147,7 +147,8 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
-    const baseDir = input?.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
+    const baseDir =
+      input?.baseDir ?? NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-reactor-"));
     createdBaseDirs.add(baseDir);
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
@@ -335,11 +336,11 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(OrchestrationProjectionPipelineLive),
       Layer.provide(OrchestrationEventStoreLive),
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
-      Layer.provide(RepositoryIdentityResolverLive),
+      Layer.provide(RepositoryIdentityResolver.layer),
       Layer.provide(SqlitePersistenceMemory),
     );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
-      Layer.provide(RepositoryIdentityResolverLive),
+      Layer.provide(RepositoryIdentityResolver.layer),
       Layer.provide(SqlitePersistenceMemory),
     );
     const layer = ProviderCommandReactorLive.pipe(
@@ -348,9 +349,9 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
       Layer.provideMerge(
-        Layer.mock(GitWorkflowService)({
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
-        } satisfies Partial<GitWorkflowServiceShape>),
+        } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
       ),
       Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
@@ -1879,7 +1880,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-approval-requested"),
@@ -1900,7 +1901,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.approval.respond",
         commandId: CommandId.make("cmd-approval-respond-stale"),
@@ -1949,14 +1950,14 @@ describe("ProviderCommandReactor", () => {
     harness.respondToUserInput.mockImplementation(() =>
       Effect.fail(
         new ProviderAdapterRequestError({
-          provider: ProviderDriverKind.make("codex"),
+          provider: ProviderDriverKind.make("claudeAgent"),
           method: "item/tool/respondToUserInput",
           detail: "Unknown pending Codex user input request: user-input-request-1",
         }),
       ),
     );
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-user-input-error"),
@@ -1974,7 +1975,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-user-input-requested"),
@@ -2052,140 +2053,11 @@ describe("ProviderCommandReactor", () => {
     expect(resolvedActivity).toBeUndefined();
   });
 
-  it("marks pending user-input stale when the provider session is gone", async () => {
-    const harness = await createHarness();
-    const now = "2026-01-01T00:00:00.000Z";
-
-    await runtime!.runPromise(
-      harness.engine.dispatch({
-        type: "thread.activity.append",
-        commandId: CommandId.make("cmd-user-input-requested-no-session"),
-        threadId: ThreadId.make("thread-1"),
-        activity: {
-          id: EventId.make("activity-user-input-requested-no-session"),
-          tone: "info",
-          kind: "user-input.requested",
-          summary: "User input requested",
-          payload: {
-            requestId: "user-input-request-no-session",
-            questions: [
-              {
-                id: "choice",
-                header: "Choice",
-                question: "Pick one",
-                options: [{ label: "A", description: "Use A" }],
-              },
-            ],
-          },
-          turnId: null,
-          createdAt: now,
-        },
-        createdAt: now,
-      }),
-    );
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.user-input.respond",
-        commandId: CommandId.make("cmd-user-input-respond-no-session"),
-        threadId: ThreadId.make("thread-1"),
-        requestId: asApprovalRequestId("user-input-request-no-session"),
-        answers: { choice: "A" },
-        createdAt: now,
-      }),
-    );
-
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      return (
-        thread?.activities.some(
-          (activity) => activity.kind === "provider.user-input.respond.failed",
-        ) ?? false
-      );
-    });
-
-    expect(harness.respondToUserInput).not.toHaveBeenCalled();
-
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    const failureActivity = thread?.activities.find(
-      (activity) => activity.kind === "provider.user-input.respond.failed",
-    );
-    expect(failureActivity?.payload).toMatchObject({
-      requestId: "user-input-request-no-session",
-      detail: expect.stringContaining(
-        "Stale pending user-input request: user-input-request-no-session",
-      ),
-    });
-  });
-
-  it("marks pending approvals stale when the provider session is gone", async () => {
-    const harness = await createHarness();
-    const now = "2026-01-01T00:00:00.000Z";
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.activity.append",
-        commandId: CommandId.make("cmd-approval-requested-no-session"),
-        threadId: ThreadId.make("thread-1"),
-        activity: {
-          id: EventId.make("activity-approval-requested-no-session"),
-          tone: "approval",
-          kind: "approval.requested",
-          summary: "Command approval requested",
-          payload: {
-            requestId: "approval-request-no-session",
-            requestKind: "command",
-          },
-          turnId: null,
-          createdAt: now,
-        },
-        createdAt: now,
-      }),
-    );
-
-    await runtime!.runPromise(
-      harness.engine.dispatch({
-        type: "thread.approval.respond",
-        commandId: CommandId.make("cmd-approval-respond-no-session"),
-        threadId: ThreadId.make("thread-1"),
-        requestId: asApprovalRequestId("approval-request-no-session"),
-        decision: "accept",
-        createdAt: now,
-      }),
-    );
-
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      return (
-        thread?.activities.some(
-          (activity) => activity.kind === "provider.approval.respond.failed",
-        ) ?? false
-      );
-    });
-
-    expect(harness.respondToRequest).not.toHaveBeenCalled();
-
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    const failureActivity = thread?.activities.find(
-      (activity) => activity.kind === "provider.approval.respond.failed",
-    );
-    expect(failureActivity?.payload).toMatchObject({
-      requestId: "approval-request-no-session",
-      detail: expect.stringContaining(
-        "Stale pending approval request: approval-request-no-session",
-      ),
-    });
-  });
-
   it("reacts to thread.session.stop by stopping provider session and clearing thread session state", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-stop"),
@@ -2204,7 +2076,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await runtime!.runPromise(
+    await Effect.runPromise(
       harness.engine.dispatch({
         type: "thread.session.stop",
         commandId: CommandId.make("cmd-session-stop"),

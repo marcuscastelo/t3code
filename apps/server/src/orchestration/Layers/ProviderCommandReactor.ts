@@ -138,21 +138,22 @@ function isUnknownPendingApprovalRequestError(cause: Cause.Cause<ProviderService
   );
 }
 
-function isUnknownPendingUserInputDetail(detail: string): boolean {
-  const normalized = detail.toLowerCase();
-  return (
-    normalized.includes("unknown pending user-input request") ||
-    normalized.includes("unknown pending user input request") ||
-    normalized.includes("unknown pending codex user input request")
-  );
-}
-
 function isUnknownPendingUserInputRequestError(cause: Cause.Cause<ProviderServiceError>): boolean {
   const error = findProviderAdapterRequestError(cause);
   if (error) {
-    return isUnknownPendingUserInputDetail(error.detail);
+    const detail = error.detail.toLowerCase();
+    return (
+      detail.includes("unknown pending user-input request") ||
+      detail.includes("unknown pending user input request") ||
+      detail.includes("unknown pending codex user input request")
+    );
   }
-  return isUnknownPendingUserInputDetail(Cause.pretty(cause));
+  const message = Cause.pretty(cause).toLowerCase();
+  return (
+    message.includes("unknown pending user-input request") ||
+    message.includes("unknown pending user input request") ||
+    message.includes("unknown pending codex user input request")
+  );
 }
 
 function stalePendingRequestDetail(
@@ -895,7 +896,7 @@ const make = Effect.gen(function* () {
         threadId: event.payload.threadId,
         kind: "provider.approval.respond.failed",
         summary: "Provider approval response failed",
-        detail: stalePendingRequestDetail("approval", event.payload.requestId),
+        detail: "No active provider session is bound to this thread.",
         turnId: null,
         createdAt: event.payload.createdAt,
         requestId: event.payload.requestId,
@@ -939,7 +940,7 @@ const make = Effect.gen(function* () {
           threadId: event.payload.threadId,
           kind: "provider.user-input.respond.failed",
           summary: "Provider user input response failed",
-          detail: stalePendingRequestDetail("user-input", event.payload.requestId),
+          detail: "No active provider session is bound to this thread.",
           turnId: null,
           createdAt: event.payload.createdAt,
           requestId: event.payload.requestId,

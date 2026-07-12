@@ -1,6 +1,5 @@
-import type { KnownTerminalSession } from "@t3tools/client-runtime";
+import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
 import { DEFAULT_TERMINAL_ID, type ProjectScript } from "@t3tools/contracts";
-import { projectScriptHookEvents } from "@t3tools/shared/projectScripts";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -127,10 +126,7 @@ export function resolveProjectScriptTerminalId(input: {
 }
 
 export function projectScriptMenuLabel(script: ProjectScript): string {
-  const hookEvents = projectScriptHookEvents(script);
-  if (hookEvents.length === 0) return script.name;
-  if (hookEvents.length === 1) return `${script.name} (${hookEvents[0]})`;
-  return `${script.name} (${hookEvents.length} hooks)`;
+  return script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name;
 }
 
 export function projectScriptMenuIcon(icon: ProjectScript["icon"]) {

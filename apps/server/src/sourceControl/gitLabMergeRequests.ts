@@ -10,7 +10,6 @@ import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson"
 export interface NormalizedGitLabMergeRequestRecord {
   readonly number: number;
   readonly title: string;
-  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -38,7 +37,6 @@ const GitLabProjectReferenceSchema = Schema.Struct({
 const GitLabMergeRequestSchema = Schema.Struct({
   iid: PositiveInt,
   title: TrimmedNonEmptyString,
-  description: Schema.optional(Schema.NullOr(Schema.String)),
   web_url: TrimmedNonEmptyString,
   source_branch: TrimmedNonEmptyString,
   target_branch: TrimmedNonEmptyString,
@@ -106,7 +104,6 @@ function normalizeGitLabMergeRequestRecord(
   return {
     number: raw.iid,
     title: raw.title,
-    ...(raw.description !== undefined && raw.description !== null ? { body: raw.description } : {}),
     url: raw.web_url,
     baseRefName: raw.target_branch,
     headRefName: raw.source_branch,

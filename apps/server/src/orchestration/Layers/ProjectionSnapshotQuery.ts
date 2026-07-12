@@ -9,6 +9,7 @@ import {
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationThread,
+  OrchestrationThreadDetailSnapshot,
   ProjectScript,
   TurnId,
   type OrchestrationCheckpointSummary,
@@ -20,7 +21,6 @@ import {
   type OrchestrationSession,
   type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
-  type WorktreeOwnership,
   ModelSelection,
   ProjectId,
   ThreadId,
@@ -49,7 +49,7 @@ import { ProjectionThreadMessage } from "../../persistence/Services/ProjectionTh
 import { ProjectionThreadProposedPlan } from "../../persistence/Services/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadSession } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionThread } from "../../persistence/Services/ProjectionThreads.ts";
-import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
+import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
   ProjectionSnapshotQuery,
@@ -108,14 +108,6 @@ const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
 });
-
-function normalizeWorktreeOwnership(
-  worktreePath: string | null,
-  worktreeOwnership: WorktreeOwnership | null | undefined,
-): WorktreeOwnership | null {
-  return worktreeOwnership ?? (worktreePath ? "managed" : null);
-}
-
 const WorkspaceRootLookupInput = Schema.Struct({
   workspaceRoot: Schema.String,
 });
@@ -271,7 +263,7 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
+  const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
     "ProjectionSnapshotQuery.resolveRepositoryIdentitiesForProjects",
@@ -338,7 +330,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          worktree_ownership AS "worktreeOwnership",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -367,7 +358,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          worktree_ownership AS "worktreeOwnership",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -398,7 +388,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          worktree_ownership AS "worktreeOwnership",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -761,7 +750,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          worktree_ownership AS "worktreeOwnership",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -1194,10 +1182,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 interactionMode: row.interactionMode,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
-                worktreeOwnership: normalizeWorktreeOwnership(
-                  row.worktreePath,
-                  row.worktreeOwnership,
-                ),
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
@@ -1396,10 +1380,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
-                  worktreeOwnership: normalizeWorktreeOwnership(
-                    row.worktreePath,
-                    row.worktreeOwnership,
-                  ),
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
@@ -1529,10 +1509,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       interactionMode: row.interactionMode,
                       branch: row.branch,
                       worktreePath: row.worktreePath,
-                      worktreeOwnership: normalizeWorktreeOwnership(
-                        row.worktreePath,
-                        row.worktreeOwnership,
-                      ),
                       latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
@@ -1667,10 +1643,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
-                  worktreeOwnership: normalizeWorktreeOwnership(
-                    row.worktreePath,
-                    row.worktreeOwnership,
-                  ),
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
@@ -1911,10 +1883,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
-        worktreeOwnership: normalizeWorktreeOwnership(
-          threadRow.value.worktreePath,
-          threadRow.value.worktreeOwnership,
-        ),
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
@@ -2009,10 +1977,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
-        worktreeOwnership: normalizeWorktreeOwnership(
-          threadRow.value.worktreePath,
-          threadRow.value.worktreeOwnership,
-        ),
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
@@ -2070,6 +2034,35 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       );
     });
 
+  const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
+    threadId,
+  ) =>
+    // Read the thread detail and the snapshot sequence within a single
+    // transaction so the sequence is consistent with the returned state; a
+    // projector update landing between two separate reads could otherwise return
+    // a sequence ahead of the thread detail, causing the client to resume from
+    // too far and drop events.
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const thread = yield* getThreadDetailById(threadId);
+          if (Option.isNone(thread)) {
+            return Option.none<OrchestrationThreadDetailSnapshot>();
+          }
+          const { snapshotSequence } = yield* getSnapshotSequence();
+          return Option.some({ snapshotSequence, thread: thread.value });
+        }),
+      )
+      .pipe(
+        Effect.mapError((error) =>
+          isPersistenceError(error)
+            ? error
+            : toPersistenceSqlError("ProjectionSnapshotQuery.getThreadDetailSnapshot:transaction")(
+                error,
+              ),
+        ),
+      );
+
   return {
     getCommandReadModel,
     getSnapshot,
@@ -2084,6 +2077,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getFullThreadDiffContext,
     getThreadShellById,
     getThreadDetailById,
+    getThreadDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;
 });
 

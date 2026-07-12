@@ -3,7 +3,6 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
-  type WorktreeOwnership,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -23,13 +22,6 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-
-function normalizeWorktreeOwnership(
-  worktreePath: string | null,
-  worktreeOwnership: WorktreeOwnership | null | undefined,
-): WorktreeOwnership | null {
-  return worktreeOwnership !== undefined ? worktreeOwnership : worktreePath ? "managed" : null;
-}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -247,10 +239,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
-          worktreeOwnership: normalizeWorktreeOwnership(
-            command.worktreePath,
-            command.worktreeOwnership,
-          ),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -325,11 +313,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.meta.update": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      const branch =
+        command.branch !== undefined &&
+        command.expectedBranch !== undefined &&
+        thread.branch !== command.expectedBranch
+          ? thread.branch
+          : command.branch;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -345,16 +339,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
             : {}),
-          ...(command.branch !== undefined ? { branch: command.branch } : {}),
+          ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
-          ...(command.worktreeOwnership !== undefined || command.worktreePath !== undefined
-            ? {
-                worktreeOwnership: normalizeWorktreeOwnership(
-                  command.worktreePath ?? null,
-                  command.worktreeOwnership,
-                ),
-              }
-            : {}),
           updatedAt: occurredAt,
         },
       };

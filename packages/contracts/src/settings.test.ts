@@ -3,81 +3,31 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
-  ClientSettingsPatch,
   ClientSettingsSchema,
-  DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
-  ProjectContextId,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
-const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
-describe("ClientSettings.projectContexts", () => {
-  it("defaults context fields to an empty all-context view", () => {
-    expect(DEFAULT_CLIENT_SETTINGS.projectContexts).toEqual([]);
-    expect(DEFAULT_CLIENT_SETTINGS.activeProjectContextId).toBeNull();
-    expect(DEFAULT_CLIENT_SETTINGS.projectContextAssignments).toEqual({});
-    expect(DEFAULT_CLIENT_SETTINGS.projectContextDefaults).toEqual({});
-    expect(DEFAULT_CLIENT_SETTINGS.projectContextRules).toEqual([]);
-
-    const decoded = decodeClientSettings({});
-    expect(decoded.projectContexts).toEqual([]);
-    expect(decoded.activeProjectContextId).toBeNull();
-    expect(decoded.projectContextAssignments).toEqual({});
-    expect(decoded.projectContextDefaults).toEqual({});
-    expect(decoded.projectContextRules).toEqual([]);
+describe("ClientSettings word wrap", () => {
+  it("defaults word wrap on", () => {
+    expect(decodeClientSettings({}).wordWrap).toBe(true);
   });
 
-  it("decodes context patches as client-only settings", () => {
-    const patch = decodeClientSettingsPatch({
-      projectContexts: [{ id: " work ", name: " Work ", sortOrder: 2 }],
-      activeProjectContextId: " work ",
-      projectContextAssignments: {
-        "repo:github.com/acme/app": " work ",
-      },
-      projectContextDefaults: {
-        work: {
-          defaultThreadEnvMode: "worktree",
-          addProjectBaseDirectory: " ~/work ",
-        },
-      },
-      projectContextRules: [
-        {
-          id: " work-repos ",
-          contextId: " work ",
-          kind: "repository_prefix",
-          pattern: " github.com/acme/ ",
-          sortOrder: 1,
-        },
-      ],
+  it("ignores obsolete wrapping preferences", () => {
+    const decoded = decodeClientSettings({
+      chatWordWrap: false,
+      diffWordWrap: false,
     });
 
-    expect(patch.projectContexts?.[0]).toEqual({
-      id: ProjectContextId.make("work"),
-      name: "Work",
-      sortOrder: 2,
-    });
-    expect(patch.activeProjectContextId).toBe(ProjectContextId.make("work"));
-    expect(patch.projectContextAssignments?.["repo:github.com/acme/app"]).toBe(
-      ProjectContextId.make("work"),
-    );
-    expect(patch.projectContextDefaults?.[ProjectContextId.make("work")]).toEqual({
-      defaultThreadEnvMode: "worktree",
-      addProjectBaseDirectory: "~/work",
-    });
-    expect(patch.projectContextRules?.[0]).toEqual({
-      id: "work-repos",
-      contextId: ProjectContextId.make("work"),
-      kind: "repository_prefix",
-      pattern: "github.com/acme/",
-      sortOrder: 1,
-    });
+    expect(decoded.wordWrap).toBe(true);
+    expect(decoded).not.toHaveProperty("chatWordWrap");
+    expect(decoded).not.toHaveProperty("diffWordWrap");
   });
 });
 
@@ -134,6 +84,18 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
         providerInstances: { "1bad": { driver: "codex" } },
       }),
     ).toThrow();
+  });
+});
+
+describe("ServerSettings worktree defaults", () => {
+  it("defaults start-from-origin off for legacy configs", () => {
+    expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(false);
+  });
+
+  it("accepts start-from-origin updates", () => {
+    expect(
+      decodeServerSettingsPatch({ newWorktreesStartFromOrigin: true }).newWorktreesStartFromOrigin,
+    ).toBe(true);
   });
 });
 

@@ -554,25 +554,6 @@ function runtimeEventToActivities(
       ];
     }
 
-    case "account.rate-limits.updated": {
-      return [
-        {
-          id: event.eventId,
-          createdAt: event.createdAt,
-          tone: "info",
-          kind: "account.rate-limits.updated",
-          summary: "Account rate limits updated",
-          payload: {
-            provider: event.provider,
-            ...(event.providerInstanceId ? { providerInstanceId: event.providerInstanceId } : {}),
-            rateLimits: event.payload.rateLimits,
-          },
-          turnId: toTurnId(event.turnId) ?? null,
-          ...maybeSequence,
-        },
-      ];
-    }
-
     case "item.updated": {
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
@@ -585,7 +566,6 @@ function runtimeEventToActivities(
           kind: "tool.updated",
           summary: event.payload.title ?? "Tool updated",
           payload: {
-            ...(event.itemId ? { itemId: event.itemId } : {}),
             itemType: event.payload.itemType,
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
@@ -609,7 +589,6 @@ function runtimeEventToActivities(
           kind: "tool.completed",
           summary: event.payload.title ?? "Tool",
           payload: {
-            ...(event.itemId ? { itemId: event.itemId } : {}),
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
@@ -632,7 +611,6 @@ function runtimeEventToActivities(
           kind: "tool.started",
           summary: `${event.payload.title ?? "Tool"} started`,
           payload: {
-            ...(event.itemId ? { itemId: event.itemId } : {}),
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
           },

@@ -9,12 +9,13 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   ProviderOptionSelection,
+  PreviewAnnotationPayloadSchema,
+  type PreviewAnnotationPayload,
   RuntimeMode,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
-  WorktreeOwnership,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -23,9 +24,10 @@ import {
   scopeProjectRef,
   scopedThreadKey,
   scopeThreadRef,
-} from "@t3tools/client-runtime";
+} from "@t3tools/client-runtime/environment";
 import * as Schema from "effect/Schema";
 import * as Equal from "effect/Equal";
+import * as Effect from "effect/Effect";
 import { DeepMutable } from "effect/Types";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { useMemo } from "react";
@@ -37,21 +39,27 @@ import {
   ensureInlineTerminalContextPlaceholders,
   normalizeTerminalContextText,
 } from "./lib/terminalContext";
+import {
+  type ElementContextDraft,
+  type ElementContextSelection,
+  elementContextDedupKey,
+  newElementContextId,
+} from "./lib/elementContext";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
+import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
-const isWorktreeOwnership = Schema.is(WorktreeOwnership);
+const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
-const COMPOSER_DRAFT_STORAGE_VERSION = 7;
+const COMPOSER_DRAFT_STORAGE_VERSION = 8;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
-type DraftWorktreeOwnership = WorktreeOwnership;
 
 export const DraftId = Schema.String.pipe(Schema.brand("DraftId"));
 export type DraftId = typeof DraftId.Type;
@@ -95,10 +103,35 @@ const PersistedTerminalContextDraft = Schema.Struct({
 });
 type PersistedTerminalContextDraft = typeof PersistedTerminalContextDraft.Type;
 
+const PersistedElementContextStackFrame = Schema.Struct({
+  functionName: Schema.NullOr(Schema.String),
+  fileName: Schema.NullOr(Schema.String),
+  lineNumber: Schema.NullOr(Schema.Number),
+  columnNumber: Schema.NullOr(Schema.Number),
+});
+
+const PersistedElementContextDraft = Schema.Struct({
+  id: Schema.String,
+  threadId: ThreadId,
+  pickedAt: Schema.String,
+  pageUrl: Schema.String,
+  pageTitle: Schema.NullOr(Schema.String),
+  tagName: Schema.String,
+  selector: Schema.NullOr(Schema.String),
+  htmlPreview: Schema.String,
+  componentName: Schema.NullOr(Schema.String),
+  source: Schema.NullOr(PersistedElementContextStackFrame),
+  styles: Schema.String,
+});
+type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
+  elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
+  previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
+  reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
   // instances (e.g. `codex_personal`) round-trip alongside the built-in
   // `codex` / `claudeAgent` / ... entries. Every prior `ProviderDriverKind`
@@ -181,9 +214,8 @@ const PersistedDraftThreadState = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
-  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
-  runSetupScriptOnFirstSend: Schema.optionalKey(Schema.Boolean),
   envMode: DraftThreadEnvModeSchema,
+  startFromOrigin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -222,6 +254,15 @@ export interface ComposerThreadDraftState {
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
   /**
+   * Element-pick attachments captured from the in-app preview browser. The
+   * full payload (selector / html / styles / source frame) is persisted
+   * inline because — unlike terminal contexts — there's no live session to
+   * re-derive the snapshot from on reload.
+   */
+  elementContexts: ElementContextDraft[];
+  previewAnnotations: PreviewAnnotationPayload[];
+  reviewComments: ReviewCommentContext[];
+  /**
    * Per-instance model selection. Keyed by `ProviderInstanceId` (open
    * branded slug) so a default `codex` instance and a user-authored
    * `codex_personal` instance each persist their own selected model. Every
@@ -252,9 +293,8 @@ export interface DraftSessionState {
   interactionMode: ProviderInteractionMode;
   branch: string | null;
   worktreePath: string | null;
-  worktreeOwnership?: DraftWorktreeOwnership | null;
-  runSetupScriptOnFirstSend?: boolean;
   envMode: DraftThreadEnvMode;
+  startFromOrigin: boolean;
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -314,10 +354,9 @@ interface ComposerDraftStoreState {
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
-      worktreeOwnership?: DraftWorktreeOwnership | null;
-      runSetupScriptOnFirstSend?: boolean;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
+      startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -330,10 +369,9 @@ interface ComposerDraftStoreState {
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
-      worktreeOwnership?: DraftWorktreeOwnership | null;
-      runSetupScriptOnFirstSend?: boolean;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
+      startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -344,11 +382,10 @@ interface ComposerDraftStoreState {
     options: {
       branch?: string | null;
       worktreePath?: string | null;
-      worktreeOwnership?: DraftWorktreeOwnership | null;
-      runSetupScriptOnFirstSend?: boolean;
       projectRef?: ScopedProjectRef;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
+      startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
     },
@@ -410,6 +447,39 @@ interface ComposerDraftStoreState {
   addTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   removeTerminalContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
   clearTerminalContexts: (threadRef: ComposerThreadTarget) => void;
+  /**
+   * Append a fresh element pick to the draft. Returns true when accepted,
+   * false when deduped against an existing pick of the same element.
+   */
+  addElementContext: (
+    threadRef: ComposerThreadTarget,
+    selection: ElementContextSelection,
+  ) => boolean;
+  /**
+   * Replace the entire element-contexts list (used by send-failure retry to
+   * restore the pre-send snapshot).
+   */
+  setElementContexts: (
+    threadRef: ComposerThreadTarget,
+    contexts: ReadonlyArray<ElementContextDraft>,
+  ) => void;
+  removeElementContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
+  clearElementContexts: (threadRef: ComposerThreadTarget) => void;
+  addPreviewAnnotation: (
+    threadRef: ComposerThreadTarget,
+    annotation: PreviewAnnotationPayload,
+  ) => void;
+  setPreviewAnnotations: (
+    threadRef: ComposerThreadTarget,
+    annotations: ReadonlyArray<PreviewAnnotationPayload>,
+  ) => void;
+  removePreviewAnnotation: (threadRef: ComposerThreadTarget, annotationId: string) => void;
+  addReviewComment: (threadRef: ComposerThreadTarget, comment: ReviewCommentContext) => void;
+  setReviewComments: (
+    threadRef: ComposerThreadTarget,
+    comments: ReadonlyArray<ReviewCommentContext>,
+  ) => void;
+  removeReviewComment: (threadRef: ComposerThreadTarget, commentId: string) => void;
   clearPersistedAttachments: (threadRef: ComposerThreadTarget) => void;
   syncPersistedAttachments: (
     threadRef: ComposerThreadTarget,
@@ -485,9 +555,15 @@ const EMPTY_IMAGES: ComposerImageAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
+const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
+const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
+const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
+Object.freeze(EMPTY_ELEMENT_CONTEXTS);
+Object.freeze(EMPTY_PREVIEW_ANNOTATIONS);
+Object.freeze(EMPTY_REVIEW_COMMENTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
   Object.freeze({});
 const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
@@ -501,19 +577,31 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
+  elementContexts: EMPTY_ELEMENT_CONTEXTS,
+  previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
+  reviewComments: EMPTY_REVIEW_COMMENTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   runtimeMode: null,
   interactionMode: null,
 });
 
-function createEmptyThreadDraft(): ComposerThreadDraftState {
+/**
+ * Canonical factory for a blank `ComposerThreadDraftState`. Exported so tests
+ * (and any other call sites) can build a draft without re-declaring every
+ * slice — adding a new field to the interface (e.g. `elementContexts`) only
+ * has to be reflected here, not in every stub.
+ */
+export function createEmptyThreadDraft(): ComposerThreadDraftState {
   return {
     prompt: "",
     images: [],
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
+    elementContexts: [],
+    previewAnnotations: [],
+    reviewComments: [],
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,
@@ -584,6 +672,9 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.images.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
+    draft.elementContexts.length === 0 &&
+    draft.previewAnnotations.length === 0 &&
+    draft.reviewComments.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
@@ -977,6 +1068,63 @@ function normalizePersistedAttachment(value: unknown): PersistedComposerImageAtt
   };
 }
 
+function normalizePersistedElementContextDraft(
+  value: unknown,
+): PersistedElementContextDraft | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const id = candidate.id;
+  const threadId = candidate.threadId;
+  const pickedAt = candidate.pickedAt;
+  const pageUrl = candidate.pageUrl;
+  const tagName = candidate.tagName;
+  if (
+    typeof id !== "string" ||
+    id.length === 0 ||
+    typeof threadId !== "string" ||
+    threadId.length === 0 ||
+    typeof pickedAt !== "string" ||
+    pickedAt.length === 0 ||
+    typeof pageUrl !== "string" ||
+    pageUrl.length === 0 ||
+    typeof tagName !== "string" ||
+    tagName.length === 0
+  ) {
+    return null;
+  }
+  const sourceCandidate = candidate.source;
+  let source: PersistedElementContextDraft["source"] = null;
+  if (sourceCandidate && typeof sourceCandidate === "object") {
+    const sourceRecord = sourceCandidate as Record<string, unknown>;
+    source = {
+      functionName:
+        typeof sourceRecord.functionName === "string" ? sourceRecord.functionName : null,
+      fileName: typeof sourceRecord.fileName === "string" ? sourceRecord.fileName : null,
+      lineNumber:
+        typeof sourceRecord.lineNumber === "number" && Number.isFinite(sourceRecord.lineNumber)
+          ? sourceRecord.lineNumber
+          : null,
+      columnNumber:
+        typeof sourceRecord.columnNumber === "number" && Number.isFinite(sourceRecord.columnNumber)
+          ? sourceRecord.columnNumber
+          : null,
+    };
+  }
+  return {
+    id,
+    threadId: threadId as ThreadId,
+    pickedAt,
+    pageUrl,
+    pageTitle: typeof candidate.pageTitle === "string" ? candidate.pageTitle : null,
+    tagName,
+    selector: typeof candidate.selector === "string" ? candidate.selector : null,
+    htmlPreview: typeof candidate.htmlPreview === "string" ? candidate.htmlPreview : "",
+    componentName: typeof candidate.componentName === "string" ? candidate.componentName : null,
+    source,
+    styles: typeof candidate.styles === "string" ? candidate.styles : "",
+  };
+}
+
 function normalizePersistedTerminalContextDraft(
   value: unknown,
 ): PersistedTerminalContextDraft | null {
@@ -1030,16 +1178,6 @@ function normalizeDraftThreadEnvMode(
     return value;
   }
   return fallbackWorktreePath ? "worktree" : "local";
-}
-
-function normalizeDraftWorktreeOwnership(
-  worktreePath: string | null,
-  worktreeOwnership: DraftWorktreeOwnership | null | undefined,
-): DraftWorktreeOwnership | null {
-  if (worktreePath === null) {
-    return null;
-  }
-  return worktreeOwnership ?? "managed";
 }
 
 function projectDraftKey(projectRef: ScopedProjectRef): string {
@@ -1179,10 +1317,9 @@ function createDraftThreadState(
     threadId?: ThreadId;
     branch?: string | null;
     worktreePath?: string | null;
-    worktreeOwnership?: DraftWorktreeOwnership | null;
-    runSetupScriptOnFirstSend?: boolean;
     createdAt?: string;
     envMode?: DraftThreadEnvMode;
+    startFromOrigin?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
   },
@@ -1203,19 +1340,12 @@ function createDraftThreadState(
         ? null
         : (existingThread?.branch ?? null)
       : (options.branch ?? null);
-  const nextWorktreeOwnership = normalizeDraftWorktreeOwnership(
-    nextWorktreePath,
-    options?.worktreeOwnership === undefined
+  const nextStartFromOrigin =
+    options?.startFromOrigin === undefined
       ? projectChanged
-        ? undefined
-        : existingThread?.worktreeOwnership
-      : options.worktreeOwnership,
-  );
-  const nextRunSetupScriptOnFirstSend =
-    nextWorktreeOwnership === "managed"
-      ? (options?.runSetupScriptOnFirstSend ??
-        (projectChanged ? false : (existingThread?.runSetupScriptOnFirstSend ?? false)))
-      : false;
+        ? false
+        : (existingThread?.startFromOrigin ?? false)
+      : options.startFromOrigin;
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1227,8 +1357,6 @@ function createDraftThreadState(
       options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
     branch: nextBranch,
     worktreePath: nextWorktreePath,
-    worktreeOwnership: nextWorktreeOwnership,
-    runSetupScriptOnFirstSend: nextRunSetupScriptOnFirstSend,
     envMode:
       options?.envMode ??
       (nextWorktreePath
@@ -1236,6 +1364,7 @@ function createDraftThreadState(
         : projectChanged
           ? "local"
           : (existingThread?.envMode ?? "local")),
+    startFromOrigin: nextStartFromOrigin,
     promotedTo: null,
   };
 }
@@ -1266,9 +1395,8 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.interactionMode === right.interactionMode &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
-    left.worktreeOwnership === right.worktreeOwnership &&
-    left.runSetupScriptOnFirstSend === right.runSetupScriptOnFirstSend &&
     left.envMode === right.envMode &&
+    left.startFromOrigin === right.startFromOrigin &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -1363,13 +1491,8 @@ function normalizePersistedDraftThreads(
       const createdAt = candidateDraftThread.createdAt;
       const branch = candidateDraftThread.branch;
       const worktreePath = candidateDraftThread.worktreePath;
+      const startFromOrigin = candidateDraftThread.startFromOrigin === true;
       const normalizedWorktreePath = typeof worktreePath === "string" ? worktreePath : null;
-      const normalizedWorktreeOwnership = normalizeDraftWorktreeOwnership(
-        normalizedWorktreePath,
-        isWorktreeOwnership(candidateDraftThread.worktreeOwnership)
-          ? candidateDraftThread.worktreeOwnership
-          : undefined,
-      );
       const promotedToCandidate = candidateDraftThread.promotedTo;
       const promotedToRecord =
         promotedToCandidate && typeof promotedToCandidate === "object"
@@ -1415,11 +1538,8 @@ function normalizePersistedDraftThreads(
             : DEFAULT_INTERACTION_MODE,
         branch: typeof branch === "string" ? branch : null,
         worktreePath: normalizedWorktreePath,
-        worktreeOwnership: normalizedWorktreeOwnership,
-        runSetupScriptOnFirstSend:
-          normalizedWorktreeOwnership === "managed" &&
-          candidateDraftThread.runSetupScriptOnFirstSend === true,
         envMode: normalizeDraftThreadEnvMode(candidateDraftThread.envMode, normalizedWorktreePath),
+        startFromOrigin,
         promotedTo,
       };
     }
@@ -1464,9 +1584,8 @@ function normalizePersistedDraftThreads(
           interactionMode: DEFAULT_INTERACTION_MODE,
           branch: null,
           worktreePath: null,
-          worktreeOwnership: null,
-          runSetupScriptOnFirstSend: false,
           envMode: "local",
+          startFromOrigin: false,
           promotedTo: null,
         };
       } else if (
@@ -1532,6 +1651,15 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
+    const elementContexts = Array.isArray(draftCandidate.elementContexts)
+      ? draftCandidate.elementContexts.flatMap((entry) => {
+          const normalized = normalizePersistedElementContextDraft(entry);
+          return normalized ? [normalized] : [];
+        })
+      : [];
+    const reviewComments = Array.isArray(draftCandidate.reviewComments)
+      ? draftCandidate.reviewComments.filter(isReviewCommentContext)
+      : [];
     const runtimeMode = isRuntimeMode(draftCandidate.runtimeMode)
       ? draftCandidate.runtimeMode
       : null;
@@ -1595,6 +1723,8 @@ function normalizePersistedDraftsByThreadId(
       promptCandidate.length === 0 &&
       attachments.length === 0 &&
       terminalContexts.length === 0 &&
+      elementContexts.length === 0 &&
+      reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
       !interactionMode
@@ -1617,6 +1747,8 @@ function normalizePersistedDraftsByThreadId(
       prompt,
       attachments,
       ...(terminalContexts.length > 0 ? { terminalContexts } : {}),
+      ...(elementContexts.length > 0 ? { elementContexts } : {}),
+      ...(reviewComments.length > 0 ? { reviewComments } : {}),
       ...(hasModelData
         ? {
             modelSelectionByProvider: compactModelSelectionByProvider(modelSelectionByProvider),
@@ -1699,6 +1831,9 @@ function partializeComposerDraftStoreState(
       draft.prompt.length === 0 &&
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
+      draft.elementContexts.length === 0 &&
+      draft.previewAnnotations.length === 0 &&
+      draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null
@@ -1719,6 +1854,35 @@ function partializeComposerDraftStoreState(
               lineStart: context.lineStart,
               lineEnd: context.lineEnd,
             })),
+          }
+        : {}),
+      ...(draft.elementContexts.length > 0
+        ? {
+            elementContexts: draft.elementContexts.map((context) => ({
+              id: context.id,
+              threadId: context.threadId,
+              pickedAt: context.pickedAt,
+              pageUrl: context.pageUrl,
+              pageTitle: context.pageTitle,
+              tagName: context.tagName,
+              selector: context.selector,
+              htmlPreview: context.htmlPreview,
+              componentName: context.componentName,
+              source: context.source,
+              styles: context.styles,
+            })),
+          }
+        : {}),
+      ...(draft.previewAnnotations.length > 0
+        ? {
+            previewAnnotations: draft.previewAnnotations.map(
+              (annotation) => ({ ...annotation }) as DeepMutable<PreviewAnnotationPayload>,
+            ),
+          }
+        : {}),
+      ...(draft.reviewComments.length > 0
+        ? {
+            reviewComments: draft.reviewComments.map((comment) => ({ ...comment })),
           }
         : {}),
       ...(hasModelData
@@ -1957,6 +2121,13 @@ function toHydratedThreadDraft(
         ...context,
         text: "",
       })) ?? [],
+    elementContexts:
+      persistedDraft.elementContexts?.map((context) => ({
+        ...context,
+      })) ?? [],
+    previewAnnotations:
+      persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
+    reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
     modelSelectionByProvider,
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
@@ -1984,14 +2155,8 @@ function toHydratedDraftThreadState(
     interactionMode: persistedDraftThread.interactionMode,
     branch: persistedDraftThread.branch,
     worktreePath: persistedDraftThread.worktreePath,
-    worktreeOwnership: normalizeDraftWorktreeOwnership(
-      persistedDraftThread.worktreePath,
-      persistedDraftThread.worktreeOwnership,
-    ),
-    runSetupScriptOnFirstSend:
-      persistedDraftThread.worktreeOwnership === "managed" &&
-      persistedDraftThread.runSetupScriptOnFirstSend === true,
     envMode: persistedDraftThread.envMode,
+    startFromOrigin: persistedDraftThread.startFromOrigin,
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -2177,19 +2342,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   ? null
                   : existing.branch
                 : (options.branch ?? null);
-            const nextWorktreeOwnership = normalizeDraftWorktreeOwnership(
-              nextWorktreePath,
-              options.worktreeOwnership === undefined
+            const nextStartFromOrigin =
+              options.startFromOrigin === undefined
                 ? projectChanged
-                  ? undefined
-                  : existing.worktreeOwnership
-                : options.worktreeOwnership,
-            );
-            const nextRunSetupScriptOnFirstSend =
-              nextWorktreeOwnership === "managed"
-                ? (options.runSetupScriptOnFirstSend ??
-                  (projectChanged ? false : (existing.runSetupScriptOnFirstSend ?? false)))
-                : false;
+                  ? false
+                  : existing.startFromOrigin
+                : options.startFromOrigin;
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -2203,8 +2361,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               interactionMode: options.interactionMode ?? existing.interactionMode,
               branch: nextBranch,
               worktreePath: nextWorktreePath,
-              worktreeOwnership: nextWorktreeOwnership,
-              runSetupScriptOnFirstSend: nextRunSetupScriptOnFirstSend,
               envMode:
                 options.envMode ??
                 (nextWorktreePath
@@ -2212,6 +2368,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   : projectChanged
                     ? "local"
                     : (existing.envMode ?? "local")),
+              startFromOrigin: nextStartFromOrigin,
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2223,9 +2380,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.interactionMode === existing.interactionMode &&
               nextDraftThread.branch === existing.branch &&
               nextDraftThread.worktreePath === existing.worktreePath &&
-              nextDraftThread.worktreeOwnership === existing.worktreeOwnership &&
-              nextDraftThread.runSetupScriptOnFirstSend === existing.runSetupScriptOnFirstSend &&
               nextDraftThread.envMode === existing.envMode &&
+              nextDraftThread.startFromOrigin === existing.startFromOrigin &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;
@@ -2893,6 +3049,208 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        addElementContext: (threadRef, selection) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          const threadId = resolveComposerThreadId(get(), threadRef);
+          if (!threadKey || !threadId) return false;
+          let accepted = false;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const dedupKey = elementContextDedupKey(selection);
+            if (
+              existing.elementContexts.some((entry) => elementContextDedupKey(entry) === dedupKey)
+            ) {
+              return state;
+            }
+            accepted = true;
+            const draft: ElementContextDraft = {
+              ...selection,
+              id: newElementContextId(),
+              threadId,
+              pickedAt: new Date().toISOString(),
+            };
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  elementContexts: [...existing.elementContexts, draft],
+                },
+              },
+            };
+          });
+          return accepted;
+        },
+        setElementContexts: (threadRef, contexts) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              elementContexts: [...contexts],
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        removeElementContext: (threadRef, contextId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || contextId.length === 0) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const filtered = current.elementContexts.filter((entry) => entry.id !== contextId);
+            if (filtered.length === current.elementContexts.length) return state;
+            const nextDraft: ComposerThreadDraftState = {
+              ...current,
+              elementContexts: filtered,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        clearElementContexts: (threadRef) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current || current.elementContexts.length === 0) return state;
+            const nextDraft: ComposerThreadDraftState = {
+              ...current,
+              elementContexts: [],
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        addPreviewAnnotation: (threadRef, annotation) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextAnnotations = existing.previewAnnotations.filter(
+              (entry) => entry.id !== annotation.id,
+            );
+            const compactAnnotation: PreviewAnnotationPayload = {
+              ...annotation,
+              screenshot: annotation.screenshot ? { ...annotation.screenshot, dataUrl: "" } : null,
+            };
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  previewAnnotations: [...nextAnnotations, compactAnnotation],
+                },
+              },
+            };
+          });
+        },
+        setPreviewAnnotations: (threadRef, annotations) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...existing, previewAnnotations: [...annotations] },
+              },
+            };
+          });
+        },
+        removePreviewAnnotation: (threadRef, annotationId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || !annotationId) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const previewAnnotations = current.previewAnnotations.filter(
+              (entry) => entry.id !== annotationId,
+            );
+            if (previewAnnotations.length === current.previewAnnotations.length) return state;
+            const nextDraft = {
+              ...current,
+              previewAnnotations,
+              images: current.images.filter((image) => image.id !== annotationId),
+              persistedAttachments: current.persistedAttachments.filter(
+                (image) => image.id !== annotationId,
+              ),
+              nonPersistedImageIds: current.nonPersistedImageIds.filter(
+                (imageId) => imageId !== annotationId,
+              ),
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        addReviewComment: (threadRef, comment) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || !isReviewCommentContext(comment)) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const reviewComments = existing.reviewComments.filter(
+              (entry) => entry.id !== comment.id,
+            );
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: {
+                  ...existing,
+                  reviewComments: [...reviewComments, { ...comment }],
+                },
+              },
+            };
+          });
+        },
+        setReviewComments: (threadRef, comments) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          const reviewComments = comments
+            .filter(isReviewCommentContext)
+            .map((comment) => ({ ...comment }));
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft = { ...existing, reviewComments };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        removeReviewComment: (threadRef, commentId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || !commentId) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const reviewComments = current.reviewComments.filter((entry) => entry.id !== commentId);
+            if (reviewComments.length === current.reviewComments.length) return state;
+            const nextDraft = { ...current, reviewComments };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         clearPersistedAttachments: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
@@ -2965,6 +3323,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nonPersistedImageIds: [],
               persistedAttachments: [],
               terminalContexts: [],
+              elementContexts: [],
+              previewAnnotations: [],
+              reviewComments: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -3012,6 +3373,60 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
 );
 
 export const useComposerDraftStore = composerDraftStore;
+
+export function clearComposerDraftsEnvironment(environmentId: EnvironmentId): void {
+  useComposerDraftStore.setState((state) => {
+    const removedThreadKeys = new Set<string>();
+
+    for (const [threadKey, draftThread] of Object.entries(state.draftThreadsByThreadKey)) {
+      if (draftThread.environmentId === environmentId) {
+        removedThreadKeys.add(threadKey);
+      }
+    }
+    for (const threadKey of Object.keys(state.draftsByThreadKey)) {
+      if (parseScopedThreadKey(threadKey)?.environmentId === environmentId) {
+        removedThreadKeys.add(threadKey);
+      }
+    }
+    for (const [logicalProjectKey, threadKey] of Object.entries(
+      state.logicalProjectDraftThreadKeyByLogicalProjectKey,
+    )) {
+      if (parseScopedProjectKey(logicalProjectKey)?.environmentId === environmentId) {
+        removedThreadKeys.add(threadKey);
+      }
+    }
+
+    const nextLogicalMappings = Object.fromEntries(
+      Object.entries(state.logicalProjectDraftThreadKeyByLogicalProjectKey).filter(
+        ([logicalProjectKey, threadKey]) =>
+          parseScopedProjectKey(logicalProjectKey)?.environmentId !== environmentId &&
+          !removedThreadKeys.has(threadKey),
+      ),
+    ) as Record<string, string>;
+    const nextDraftThreads = Object.fromEntries(
+      Object.entries(state.draftThreadsByThreadKey).filter(
+        ([threadKey, draftThread]) =>
+          draftThread.environmentId !== environmentId && !removedThreadKeys.has(threadKey),
+      ),
+    ) as Record<string, DraftThreadState>;
+    const nextDrafts = Object.fromEntries(
+      Object.entries(state.draftsByThreadKey).filter(([threadKey, draft]) => {
+        if (!removedThreadKeys.has(threadKey)) {
+          return true;
+        }
+        revokeDraftThreadPreviewUrls(draft);
+        return false;
+      }),
+    ) as Record<string, ComposerThreadDraftState>;
+
+    return {
+      draftsByThreadKey: nextDrafts,
+      draftThreadsByThreadKey: nextDraftThreads,
+      logicalProjectDraftThreadKeyByLogicalProjectKey: nextLogicalMappings,
+    };
+  });
+  composerDebouncedStorage.flush();
+}
 
 export function useComposerThreadDraft(threadRef: ComposerThreadTarget): ComposerThreadDraftState {
   return useComposerDraftStore((state) => {
@@ -3125,12 +3540,16 @@ export function markPromotedDraftThreadsByRef(serverThreadRefs: Iterable<ScopedT
 export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   const draftStore = useComposerDraftStore.getState();
   for (const [draftId, draftThread] of Object.entries(draftStore.draftThreadsByThreadKey)) {
-    if (
-      draftThread.promotedTo &&
-      draftThread.promotedTo.environmentId === threadRef.environmentId &&
-      draftThread.promotedTo.threadId === threadRef.threadId
-    ) {
-      draftStore.finalizePromotedDraftThread(DraftId.make(draftId));
+    const promotedRef = draftThread.promotedTo;
+    const matches = promotedRef
+      ? promotedRef.environmentId === threadRef.environmentId &&
+        promotedRef.threadId === threadRef.threadId
+      : draftThread.environmentId === threadRef.environmentId &&
+        draftThread.threadId === threadRef.threadId;
+    if (matches) {
+      const target = DraftId.make(draftId);
+      draftStore.markDraftThreadPromoting(target, threadRef);
+      draftStore.finalizePromotedDraftThread(target);
     }
   }
 }

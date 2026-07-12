@@ -13,6 +13,5 @@ export type ProviderSnapshotSource = {
   readonly driverKind: ProviderDriverKind;
   readonly getSnapshot: ServerProviderShape["getSnapshot"];
   readonly refresh: ServerProviderShape["refresh"];
-  readonly refreshAccountRateLimits?: ServerProviderShape["refreshAccountRateLimits"];
   readonly streamChanges: Stream.Stream<ServerProvider>;
 };

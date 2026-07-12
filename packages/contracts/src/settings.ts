@@ -2,8 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { ThemeDocumentSchema } from "./appearanceTheme.ts";
-import { EnvironmentId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -29,57 +28,6 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
-
-export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
-export type ThreadEnvMode = typeof ThreadEnvMode.Type;
-
-export const ProjectContextId = TrimmedNonEmptyString.pipe(Schema.brand("ProjectContextId"));
-export type ProjectContextId = typeof ProjectContextId.Type;
-
-export const ProjectContextRuleId = TrimmedNonEmptyString.pipe(
-  Schema.brand("ProjectContextRuleId"),
-);
-export type ProjectContextRuleId = typeof ProjectContextRuleId.Type;
-
-export const ProjectContextRuleKind = Schema.Literals([
-  "path_prefix",
-  "repository_prefix",
-  "remote_url_contains",
-]);
-export type ProjectContextRuleKind = typeof ProjectContextRuleKind.Type;
-
-export const ProjectContext = Schema.Struct({
-  id: ProjectContextId,
-  name: TrimmedNonEmptyString,
-  color: Schema.optionalKey(TrimmedNonEmptyString),
-  icon: Schema.optionalKey(TrimmedNonEmptyString),
-  sortOrder: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-});
-export type ProjectContext = typeof ProjectContext.Type;
-
-export const ProjectContextDefaults = Schema.Struct({
-  defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
-  defaultEnvironmentId: Schema.optionalKey(EnvironmentId),
-  defaultModelSelection: Schema.optionalKey(ModelSelection),
-  addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
-  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
-});
-export type ProjectContextDefaults = typeof ProjectContextDefaults.Type;
-
-export const ProjectContextProjectOverride = Schema.Struct({
-  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
-});
-export type ProjectContextProjectOverride = typeof ProjectContextProjectOverride.Type;
-
-export const ProjectContextRule = Schema.Struct({
-  id: ProjectContextRuleId,
-  contextId: ProjectContextId,
-  kind: ProjectContextRuleKind,
-  pattern: TrimmedNonEmptyString,
-  sortOrder: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-});
-export type ProjectContextRule = typeof ProjectContextRule.Type;
-
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -91,21 +39,14 @@ export const SidebarThreadPreviewCount = Schema.Int.check(
 export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
 export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
 
-export const ColorMode = Schema.Literals(["light", "dark", "system"]);
-export type ColorMode = typeof ColorMode.Type;
-export const DEFAULT_COLOR_MODE: ColorMode = "system";
-export const DEFAULT_ACTIVE_LIGHT_THEME_ID = "t3code-light";
-export const DEFAULT_ACTIVE_DARK_THEME_ID = "t3code-dark";
-
 export const ClientSettingsSchema = Schema.Struct({
-  autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
   // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
@@ -131,25 +72,6 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  projectContexts: Schema.Array(ProjectContext).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  activeProjectContextId: Schema.NullOr(ProjectContextId).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  projectContextAssignments: Schema.Record(TrimmedNonEmptyString, ProjectContextId).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
-  projectContextDefaults: Schema.Record(ProjectContextId, ProjectContextDefaults).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
-  projectContextProjectOverrides: Schema.Record(
-    TrimmedNonEmptyString,
-    ProjectContextProjectOverride,
-  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  projectContextRules: Schema.Array(ProjectContextRule).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -169,12 +91,16 @@ export const ClientSettingsSchema = Schema.Struct({
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
+  wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
 
 // ── Server Settings (server-authoritative) ────────────────────
+
+export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
+export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 
 const makeBinaryPathSetting = (fallback: string) =>
   TrimmedString.pipe(
@@ -438,17 +364,8 @@ export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 
 export const ServerSettings = Schema.Struct({
-  colorMode: ColorMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_COLOR_MODE))),
-  activeLightThemeId: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_LIGHT_THEME_ID)),
-  ),
-  activeDarkThemeId: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ACTIVE_DARK_THEME_ID)),
-  ),
-  customThemes: Schema.Array(ThemeDocumentSchema).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
@@ -457,8 +374,10 @@ export const ServerSettings = Schema.Struct({
   defaultThreadEnvMode: ThreadEnvMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
   ),
+  newWorktreesStartFromOrigin: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  managedWorktreeBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -495,16 +414,37 @@ export type ServerSettings = typeof ServerSettings.Type;
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
+export const ServerSettingsOperation = Schema.Literals([
+  "normalize",
+  "check-exists",
+  "read-file",
+  "read-secret",
+  "remove-secret",
+  "remove-stale-secret",
+  "write-secret",
+  "write-file",
+  "prepare-directory",
+]);
+export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
+
 export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsError>()(
   "ServerSettingsError",
   {
     settingsPath: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
+    operation: ServerSettingsOperation,
+    providerInstanceId: Schema.optional(Schema.String),
+    environmentVariable: Schema.optional(Schema.String),
+    cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Server settings error at ${this.settingsPath}: ${this.detail}`;
+    const provider =
+      this.providerInstanceId === undefined ? "" : ` for provider ${this.providerInstanceId}`;
+    const variable =
+      this.environmentVariable === undefined
+        ? ""
+        : ` and environment variable ${this.environmentVariable}`;
+    return `Server settings ${this.operation} failed${provider}${variable} at ${this.settingsPath}.`;
   }
 }
 
@@ -563,15 +503,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
-  colorMode: Schema.optionalKey(ColorMode),
-  activeLightThemeId: Schema.optionalKey(Schema.String),
-  activeDarkThemeId: Schema.optionalKey(Schema.String),
-  customThemes: Schema.optionalKey(Schema.Array(ThemeDocumentSchema)),
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
+  enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
-  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   observability: Schema.optionalKey(
     Schema.Struct({
@@ -601,7 +538,6 @@ export const ClientSettingsPatch = Schema.Struct({
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
-  diffWordWrap: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
@@ -623,18 +559,6 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
-  projectContexts: Schema.optionalKey(Schema.Array(ProjectContext)),
-  activeProjectContextId: Schema.optionalKey(Schema.NullOr(ProjectContextId)),
-  projectContextAssignments: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, ProjectContextId),
-  ),
-  projectContextDefaults: Schema.optionalKey(
-    Schema.Record(ProjectContextId, ProjectContextDefaults),
-  ),
-  projectContextProjectOverrides: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, ProjectContextProjectOverride),
-  ),
-  projectContextRules: Schema.optionalKey(Schema.Array(ProjectContextRule)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
@@ -643,5 +567,6 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  wordWrap: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

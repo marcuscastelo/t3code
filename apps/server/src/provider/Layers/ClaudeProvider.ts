@@ -6,7 +6,6 @@ import {
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -19,6 +18,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
@@ -31,7 +31,6 @@ import {
   buildSelectOptionDescriptor,
   buildServerProvider,
   DEFAULT_TIMEOUT_MS,
-  detailFromResult,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -53,50 +52,6 @@ const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 
-const CLAUDE_FABLE_5_AND_OPUS_4_8_EFFORT_OPTIONS = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High", isDefault: true },
-  { value: "xhigh", label: "Extra High" },
-  { value: "max", label: "Max" },
-  { value: "ultracode", label: "Ultracode" },
-  { value: "ultrathink", label: "Ultrathink" },
-] as const;
-
-const CLAUDE_EFFORT_OPTIONS = {
-  fable5: CLAUDE_FABLE_5_AND_OPUS_4_8_EFFORT_OPTIONS,
-  opus48: CLAUDE_FABLE_5_AND_OPUS_4_8_EFFORT_OPTIONS,
-  opus47: [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-    { value: "xhigh", label: "Extra High", isDefault: true },
-    { value: "max", label: "Max" },
-    { value: "ultrathink", label: "Ultrathink" },
-  ],
-  opus46: [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High", isDefault: true },
-    { value: "max", label: "Max" },
-    { value: "ultrathink", label: "Ultrathink" },
-  ],
-  sonnet46: [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High", isDefault: true },
-    { value: "max", label: "Max" },
-    { value: "ultrathink", label: "Ultrathink" },
-  ],
-  opus45: [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High", isDefault: true },
-    { value: "max", label: "Max" },
-  ],
-} as const;
-
-const CLAUDE_USAGE_PROBE_TIMEOUT_MS = 14_000;
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-fable-5",
@@ -107,7 +62,15 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.fable5,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultracode", label: "Ultracode" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
           promptInjectedValues: ["ultrathink"],
         }),
         buildSelectOptionDescriptor({
@@ -130,20 +93,20 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.opus48,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultracode", label: "Ultracode" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
           promptInjectedValues: ["ultrathink"],
         }),
         buildBooleanOptionDescriptor({
           id: "fastMode",
           label: "Fast Mode",
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
         }),
       ],
     }),
@@ -157,20 +120,19 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.opus47,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+            { value: "xhigh", label: "Extra High", isDefault: true },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
           promptInjectedValues: ["ultrathink"],
         }),
         buildBooleanOptionDescriptor({
           id: "fastMode",
           label: "Fast Mode",
-        }),
-        buildSelectOptionDescriptor({
-          id: "contextWindow",
-          label: "Context Window",
-          options: [
-            { value: "200k", label: "200k", isDefault: true },
-            { value: "1m", label: "1M" },
-          ],
         }),
       ],
     }),
@@ -184,7 +146,13 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.opus46,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
           promptInjectedValues: ["ultrathink"],
         }),
         buildBooleanOptionDescriptor({
@@ -211,11 +179,46 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.opus45,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "max", label: "Max" },
+          ],
         }),
         buildBooleanOptionDescriptor({
           id: "fastMode",
           label: "Fast Mode",
+        }),
+      ],
+    }),
+  },
+  {
+    slug: "claude-sonnet-5",
+    name: "Claude Sonnet 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
+          ],
         }),
       ],
     }),
@@ -229,7 +232,13 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "effort",
           label: "Reasoning",
-          options: CLAUDE_EFFORT_OPTIONS.sonnet46,
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High", isDefault: true },
+            { value: "max", label: "Max" },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
           promptInjectedValues: ["ultrathink"],
         }),
         buildSelectOptionDescriptor({
@@ -343,7 +352,12 @@ export function normalizeClaudeCliEffort(
   if (effort === "ultracode") {
     return "xhigh";
   }
-  if (effort === "xhigh" && model !== "claude-fable-5" && model !== "claude-opus-4-8") {
+  if (
+    effort === "xhigh" &&
+    model !== "claude-fable-5" &&
+    model !== "claude-opus-4-8" &&
+    model !== "claude-sonnet-5"
+  ) {
     return "max";
   }
   if (effort === "max" && model === "claude-sonnet-4-6") {
@@ -481,28 +495,6 @@ type ClaudeCapabilitiesProbe = {
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
-type ClaudeRateLimitProbeWindow = {
-  readonly id: string;
-  readonly label: string;
-  readonly usedPercent: number;
-  readonly resetsAtText?: string;
-  readonly windowDurationMins: number | null;
-};
-
-type ClaudeRateLimitProbe = {
-  readonly rateLimits: {
-    readonly source: "claude-cli-usage";
-    readonly windows: ReadonlyArray<ClaudeRateLimitProbeWindow>;
-  };
-};
-
-class ClaudeCliUsageProbeError extends Data.TaggedError("ClaudeCliUsageProbeError")<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
-
-function noopCleanup() {}
-
 function parseClaudeInitializationCommands(
   commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
 ): ReadonlyArray<ServerProviderSlashCommand> {
@@ -590,7 +582,7 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
  */
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
-  environment: NodeJS.ProcessEnv = process.env,
+  environment?: NodeJS.ProcessEnv,
 ) => {
   const abort = new AbortController();
   return Effect.gen(function* () {
@@ -643,267 +635,18 @@ const probeClaudeCapabilities = (
   );
 };
 
-function stripAnsiCodes(value: string): string {
-  let clean = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code === 27) {
-      const next = value[index + 1];
-      if (next === "[") {
-        index += 2;
-        while (index < value.length && !/[A-Za-z~]/.test(value[index]!)) {
-          index += 1;
-        }
-        continue;
-      }
-      if (next === "]") {
-        index += 2;
-        while (index < value.length) {
-          const currentCode = value.charCodeAt(index);
-          if (currentCode === 7) break;
-          if (currentCode === 27 && value[index + 1] === "\\") {
-            index += 1;
-            break;
-          }
-          index += 1;
-        }
-        continue;
-      }
-      index += 1;
-      continue;
-    }
-    clean += value[index] === "\r" ? "\n" : value[index];
-  }
-  return clean;
-}
-
-function normalizeForUsageLabelSearch(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function percentToUsedPercent(percent: number, keyword: string | undefined): number {
-  const normalizedKeyword = keyword?.toLowerCase();
-  const used =
-    normalizedKeyword === "left" ||
-    normalizedKeyword === "remaining" ||
-    normalizedKeyword === "available"
-      ? 100 - percent
-      : percent;
-  return Math.max(0, Math.min(100, used));
-}
-
-function parseUsagePercent(value: string): number | null {
-  const percentagePattern =
-    /(\d+(?:\.\d+)?)\s*%\s*(used|left|remaining|available)?|(used|left|remaining|available)\D{0,24}(\d+(?:\.\d+)?)\s*%/gi;
-  for (const match of value.matchAll(percentagePattern)) {
-    const rawPercent = match[1] ?? match[4];
-    const percent = rawPercent ? Number(rawPercent) : Number.NaN;
-    if (!Number.isFinite(percent)) {
-      continue;
-    }
-    return percentToUsedPercent(percent, match[2] ?? match[3]);
-  }
-  return null;
-}
-
-function parseUsageResetText(value: string): string | undefined {
-  const match = /Resets[^\n)]*(?:\([^)]+\))?/i.exec(value);
-  return match?.[0]?.trim();
-}
-
-function usageCaptureHasSessionValue(value: string): boolean {
-  const normalized = normalizeForUsageLabelSearch(stripAnsiCodes(value));
-  return normalized.includes("currentsession") && /(?:used|left|remaining|available)/i.test(value);
-}
-
-function usageCaptureHasWeeklyValue(value: string): boolean {
-  const normalized = normalizeForUsageLabelSearch(stripAnsiCodes(value));
-  return usageCaptureHasSessionValue(value) && normalized.includes("currentweek");
-}
-
-function extractClaudeUsageWindow(
-  lines: ReadonlyArray<string>,
-  labels: ReadonlyArray<string>,
-  input: {
-    readonly id: string;
-    readonly label: string;
-    readonly windowDurationMins: number | null;
-  },
-): ClaudeRateLimitProbeWindow | null {
-  const normalizedLabels = labels.map(normalizeForUsageLabelSearch);
-  const normalizedLines = lines.map(normalizeForUsageLabelSearch);
-  const startIndex = normalizedLines.findIndex((line) =>
-    normalizedLabels.some((label) => line.includes(label)),
-  );
-  if (startIndex === -1) {
-    return null;
-  }
-
-  const windowLines: string[] = [];
-  for (const line of lines.slice(startIndex, startIndex + 14)) {
-    const normalizedLine = normalizeForUsageLabelSearch(line);
-    if (
-      windowLines.length > 0 &&
-      normalizedLine.startsWith("current") &&
-      !normalizedLabels.some((label) => normalizedLine.includes(label))
-    ) {
-      break;
-    }
-    windowLines.push(line);
-  }
-
-  const windowText = windowLines.join("\n");
-  const usedPercent = parseUsagePercent(windowText);
-  if (usedPercent === null) {
-    return null;
-  }
-
-  const resetsAtText = parseUsageResetText(windowText);
-  return {
-    id: input.id,
-    label: input.label,
-    usedPercent,
-    ...(resetsAtText ? { resetsAtText } : {}),
-    windowDurationMins: input.windowDurationMins,
-  };
-}
-
-export function parseClaudeCliUsageRateLimits(text: string): ClaudeRateLimitProbe | undefined {
-  const clean = stripAnsiCodes(text);
-  const usagePanelStart = clean.toLowerCase().lastIndexOf("settings:");
-  const panel =
-    usagePanelStart >= 0 && clean.slice(usagePanelStart).toLowerCase().includes("usage")
-      ? clean.slice(usagePanelStart)
-      : clean;
-  const lines = panel
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const windows = [
-    extractClaudeUsageWindow(lines, ["Current session"], {
-      id: "five_hour",
-      label: "5h",
-      windowDurationMins: 300,
-    }),
-    extractClaudeUsageWindow(lines, ["Current week (all models)"], {
-      id: "seven_day",
-      label: "weekly",
-      windowDurationMins: 10_080,
-    }),
-    extractClaudeUsageWindow(
-      lines,
-      ["Current week (Sonnet only)", "Current week (Sonnet)", "Current week (Opus)"],
-      {
-        id: "seven_day_sonnet",
-        label: "weekly sonnet",
-        windowDurationMins: 10_080,
-      },
-    ),
-  ].filter((window): window is ClaudeRateLimitProbeWindow => window !== null);
-
-  if (windows.length === 0) {
-    return undefined;
-  }
-
-  return {
-    rateLimits: {
-      source: "claude-cli-usage",
-      windows,
-    },
-  };
-}
-
-function captureClaudeCliUsage(
-  claudeSettings: ClaudeSettings,
-  claudeEnvironment: NodeJS.ProcessEnv,
-): Effect.Effect<string, ClaudeCliUsageProbeError> {
-  let cleanup = noopCleanup;
-  let stopped = false;
-  return Effect.tryPromise({
-    try: () =>
-      new Promise<string>((resolve, reject) => {
-        let done = false;
-        const chunks: string[] = [];
-
-        const finish = (result: string) => {
-          if (done) return;
-          done = true;
-          resolve(result);
-        };
-        const fail = (cause: unknown) => {
-          if (done) return;
-          done = true;
-          reject(cause);
-        };
-
-        void import("node-pty")
-          .then((nodePty) => {
-            if (stopped) return;
-            const spawned = nodePty.spawn(claudeSettings.binaryPath, [], {
-              cols: 100,
-              rows: 32,
-              cwd:
-                typeof claudeEnvironment.HOME === "string" && claudeEnvironment.HOME.trim()
-                  ? claudeEnvironment.HOME
-                  : process.cwd(),
-              env: claudeEnvironment,
-              name: process.platform === "win32" ? "xterm-color" : "xterm-256color",
-            });
-            cleanup = () => {
-              stopped = true;
-              try {
-                spawned.kill();
-              } catch {
-                // Process may already be gone.
-              }
-            };
-
-            spawned.write("/usage\r\r");
-
-            spawned.onData((chunk) => {
-              chunks.push(chunk);
-              const output = chunks.join("");
-              if (usageCaptureHasWeeklyValue(output)) {
-                finish(output);
-              }
-            });
-            spawned.onExit(() => {
-              finish(chunks.join(""));
-            });
-          })
-          .catch(fail);
-      }),
-    catch: (cause) =>
-      new ClaudeCliUsageProbeError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
-      }),
-  }).pipe(Effect.ensuring(Effect.sync(() => cleanup())));
-}
-
-const probeClaudeCliRateLimits = (
-  claudeSettings: ClaudeSettings,
-  environment: NodeJS.ProcessEnv = process.env,
-) =>
-  Effect.gen(function* () {
-    const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-    const output = yield* captureClaudeCliUsage(claudeSettings, claudeEnvironment);
-    return parseClaudeCliUsageRateLimits(output);
-  }).pipe(
-    Effect.timeoutOption(CLAUDE_USAGE_PROBE_TIMEOUT_MS + 2_000),
-    Effect.orElseSucceed(() => Option.none()),
-  );
-
 const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (
   claudeSettings: ClaudeSettings,
   args: ReadonlyArray<string>,
-  environment: NodeJS.ProcessEnv = process.env,
+  environment?: NodeJS.ProcessEnv,
 ) {
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-  const command = ChildProcess.make(claudeSettings.binaryPath, [...args], {
+  const spawnCommand = yield* resolveSpawnCommand(claudeSettings.binaryPath, args, {
     env: claudeEnvironment,
-    shell: process.platform === "win32",
+  });
+  const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+    env: claudeEnvironment,
+    shell: spawnCommand.shell,
   });
   return yield* spawnAndCollect(claudeSettings.binaryPath, command);
 });
@@ -913,15 +656,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   resolveCapabilities?: (
     claudeSettings: ClaudeSettings,
   ) => Effect.Effect<ClaudeCapabilitiesProbe | undefined>,
-  environment: NodeJS.ProcessEnv = process.env,
-  resolveRateLimits?: (
-    claudeSettings: ClaudeSettings,
-  ) => Effect.Effect<Option.Option<ClaudeRateLimitProbe | undefined>, never, Path.Path>,
+  environment?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
   ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > {
+  const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
     BUILT_IN_MODELS,
@@ -946,13 +687,17 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const versionProbe = yield* runClaudeCommand(claudeSettings, ["--version"], environment).pipe(
-    Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
-    Effect.result,
-  );
+  const versionProbe = yield* runClaudeCommand(
+    claudeSettings,
+    ["--version"],
+    resolvedEnvironment,
+  ).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
 
   if (Result.isFailure(versionProbe)) {
     const error = versionProbe.failure;
+    yield* Effect.logWarning("Claude Agent CLI health check failed.", {
+      errorTag: error._tag,
+    });
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -965,7 +710,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         auth: { status: "unknown" },
         message: isCommandMissingCause(error)
           ? "Claude Agent CLI (`claude`) is not installed or not on PATH."
-          : `Failed to execute Claude Agent CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
+          : "Failed to execute Claude Agent CLI health check.",
       },
     });
   }
@@ -990,7 +735,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const version = versionProbe.success.value;
   const parsedVersion = parseGenericCliVersion(`${version.stdout}\n${version.stderr}`);
   if (version.code !== 0) {
-    const detail = detailFromResult(version);
+    yield* Effect.logWarning("Claude Agent CLI version probe exited with a non-zero status.", {
+      exitCode: version.code,
+      stdoutLength: version.stdout.length,
+      stderrLength: version.stderr.length,
+    });
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -1001,9 +750,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unknown" },
-        message: detail
-          ? `Claude Agent CLI is installed but failed to run. ${detail}`
-          : "Claude Agent CLI is installed but failed to run.",
+        message: "Claude Agent CLI is installed but failed to run.",
       },
     });
   }
@@ -1049,19 +796,12 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     subscriptionType: capabilities.subscriptionType,
     authMethod: capabilities.tokenSource,
   });
-  const accountRateLimits = resolveRateLimits
-    ? yield* resolveRateLimits(claudeSettings).pipe(
-        Effect.map((result) => (Option.isSome(result) ? result.value : undefined)),
-        Effect.orElseSucceed(() => undefined),
-      )
-    : undefined;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
     checkedAt,
     models,
     slashCommands: dedupedSlashCommands,
-    accountRateLimits,
     probe: {
       installed: true,
       version: parsedVersion,
@@ -1121,4 +861,4 @@ export const makePendingClaudeProvider = (
     });
   });
 
-export { probeClaudeCapabilities, probeClaudeCliRateLimits };
+export { probeClaudeCapabilities };

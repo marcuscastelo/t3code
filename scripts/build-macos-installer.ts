@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off
 
-import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import { releasePackageFiles } from "./update-release-package-versions.ts";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const releaseVersionPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 const stableReleaseTagPattern = /^v(\d+\.\d+\.\d+)$/;
 
@@ -107,7 +107,9 @@ export function parseMacosInstallerArgs(args: ReadonlyArray<string>): ParsedMaco
 
 function readReleasePackageVersions(): ReadonlyArray<string> {
   return releasePackageFiles.map((relativePath) => {
-    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, relativePath), "utf8")) as {
+    const packageJson = JSON.parse(
+      NodeFS.readFileSync(NodePath.resolve(repoRoot, relativePath), "utf8"),
+    ) as {
       readonly version?: unknown;
     };
     if (typeof packageJson.version !== "string") {
@@ -118,10 +120,14 @@ function readReleasePackageVersions(): ReadonlyArray<string> {
 }
 
 function readMergedStableTags(): ReadonlyArray<string> {
-  const stdout = execFileSync("git", ["tag", "--merged", "HEAD", "--list", "v[0-9]*"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  });
+  const stdout = NodeChildProcess.execFileSync(
+    "git",
+    ["tag", "--merged", "HEAD", "--list", "v[0-9]*"],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+    },
+  );
   return stdout
     .split("\n")
     .map((tag) => tag.trim())
@@ -137,7 +143,7 @@ function run() {
       stableTags: readMergedStableTags(),
     });
 
-  const result = spawnSync(
+  const result = NodeChildProcess.spawnSync(
     process.execPath,
     [
       "scripts/build-desktop-artifact.ts",

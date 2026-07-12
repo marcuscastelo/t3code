@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import fs from "node:fs";
-import path from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import {
   ApprovalRequestId,
@@ -150,7 +150,6 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: harness.workspaceDir,
-      worktreeOwnership: "managed",
       createdAt,
     });
   });
@@ -301,7 +300,6 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
           runtimeMode: "full-access",
           branch: null,
           worktreePath: harness.workspaceDir,
-          worktreeOwnership: "managed",
           createdAt,
         });
 
@@ -411,7 +409,7 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
           }),
       });
 
@@ -458,7 +456,7 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
           }),
       });
 
@@ -754,7 +752,7 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
           }),
       });
       yield* startTurn({
@@ -813,7 +811,7 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
           }),
       });
       yield* startTurn({
@@ -871,7 +869,10 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ),
         true,
       );
-      assert.equal(fs.readFileSync(path.join(harness.workspaceDir, "README.md"), "utf8"), "v2\n");
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(harness.workspaceDir, "README.md"), "utf8"),
+        "v2\n",
+      );
       assert.equal(
         gitRefExists(harness.workspaceDir, checkpointRefForThreadTurn(THREAD_ID, 2)),
         false,
@@ -1334,7 +1335,7 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
           ],
           mutateWorkspace: ({ cwd }) =>
             Effect.sync(() => {
-              fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+              NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
             }),
         });
 
@@ -1392,7 +1393,7 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
           ],
           mutateWorkspace: ({ cwd }) =>
             Effect.sync(() => {
-              fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+              NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
             }),
         });
 

@@ -7,6 +7,5 @@ export interface ServerProviderShape {
   readonly maintenanceCapabilities: ProviderMaintenanceCapabilities;
   readonly getSnapshot: Effect.Effect<ServerProvider>;
   readonly refresh: Effect.Effect<ServerProvider>;
-  readonly refreshAccountRateLimits?: Effect.Effect<ServerProvider>;
   readonly streamChanges: Stream.Stream<ServerProvider>;
 }

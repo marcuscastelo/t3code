@@ -10,7 +10,6 @@ import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson"
 export interface NormalizedAzureDevOpsPullRequestRecord {
   readonly number: number;
   readonly title: string;
-  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -21,7 +20,6 @@ export interface NormalizedAzureDevOpsPullRequestRecord {
 const AzureDevOpsPullRequestSchema = Schema.Struct({
   pullRequestId: PositiveInt,
   title: TrimmedNonEmptyString,
-  description: Schema.optional(Schema.NullOr(Schema.String)),
   url: Schema.optional(Schema.String),
   repository: Schema.optional(
     Schema.Struct({
@@ -137,7 +135,6 @@ function normalizeAzureDevOpsPullRequestRecord(
   return {
     number: raw.pullRequestId,
     title: raw.title,
-    ...(raw.description !== undefined && raw.description !== null ? { body: raw.description } : {}),
     url: normalizeAzureDevOpsPullRequestUrl(raw),
     baseRefName: normalizeRefName(raw.targetRefName),
     headRefName: normalizeRefName(raw.sourceRefName),

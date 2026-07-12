@@ -13,6 +13,7 @@ import {
   FilesystemBrowseResult,
   FilesystemBrowseError,
 } from "./filesystem.ts";
+import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -22,8 +23,6 @@ import {
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
   VcsCreateWorktreeResult,
-  VcsValidateWorktreeAttachInput,
-  VcsValidateWorktreeAttachResult,
   VcsInitInput,
   VcsListRefsInput,
   VcsListRefsResult,
@@ -58,8 +57,6 @@ import {
   OrchestrationReplayEventsError,
   OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
-  WorktreePromoteThreadInput,
-  WorktreePromoteThreadResult,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -68,6 +65,12 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  ProjectListEntriesError,
+  ProjectListEntriesInput,
+  ProjectListEntriesResult,
+  ProjectReadFileError,
+  ProjectReadFileInput,
+  ProjectReadFileResult,
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
@@ -90,6 +93,27 @@ import {
   TerminalWriteInput,
 } from "./terminal.ts";
 import {
+  DiscoveredLocalServerList,
+  PreviewCloseInput,
+  PreviewError,
+  PreviewEvent,
+  PreviewListInput,
+  PreviewListResult,
+  PreviewNavigateInput,
+  PreviewOpenInput,
+  PreviewRefreshInput,
+  PreviewReportStatusInput,
+  PreviewResizeInput,
+  PreviewSessionSnapshot,
+} from "./preview.ts";
+import {
+  PreviewAutomationError,
+  PreviewAutomationHost,
+  PreviewAutomationHostFocus,
+  PreviewAutomationResponse,
+  PreviewAutomationStreamEvent,
+} from "./previewAutomation.ts";
+import {
   ServerConfigStreamEvent,
   ServerConfig,
   ServerProviderUpdateError,
@@ -104,8 +128,6 @@ import {
   ServerProcessResourceHistoryResult,
   ServerSignalProcessInput,
   ServerSignalProcessResult,
-  ServerSyncCodexThreadInput,
-  ServerSyncCodexThreadResult,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -127,6 +149,8 @@ export const WS_METHODS = {
   projectsList: "projects.list",
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
+  projectsListEntries: "projects.listEntries",
+  projectsReadFile: "projects.readFile",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
 
@@ -135,13 +159,13 @@ export const WS_METHODS = {
 
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
+  assetsCreateUrl: "assets.createUrl",
 
   // VCS methods
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
-  vcsValidateWorktreeAttach: "vcs.validateWorktreeAttach",
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
@@ -151,9 +175,6 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
-
-  // Worktree methods
-  worktreePromoteThread: "worktree.promoteThread",
 
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
@@ -166,6 +187,18 @@ export const WS_METHODS = {
   terminalClear: "terminal.clear",
   terminalRestart: "terminal.restart",
   terminalClose: "terminal.close",
+
+  // Preview methods
+  previewOpen: "preview.open",
+  previewNavigate: "preview.navigate",
+  previewResize: "preview.resize",
+  previewRefresh: "preview.refresh",
+  previewClose: "preview.close",
+  previewList: "preview.list",
+  previewReportStatus: "preview.reportStatus",
+  previewAutomationConnect: "previewAutomation.connect",
+  previewAutomationRespond: "previewAutomation.respond",
+  previewAutomationFocusHost: "previewAutomation.focusHost",
 
   // Server meta
   serverGetConfig: "server.getConfig",
@@ -180,7 +213,6 @@ export const WS_METHODS = {
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
-  serverSyncCodexThread: "server.syncCodexThread",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -195,6 +227,8 @@ export const WS_METHODS = {
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
+  subscribePreviewEvents: "subscribePreviewEvents",
+  subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -227,7 +261,6 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refreshes.
      */
     instanceId: Schema.optional(ProviderInstanceId),
-    accountRateLimits: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
@@ -297,12 +330,6 @@ export const WsCloudInstallRelayClientRpc = Rpc.make(WS_METHODS.cloudInstallRela
   stream: true,
 });
 
-export const WsServerSyncCodexThreadRpc = Rpc.make(WS_METHODS.serverSyncCodexThread, {
-  payload: ServerSyncCodexThreadInput,
-  success: ServerSyncCodexThreadResult,
-  error: EnvironmentAuthorizationError,
-});
-
 export const WsSourceControlLookupRepositoryRpc = Rpc.make(
   WS_METHODS.sourceControlLookupRepository,
   {
@@ -333,6 +360,18 @@ export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntr
   error: Schema.Union([ProjectSearchEntriesError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
+  payload: ProjectListEntriesInput,
+  success: ProjectListEntriesResult,
+  error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
+  payload: ProjectReadFileInput,
+  success: ProjectReadFileResult,
+  error: Schema.Union([ProjectReadFileError, EnvironmentAuthorizationError]),
+});
+
 export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
@@ -348,6 +387,12 @@ export const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   payload: FilesystemBrowseInput,
   success: FilesystemBrowseResult,
   error: Schema.Union([FilesystemBrowseError, EnvironmentAuthorizationError]),
+});
+
+export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
+  payload: AssetCreateUrlInput,
+  success: AssetCreateUrlResult,
+  error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -388,12 +433,6 @@ export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePu
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
-export const WsWorktreePromoteThreadRpc = Rpc.make(WS_METHODS.worktreePromoteThread, {
-  payload: WorktreePromoteThreadInput,
-  success: WorktreePromoteThreadResult,
-  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
-});
-
 export const WsVcsListRefsRpc = Rpc.make(WS_METHODS.vcsListRefs, {
   payload: VcsListRefsInput,
   success: VcsListRefsResult,
@@ -404,12 +443,6 @@ export const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
   payload: VcsCreateWorktreeInput,
   success: VcsCreateWorktreeResult,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsValidateWorktreeAttachRpc = Rpc.make(WS_METHODS.vcsValidateWorktreeAttach, {
-  payload: VcsValidateWorktreeAttachInput,
-  success: VcsValidateWorktreeAttachResult,
-  error: Schema.Union([GitCommandError, VcsError, EnvironmentAuthorizationError]),
 });
 
 export const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
@@ -483,6 +516,79 @@ export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   payload: TerminalCloseInput,
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
+
+export const WsPreviewOpenRpc = Rpc.make(WS_METHODS.previewOpen, {
+  payload: PreviewOpenInput,
+  success: PreviewSessionSnapshot,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewNavigateRpc = Rpc.make(WS_METHODS.previewNavigate, {
+  payload: PreviewNavigateInput,
+  success: PreviewSessionSnapshot,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewResizeRpc = Rpc.make(WS_METHODS.previewResize, {
+  payload: PreviewResizeInput,
+  success: PreviewSessionSnapshot,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewRefreshRpc = Rpc.make(WS_METHODS.previewRefresh, {
+  payload: PreviewRefreshInput,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewCloseRpc = Rpc.make(WS_METHODS.previewClose, {
+  payload: PreviewCloseInput,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewListRpc = Rpc.make(WS_METHODS.previewList, {
+  payload: PreviewListInput,
+  success: PreviewListResult,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsPreviewReportStatusRpc = Rpc.make(WS_METHODS.previewReportStatus, {
+  payload: PreviewReportStatusInput,
+  error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewAutomationConnectRpc = Rpc.make(WS_METHODS.previewAutomationConnect, {
+  payload: PreviewAutomationHost,
+  success: PreviewAutomationStreamEvent,
+  error: Schema.Union([PreviewAutomationError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsPreviewAutomationRespondRpc = Rpc.make(WS_METHODS.previewAutomationRespond, {
+  payload: PreviewAutomationResponse,
+  error: Schema.Union([PreviewAutomationError, EnvironmentAuthorizationError]),
+});
+
+export const WsPreviewAutomationFocusHostRpc = Rpc.make(WS_METHODS.previewAutomationFocusHost, {
+  payload: PreviewAutomationHostFocus,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewEvents, {
+  payload: Schema.Struct({}),
+  success: PreviewEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+export const WsSubscribeDiscoveredLocalServersRpc = Rpc.make(
+  WS_METHODS.subscribeDiscoveredLocalServers,
+  {
+    payload: Schema.Struct({}),
+    success: DiscoveredLocalServerList,
+    error: EnvironmentAuthorizationError,
+    stream: true,
+  },
+);
 
 export const WsOrchestrationDispatchCommandRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -588,26 +694,26 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerSignalProcessRpc,
-  WsServerSyncCodexThreadRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
+  WsProjectsListEntriesRpc,
+  WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
+  WsAssetsCreateUrlRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
-  WsWorktreePromoteThreadRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
-  WsVcsValidateWorktreeAttachRpc,
   WsVcsRemoveWorktreeRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
@@ -622,6 +728,18 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalCloseRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsPreviewOpenRpc,
+  WsPreviewNavigateRpc,
+  WsPreviewResizeRpc,
+  WsPreviewRefreshRpc,
+  WsPreviewCloseRpc,
+  WsPreviewListRpc,
+  WsPreviewReportStatusRpc,
+  WsPreviewAutomationConnectRpc,
+  WsPreviewAutomationRespondRpc,
+  WsPreviewAutomationFocusHostRpc,
+  WsSubscribePreviewEventsRpc,
+  WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

@@ -9,6 +9,7 @@ import {
   resolveLiveThreadBranchUpdate,
   resolveQuickAction,
   resolveThreadBranchUpdate,
+  resolveThreadBranchMetadataPatch,
 } from "./GitActionsControl.logic";
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
@@ -86,14 +87,6 @@ describe("when: ref is clean and has an open PR", () => {
         disabled: false,
         icon: "pr",
         kind: "open_pr",
-      },
-      {
-        id: "update_pr",
-        label: "Update PR",
-        disabled: true,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "update_pr",
       },
     ]);
   });
@@ -215,14 +208,6 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
         disabled: false,
         icon: "pr",
         kind: "open_pr",
-      },
-      {
-        id: "update_pr",
-        label: "Update PR",
-        disabled: false,
-        icon: "pr",
-        kind: "open_dialog",
-        dialogAction: "update_pr",
       },
     ]);
   });
@@ -429,7 +414,7 @@ describe("when: working tree has local changes", () => {
     });
   });
 
-  it("resolveQuickAction returns commit, push, and update PR when open PR exists", () => {
+  it("resolveQuickAction returns commit and push when open PR exists", () => {
     const quick = resolveQuickAction(
       status({
         hasWorkingTreeChanges: true,
@@ -446,8 +431,8 @@ describe("when: working tree has local changes", () => {
     );
     assert.deepInclude(quick, {
       kind: "run_action",
-      action: "commit_push_update_pr",
-      label: "Commit, push & update PR",
+      action: "commit_push",
+      label: "Commit & push",
     });
   });
 
@@ -1018,22 +1003,6 @@ describe("buildGitActionProgressStages", () => {
       "Creating pull request...",
     ]);
   });
-
-  it("includes update PR stages for commit+push+update PR actions", () => {
-    const stages = buildGitActionProgressStages({
-      action: "commit_push_update_pr",
-      hasCustomCommitMessage: true,
-      hasWorkingTreeChanges: true,
-      pushTarget: "origin/feature/test",
-    });
-    assert.deepEqual(stages, [
-      "Committing...",
-      "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating updated PR content...",
-      "Updating pull request...",
-    ]);
-  });
 });
 
 describe("resolveThreadBranchUpdate", () => {
@@ -1131,6 +1100,27 @@ describe("resolveLiveThreadBranchUpdate", () => {
     });
 
     assert.equal(update, null);
+  });
+
+  it("allows a temporary worktree ref to reconcile to a semantic branch", () => {
+    const update = resolveLiveThreadBranchUpdate({
+      threadBranch: "t3code/a9628676",
+      gitStatus: status({ refName: "feature/diff-panel-toggle" }),
+    });
+
+    assert.deepEqual(update, { branch: "feature/diff-panel-toggle" });
+  });
+});
+
+describe("resolveThreadBranchMetadataPatch", () => {
+  it("does not overwrite worktree metadata while reconciling a branch", () => {
+    assert.deepEqual(
+      resolveThreadBranchMetadataPatch("feature/current-ref", "feature/previous-ref"),
+      {
+        branch: "feature/current-ref",
+        expectedBranch: "feature/previous-ref",
+      },
+    );
   });
 });
 

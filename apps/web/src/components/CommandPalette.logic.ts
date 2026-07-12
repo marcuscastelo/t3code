@@ -96,15 +96,13 @@ export function buildProjectActionItems(input: {
   icon: (project: Project) => ReactNode;
   runProject: (project: Project) => Promise<void>;
   shortcutCommand?: KeybindingCommand;
-  getDescription?: (project: Project) => string;
-  getSearchTerms?: (project: Project) => ReadonlyArray<string>;
 }): CommandPaletteActionItem[] {
   return input.projects.map((project) => ({
     kind: "action",
     value: `${input.valuePrefix}:${project.environmentId}:${project.id}`,
-    searchTerms: [project.name, project.cwd, ...(input.getSearchTerms?.(project) ?? [])],
-    title: project.name,
-    description: input.getDescription?.(project) ?? project.cwd,
+    searchTerms: [project.title, project.workspaceRoot],
+    title: project.title,
+    description: project.workspaceRoot,
     icon: input.icon(project),
     ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
     run: async () => {
@@ -117,7 +115,7 @@ export type BuildThreadActionItemsThread = Pick<
   SidebarThreadSummary,
   "archivedAt" | "branch" | "createdAt" | "environmentId" | "id" | "projectId" | "title"
 > & {
-  updatedAt?: string | undefined;
+  updatedAt: string;
   latestUserMessageAt?: string | null;
 };
 
@@ -131,9 +129,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   renderLeadingContent?: (thread: TThread) => ReactNode;
   /** Optional content rendered inline after the title text per-thread. */
   renderTrailingContent?: (thread: TThread) => ReactNode;
-  runThread: (
-    thread: Pick<SidebarThreadSummary, "environmentId" | "id" | "projectId">,
-  ) => Promise<void>;
+  runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
   const sortedThreads = sortThreads(

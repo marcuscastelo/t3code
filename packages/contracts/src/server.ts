@@ -187,7 +187,6 @@ export const ServerProvider = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  accountRateLimits: Schema.optional(Schema.Unknown),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 });
@@ -365,6 +364,16 @@ export const ServerProcessResourceHistorySummary = Schema.Struct({
 });
 export type ServerProcessResourceHistorySummary = typeof ServerProcessResourceHistorySummary.Type;
 
+export const ServerProcessResourceHistoryFailureTag = Schema.Literals([
+  "ProcessDiagnosticsQueryTimeoutError",
+  "ProcessDiagnosticsQueryFailedError",
+  "ProcessDiagnosticsServerProcessSignalError",
+  "ProcessDiagnosticsNotDescendantError",
+  "ProcessDiagnosticsSignalFailedError",
+]);
+export type ServerProcessResourceHistoryFailureTag =
+  typeof ServerProcessResourceHistoryFailureTag.Type;
+
 export const ServerProcessResourceHistoryResult = Schema.Struct({
   readAt: Schema.DateTimeUtc,
   windowMs: NonNegativeInt,
@@ -376,6 +385,7 @@ export const ServerProcessResourceHistoryResult = Schema.Struct({
   topProcesses: Schema.Array(ServerProcessResourceHistorySummary),
   error: Schema.Option(
     Schema.Struct({
+      failureTag: ServerProcessResourceHistoryFailureTag,
       message: TrimmedNonEmptyString,
     }),
   ),
@@ -395,21 +405,6 @@ export const ServerSignalProcessResult = Schema.Struct({
   message: Schema.Option(TrimmedNonEmptyString),
 });
 export type ServerSignalProcessResult = typeof ServerSignalProcessResult.Type;
-
-export const ServerSyncCodexThreadInput = Schema.Struct({
-  threadId: ThreadId,
-});
-export type ServerSyncCodexThreadInput = typeof ServerSyncCodexThreadInput.Type;
-
-export const ServerSyncCodexThreadResult = Schema.Struct({
-  providerThreadId: Schema.String,
-  sourcePath: Schema.NullOr(Schema.String),
-  importedEvents: NonNegativeInt,
-  importedMessages: NonNegativeInt,
-  importedTurns: NonNegativeInt,
-  staleRequestsCleared: NonNegativeInt,
-});
-export type ServerSyncCodexThreadResult = typeof ServerSyncCodexThreadResult.Type;
 
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
