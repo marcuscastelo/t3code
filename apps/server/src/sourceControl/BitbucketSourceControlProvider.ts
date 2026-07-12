@@ -13,6 +13,7 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
     provider: "bitbucket",
     number: summary.number,
     title: summary.title,
+    ...(summary.body !== undefined ? { body: summary.body } : {}),
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
@@ -109,6 +110,30 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
+    updateChangeRequest: (input) =>
+      bitbucket
+        .updatePullRequest({
+          cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "bitbucket",
+                operation: "updateChangeRequest",
+                cwd: input.cwd,
+                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.reference,
+                ),
+                detail: "Failed to update change request.",
+                cause: error,
+              }),
+          ),
+        ),
     getRepositoryCloneUrls: (input) =>
       bitbucket.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(
