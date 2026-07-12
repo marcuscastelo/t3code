@@ -44,6 +44,7 @@ import {
 import { GitManagerError, GitPullRequestMaterializationError } from "@t3tools/contracts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ProjectHookRunner from "../project/Services/ProjectHookRunner.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
@@ -557,6 +558,9 @@ export const make = Effect.gen(function* () {
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const projectHookRunner = yield* Effect.serviceOption(ProjectHookRunner.ProjectHookRunner);
+  const projectSetupScriptRunner = yield* Effect.serviceOption(
+    ProjectSetupScriptRunner.ProjectSetupScriptRunner,
+  );
   const runProjectHook = (
     input: ProjectHookRunner.ProjectHookRunnerInput,
   ): Effect.Effect<
@@ -565,7 +569,33 @@ export const make = Effect.gen(function* () {
   > =>
     Option.isSome(projectHookRunner)
       ? projectHookRunner.value.runForThread(input)
-      : Effect.succeed({ status: "no-script" });
+      : Option.isSome(projectSetupScriptRunner) &&
+          input.event === "worktree.created" &&
+          input.worktreePath
+        ? projectSetupScriptRunner.value
+            .runForThread({
+              threadId: input.threadId,
+              ...(input.projectId ? { projectId: input.projectId } : {}),
+              ...(input.projectCwd ? { projectCwd: input.projectCwd } : {}),
+              worktreePath: input.worktreePath,
+            })
+            .pipe(
+              Effect.map((result) =>
+                result.status === "started"
+                  ? {
+                      status: "started" as const,
+                      scripts: [result],
+                      payloadJsonPath: "",
+                      transcriptJsonPath: null,
+                      transcriptMarkdownPath: null,
+                    }
+                  : { status: "no-script" as const },
+              ),
+              Effect.mapError(
+                (error) => new ProjectHookRunner.ProjectHookRunnerError({ message: error.message }),
+              ),
+            )
+        : Effect.succeed({ status: "no-script" });
   const crypto = yield* Crypto.Crypto;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });

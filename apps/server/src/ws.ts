@@ -419,7 +419,34 @@ const makeWsRpcLayer = (
       > =>
         Option.isSome(projectHookRunner)
           ? projectHookRunner.value.runForThread(input)
-          : Effect.succeed({ status: "no-script" });
+          : input.event === "worktree.created" && input.worktreePath
+            ? projectSetupScriptRunner
+                .runForThread({
+                  threadId: input.threadId,
+                  ...(input.projectId ? { projectId: input.projectId } : {}),
+                  ...(input.projectCwd ? { projectCwd: input.projectCwd } : {}),
+                  worktreePath: input.worktreePath,
+                })
+                .pipe(
+                  Effect.map((result) =>
+                    result.status === "started"
+                      ? {
+                          status: "started" as const,
+                          scripts: [result],
+                          payloadJsonPath: "",
+                          transcriptJsonPath: null,
+                          transcriptMarkdownPath: null,
+                        }
+                      : { status: "no-script" as const },
+                  ),
+                  Effect.mapError(
+                    (error) =>
+                      new ProjectHookRunner.ProjectHookRunnerError({
+                        message: projectSetupScriptCompatibilityDetail(error),
+                      }),
+                  ),
+                )
+            : Effect.succeed({ status: "no-script" });
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
@@ -711,18 +738,17 @@ const makeWsRpcLayer = (
               : Effect.void;
 
           const recordSetupScriptLaunchFailure = (input: {
-            readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
+            readonly detail: string;
             readonly requestedAt: string;
             readonly worktreePath: string;
           }) => {
-            const detail = projectSetupScriptCompatibilityDetail(input.error);
             return appendSetupScriptActivity({
               threadId: command.threadId,
               kind: "setup-script.failed",
               summary: "Setup script failed to start",
               createdAt: input.requestedAt,
               payload: {
-                detail,
+                detail: input.detail,
                 worktreePath: input.worktreePath,
               },
               tone: "error",
@@ -732,7 +758,7 @@ const makeWsRpcLayer = (
                 Effect.logWarning("bootstrap turn start failed to launch setup script", {
                   threadId: command.threadId,
                   worktreePath: input.worktreePath,
-                  detail,
+                  detail: input.detail,
                 }),
               ),
             );
@@ -810,10 +836,10 @@ const makeWsRpcLayer = (
               }).pipe(
                 Effect.matchEffect({
                   onFailure: (error) =>
-                    Effect.logWarning("project worktree hook failed", {
-                      threadId: command.threadId,
-                      worktreePath,
+                    recordSetupScriptLaunchFailure({
                       detail: error.message,
+                      requestedAt,
+                      worktreePath,
                     }),
                   onSuccess: (hookResult) => {
                     if (hookResult.status !== "started") {

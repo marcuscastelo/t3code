@@ -115,6 +115,7 @@ describe("ProjectSetupScriptRunner", () => {
           command: "bun install",
           icon: "configure",
           runOnWorktreeCreate: true,
+          runOnEvents: [],
         },
       ]);
 
@@ -165,6 +166,7 @@ describe("ProjectSetupScriptRunner", () => {
         command: "bun install",
         icon: "configure",
         runOnWorktreeCreate: true,
+        runOnEvents: [],
       },
     ]);
 

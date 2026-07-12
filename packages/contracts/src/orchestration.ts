@@ -215,7 +215,9 @@ export const ProjectScript = Schema.Struct({
    * the moment this script starts. Ignored without `previewUrl` or on web.
    */
   autoOpenPreview: Schema.optional(Schema.Boolean),
-  runOnEvents: Schema.optional(Schema.Array(ProjectScriptHookEvent)),
+  runOnEvents: Schema.Array(ProjectScriptHookEvent).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
