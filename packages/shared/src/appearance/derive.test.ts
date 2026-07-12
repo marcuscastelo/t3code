@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { deriveThemeCssVariables, deriveThemeTokens } from "./derive";
-import { BUILTIN_THEME_DOCUMENTS } from "./registry";
+import { describe, expect, it } from "vite-plus/test";
+import { deriveThemeCssVariables, deriveThemeTokens } from "./derive.ts";
+import { BUILTIN_THEME_DOCUMENTS } from "./registry.ts";
 
 const t3codeLightTheme = BUILTIN_THEME_DOCUMENTS.find((theme) => theme.id === "t3code-light")!;
 const t3codeDarkTheme = BUILTIN_THEME_DOCUMENTS.find((theme) => theme.id === "t3code-dark")!;

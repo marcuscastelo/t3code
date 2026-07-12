@@ -1,5 +1,5 @@
 import type { ThemeDocument, ThemeVariant } from "@t3tools/contracts/appearanceTheme";
-import { deriveThemeCssVariables, type ThemeCssVariableMap } from "./derive";
+import { deriveThemeCssVariables, type ThemeCssVariableMap } from "./derive.ts";
 
 export interface CssVariableTarget {
   setProperty(name: string, value: string): void;

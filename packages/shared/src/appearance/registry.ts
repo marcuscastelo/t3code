@@ -7,7 +7,7 @@ import {
   type ThemeMode,
   type ThemeOrigin,
 } from "@t3tools/contracts";
-import { serializeThemeDerivedOverrides } from "./derive";
+import { serializeThemeDerivedOverrides } from "./derive.ts";
 
 export interface BuiltinThemePreset {
   readonly description: string;

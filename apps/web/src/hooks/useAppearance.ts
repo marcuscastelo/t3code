@@ -22,7 +22,7 @@ import {
   resolveThemeDocument,
   serializeAppearanceSnapshot,
 } from "@t3tools/shared/appearance/registry";
-import { useSettings, useUpdateSettings } from "./useSettings";
+import { usePrimarySettings, useUpdatePrimarySettings } from "./useSettings";
 
 const APPEARANCE_CACHE_KEY = "t3code:appearance-cache";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -33,6 +33,7 @@ const AppearanceCacheSchema = Schema.Struct({
   customThemes: Schema.Array(ThemeDocumentSchema),
 });
 type AppearanceCache = typeof AppearanceCacheSchema.Type;
+const decodeAppearanceCache = Schema.decodeUnknownSync(AppearanceCacheSchema);
 
 let appliedVariableNames: ReadonlyArray<keyof ThemeCssVariableMap> = [];
 let lastDesktopAppearance: string | null = null;
@@ -56,7 +57,7 @@ export function parseAppearanceCache(raw: string | null): AppearanceCache | null
 
   try {
     const parsed = JSON.parse(raw);
-    return Schema.decodeUnknownSync(AppearanceCacheSchema)(parsed);
+    return decodeAppearanceCache(parsed);
   } catch {
     return null;
   }
@@ -156,13 +157,15 @@ function subscribeSystemDark(listener: () => void): () => void {
 }
 
 export function useAppearance() {
-  const { colorMode, activeLightThemeId, activeDarkThemeId, customThemes } = useSettings((s) => ({
-    colorMode: s.colorMode,
-    activeLightThemeId: s.activeLightThemeId,
-    activeDarkThemeId: s.activeDarkThemeId,
-    customThemes: s.customThemes,
-  }));
-  const { updateSettings } = useUpdateSettings();
+  const { colorMode, activeLightThemeId, activeDarkThemeId, customThemes } = usePrimarySettings(
+    (settings) => ({
+      colorMode: settings.colorMode,
+      activeLightThemeId: settings.activeLightThemeId,
+      activeDarkThemeId: settings.activeDarkThemeId,
+      customThemes: settings.customThemes,
+    }),
+  );
+  const updateSettings = useUpdatePrimarySettings();
   const activeLightTheme = useMemo(
     () => resolveThemeDocument(activeLightThemeId, customThemes, "light"),
     [activeLightThemeId, customThemes],

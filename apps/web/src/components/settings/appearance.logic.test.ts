@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { BUILTIN_THEME_DOCUMENTS } from "@t3tools/shared/appearance/registry";
 import {
   createDuplicateTheme,

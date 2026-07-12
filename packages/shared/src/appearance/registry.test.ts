@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   BUILTIN_THEME_DOCUMENTS,
   DEFAULT_DARK_THEME_ID,
@@ -7,7 +7,7 @@ import {
   resolveThemeDocument,
   serializeAppearanceSnapshot,
   serializeThemeDocument,
-} from "./registry";
+} from "./registry.ts";
 
 describe("appearance registry", () => {
   it("resolves builtin themes before falling back to custom themes", () => {

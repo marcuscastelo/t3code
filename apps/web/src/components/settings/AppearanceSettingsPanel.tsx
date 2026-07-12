@@ -26,12 +26,12 @@ import {
 } from "@t3tools/shared/appearance/registry";
 import { cn } from "../../lib/utils";
 import { useAppearance } from "../../hooks/useAppearance";
-import { useUpdateSettings } from "../../hooks/useSettings";
+import { useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { toastManager } from "../ui/toast";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
-import { SettingsPageContainer, SettingsSection } from "./SettingsPanels";
+import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import {
   createDuplicateTheme,
   normalizeImportedThemeDocument,
@@ -314,7 +314,7 @@ function ThemeEditor({
 export function AppearanceSettingsPanel() {
   const { colorMode, activeLightTheme, activeDarkTheme, customThemes, setColorMode, setThemeId } =
     useAppearance();
-  const { updateSettings } = useUpdateSettings();
+  const updateSettings = useUpdatePrimarySettings();
   const lightImportInputRef = useRef<HTMLInputElement>(null);
   const darkImportInputRef = useRef<HTMLInputElement>(null);
   const [importErrors, setImportErrors] = useState<Record<ThemeMode, string | null>>({

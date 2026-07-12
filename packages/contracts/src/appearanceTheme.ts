@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas";
+import * as Effect from "effect/Effect";
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
@@ -43,7 +44,7 @@ export const DEFAULT_THEME_RADIUS = "0.625rem";
 export const DEFAULT_THEME_FONT_SIZE = "16px";
 
 export const ThemeRadiusSchema = CssLengthValue.pipe(
-  Schema.withDecodingDefault(() => DEFAULT_THEME_RADIUS),
+  Schema.withDecodingDefault(Effect.succeed(DEFAULT_THEME_RADIUS)),
 ).annotate({
   title: "Theme radius",
   description: "Global corner radius used by the theme.",
@@ -52,7 +53,7 @@ export const ThemeRadiusSchema = CssLengthValue.pipe(
 export type ThemeRadius = typeof ThemeRadiusSchema.Type;
 
 export const ThemeFontSizeSchema = CssLengthValue.pipe(
-  Schema.withDecodingDefault(() => DEFAULT_THEME_FONT_SIZE),
+  Schema.withDecodingDefault(Effect.succeed(DEFAULT_THEME_FONT_SIZE)),
 ).annotate({
   title: "Theme font size",
   description: "Base root font size used by the theme.",
