@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { CheckIcon, GitBranchIcon } from "lucide-react";
-import { useGitStatus } from "../../lib/gitStatusState";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import type { SidebarThreadSummary } from "../../types";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "../Sidebar.logic";
 
@@ -118,10 +119,11 @@ export function useThreadGitStats(
   projectCwd: string | null,
 ): ThreadGitStats | null {
   const cwd = thread.worktreePath ?? projectCwd;
-  const status = useGitStatus({
-    environmentId: thread.environmentId,
-    cwd: thread.branch != null ? cwd : null,
-  });
+  const status = useEnvironmentQuery(
+    thread.branch != null && cwd !== null
+      ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
+      : null,
+  );
   const workingTree = status.data?.workingTree;
   if (!workingTree || workingTree.files.length === 0) {
     return null;
@@ -165,9 +167,14 @@ export interface ProjectSync {
 
 export function useProjectSync(project: {
   environmentId: EnvironmentId;
-  cwd: string;
+  workspaceRoot: string;
 }): ProjectSync {
-  const status = useGitStatus({ environmentId: project.environmentId, cwd: project.cwd });
+  const status = useEnvironmentQuery(
+    vcsEnvironment.status({
+      environmentId: project.environmentId,
+      input: { cwd: project.workspaceRoot },
+    }),
+  );
   const data = status.data;
   if (!data || !data.isRepo) {
     return { kind: "unknown", aheadCount: 0, behindCount: 0 };

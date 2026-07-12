@@ -1,17 +1,16 @@
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { BoltIcon, CheckIcon, GitBranchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useHandleNewThread } from "../../hooks/useHandleNewThread";
-import { useSettings } from "../../hooks/useSettings";
+import { useClientSettings } from "../../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
-import { selectProjectsAcrossEnvironments, useStore } from "../../store";
+import { useProjects } from "../../state/entities";
 import { resolveSidebarNewThreadEnvMode } from "../Sidebar.logic";
 import { Button } from "../ui/button";
 import { Sheet, SheetPopup } from "../ui/sheet";
@@ -29,9 +28,9 @@ export function MobileNewTaskSheet(props: {
   onClose: () => void;
   seedProjectRef?: ScopedProjectRef | null;
 }) {
-  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
-  const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
-  const defaultEnvMode = useSettings((settings) => settings.defaultThreadEnvMode);
+  const projects = useProjects();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const defaultEnvMode = "worktree" as const;
   const { defaultProjectRef, handleNewThread } = useHandleNewThread();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [task, setTask] = useState("");
@@ -137,11 +136,13 @@ export function MobileNewTaskSheet(props: {
                       }`}
                       onClick={() => setSelectedKey(key)}
                     >
-                      <RepoAvatar name={project.name} size="md" />
+                      <RepoAvatar name={project.title} size="md" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold">{project.name}</span>
+                        <span className="block truncate text-sm font-semibold">
+                          {project.title}
+                        </span>
                         <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                          {project.cwd}
+                          {project.workspaceRoot}
                         </span>
                       </span>
                       {active ? <CheckIcon className="size-4 shrink-0 text-primary" /> : null}

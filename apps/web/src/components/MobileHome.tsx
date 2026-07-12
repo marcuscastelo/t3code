@@ -12,23 +12,18 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { useShallow } from "zustand/react/shallow";
 import {
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime";
+} from "@t3tools/client-runtime/environment";
 import type { ProjectId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 
 import { APP_BASE_NAME, APP_STAGE_LABEL } from "../branding";
-import { useCommandPaletteStore } from "../commandPaletteStore";
-import {
-  useSavedEnvironmentRegistryStore,
-  useSavedEnvironmentRuntimeStore,
-} from "../environments/runtime";
-import { usePrimaryEnvironmentId } from "../environments/primary";
-import { useSettings } from "../hooks/useSettings";
+import { useClientSettings } from "../hooks/useSettings";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useProjects, useThreadShells } from "../state/entities";
 import { sortThreads } from "../lib/threadSort";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import {
@@ -36,11 +31,6 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import {
-  selectProjectsAcrossEnvironments,
-  selectSidebarThreadsAcrossEnvironments,
-  useStore,
-} from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import {
   buildPhysicalToLogicalProjectKeyMap,
@@ -87,7 +77,6 @@ export function MobileHome() {
     seed: null,
   });
   const navigate = useNavigate();
-  const openCommandPalette = useCommandPaletteStore((store) => store.setOpen);
   const projectGroups = useMobileProjectGroups();
   const filteredProjectGroups = useMemo(
     () => filterProjectGroups(projectGroups, query),
@@ -146,7 +135,11 @@ export function MobileHome() {
                 className="size-9 rounded-lg border border-border/70 bg-card/70"
                 size="icon"
                 variant="ghost"
-                onClick={() => openCommandPalette(true)}
+                onClick={() =>
+                  document.dispatchEvent(
+                    new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
+                  )
+                }
               >
                 <SearchIcon className="size-4" />
               </Button>
@@ -222,15 +215,19 @@ export function MobileHome() {
 }
 
 function useMobileProjectGroups(): MobileProjectGroup[] {
-  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
-  const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const projects = useProjects();
+  const sidebarThreads = useThreadShells();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const sidebarThreadSortOrder = useSettings((settings) => settings.sidebarThreadSortOrder);
-  const sidebarProjectSortOrder = useSettings((settings) => settings.sidebarProjectSortOrder);
-  const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
+  const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const savedEnvironmentRegistry = useSavedEnvironmentRegistryStore((store) => store.byId);
-  const savedEnvironmentRuntimeById = useSavedEnvironmentRuntimeStore((store) => store.byId);
+  const { environments } = useEnvironments();
+  const environmentLabelById = useMemo(
+    () =>
+      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
+    [environments],
+  );
   const orderedProjects = useMemo(
     () =>
       orderItemsByPreferredIds({
@@ -247,18 +244,10 @@ function useMobileProjectGroups(): MobileProjectGroup[] {
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => {
-          const runtime = savedEnvironmentRuntimeById[environmentId];
-          const saved = savedEnvironmentRegistry[environmentId];
-          return runtime?.descriptor?.label ?? saved?.label ?? null;
+          return environmentLabelById.get(environmentId) ?? null;
         },
       }),
-    [
-      orderedProjects,
-      primaryEnvironmentId,
-      projectGroupingSettings,
-      savedEnvironmentRegistry,
-      savedEnvironmentRuntimeById,
-    ],
+    [orderedProjects, primaryEnvironmentId, projectGroupingSettings, environmentLabelById],
   );
   const physicalToLogicalKey = useMemo(
     () =>
@@ -352,7 +341,7 @@ function filterProjectGroups(groups: MobileProjectGroup[], query: string): Mobil
   return groups.flatMap((group) => {
     const projectMatches =
       group.project.displayName.toLocaleLowerCase().includes(needle) ||
-      group.project.cwd.toLocaleLowerCase().includes(needle);
+      group.project.workspaceRoot.toLocaleLowerCase().includes(needle);
     const threads = projectMatches
       ? group.threads
       : group.threads.filter((thread) =>
@@ -394,7 +383,7 @@ function SessionsTab(props: {
                   key={scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))}
                   thread={thread}
                   projectName={group.project.displayName}
-                  projectCwd={group.project.cwd}
+                  projectCwd={group.project.workspaceRoot}
                   onOpenThread={props.onOpenThread}
                 />
               ))
@@ -440,7 +429,8 @@ function MobileProjectCard(props: { group: MobileProjectGroup; onOpen: () => voi
   const { group } = props;
   const sync = useProjectSync(group.project);
   const activeCount = group.threads.filter((thread) => isActiveThread(thread)).length;
-  const headerBranch = group.threads[0]?.branch ?? group.project.cwd.split("/").pop() ?? "";
+  const headerBranch =
+    group.threads[0]?.branch ?? group.project.workspaceRoot.split("/").pop() ?? "";
 
   return (
     <button
@@ -629,5 +619,5 @@ function isAttentionThread(thread: SidebarThreadSummary) {
 }
 
 function isActiveThread(thread: SidebarThreadSummary) {
-  return thread.session?.status === "running" || thread.session?.status === "connecting";
+  return thread.session?.status === "running" || thread.session?.status === "starting";
 }

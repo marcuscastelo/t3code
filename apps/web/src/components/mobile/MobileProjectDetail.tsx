@@ -2,7 +2,6 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ArrowLeftIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
 
-import { refreshGitStatus } from "../../lib/gitStatusState";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import type { SidebarThreadSummary } from "../../types";
 import { Button } from "../ui/button";
@@ -10,7 +9,7 @@ import { MobileThreadCard } from "./MobileThreadCard";
 import { ProjectSyncBadge, RepoAvatar, useProjectSync } from "./mobileShared";
 
 function isActiveThread(thread: SidebarThreadSummary) {
-  return thread.session?.status === "running" || thread.session?.status === "connecting";
+  return thread.session?.status === "running" || thread.session?.status === "starting";
 }
 
 export function MobileProjectDetail(props: {
@@ -25,12 +24,13 @@ export function MobileProjectDetail(props: {
   const [syncing, setSyncing] = useState(false);
   const active = threads.filter(isActiveThread);
   const recent = threads.filter((thread) => !isActiveThread(thread));
-  const headerBranch = threads[0]?.branch ?? project.cwd.split("/").pop() ?? project.cwd;
+  const headerBranch =
+    threads[0]?.branch ?? project.workspaceRoot.split("/").pop() ?? project.workspaceRoot;
 
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await refreshGitStatus({ environmentId: project.environmentId, cwd: project.cwd });
+      window.dispatchEvent(new Event("focus"));
     } finally {
       setSyncing(false);
     }
@@ -92,7 +92,7 @@ export function MobileProjectDetail(props: {
                       key={thread.id}
                       thread={thread}
                       projectName={project.displayName}
-                      projectCwd={project.cwd}
+                      projectCwd={project.workspaceRoot}
                       onOpenThread={props.onOpenThread}
                     />
                   ))}
@@ -109,7 +109,7 @@ export function MobileProjectDetail(props: {
                       key={thread.id}
                       thread={thread}
                       projectName={project.displayName}
-                      projectCwd={project.cwd}
+                      projectCwd={project.workspaceRoot}
                       onOpenThread={props.onOpenThread}
                     />
                   ))}
