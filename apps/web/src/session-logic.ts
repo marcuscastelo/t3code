@@ -324,7 +324,7 @@ export function deriveActiveWorkTurnId(
   latestTurn: Pick<OrchestrationLatestTurn, "turnId"> | null,
   session: SessionActivityState | null,
 ): TurnId | null {
-  if (session?.orchestrationStatus === "running") {
+  if (session?.status === "running") {
     return session.activeTurnId ?? latestTurn?.turnId ?? null;
   }
   return latestTurn?.turnId ?? null;

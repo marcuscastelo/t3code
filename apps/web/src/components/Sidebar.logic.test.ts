@@ -82,7 +82,7 @@ function makeClientSession(input: { sessionId: string; connected: boolean }): Au
   return {
     sessionId: input.sessionId as never,
     subject: `subject-${input.sessionId}` as never,
-    role: "client",
+    scopes: [],
     method: "browser-session-cookie",
     client: {
       deviceType: "unknown",
