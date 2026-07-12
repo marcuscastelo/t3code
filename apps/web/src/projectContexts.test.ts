@@ -1,6 +1,6 @@
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { ProjectContextId } from "@t3tools/contracts/settings";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { Project, SidebarThreadSummary } from "./types";
 import { DEFAULT_INTERACTION_MODE } from "./types";
 import {
@@ -28,7 +28,8 @@ const workContextId = ProjectContextId.make("work");
 const startupContextId = ProjectContextId.make("startup");
 
 function makeProject(
-  overrides: Partial<Project> & Pick<Project, "id" | "environmentId" | "name" | "cwd">,
+  overrides: Partial<Project> &
+    Pick<Project, "id" | "environmentId" | "workspaceRoot"> & { name: string },
 ): Project {
   return {
     defaultModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
@@ -37,6 +38,7 @@ function makeProject(
     scripts: [],
     repositoryIdentity: null,
     ...overrides,
+    title: overrides.name,
   };
 }
 
@@ -45,6 +47,8 @@ function makeThread(
     Pick<SidebarThreadSummary, "id" | "environmentId" | "projectId" | "title">,
 ): SidebarThreadSummary {
   return {
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+    runtimeMode: "full-access",
     interactionMode: DEFAULT_INTERACTION_MODE,
     session: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -84,7 +88,7 @@ describe("projectContexts", () => {
       id: ProjectId.make("local"),
       environmentId: primaryEnvId,
       name: "shared",
-      cwd: "/workspace/shared",
+      workspaceRoot: "/workspace/shared",
       repositoryIdentity: {
         canonicalKey: "github.com/acme/shared",
         locator: {
@@ -98,7 +102,7 @@ describe("projectContexts", () => {
       id: ProjectId.make("remote"),
       environmentId: remoteEnvId,
       name: "shared",
-      cwd: "/srv/shared",
+      workspaceRoot: "/srv/shared",
       repositoryIdentity: {
         canonicalKey: "github.com/acme/shared",
         locator: {
@@ -112,7 +116,7 @@ describe("projectContexts", () => {
       id: ProjectId.make("personal"),
       environmentId: primaryEnvId,
       name: "personal",
-      cwd: "/workspace/personal",
+      workspaceRoot: "/workspace/personal",
     });
 
     const assignments = assignProjectToContext({
@@ -142,13 +146,13 @@ describe("projectContexts", () => {
       id: ProjectId.make("project"),
       environmentId: primaryEnvId,
       name: "app",
-      cwd: "/workspace/app",
+      workspaceRoot: "/workspace/app",
     });
     const projectWithRepository = makeProject({
       id: projectWithoutRepository.id,
       environmentId: projectWithoutRepository.environmentId,
-      name: projectWithoutRepository.name,
-      cwd: projectWithoutRepository.cwd,
+      name: projectWithoutRepository.title,
+      workspaceRoot: projectWithoutRepository.workspaceRoot,
       repositoryIdentity: {
         canonicalKey: "github.com/acme/app",
         locator: {
@@ -182,13 +186,13 @@ describe("projectContexts", () => {
       id: ProjectId.make("local"),
       environmentId: primaryEnvId,
       name: "scratch",
-      cwd: "/workspace/scratch",
+      workspaceRoot: "/workspace/scratch",
     });
     const remoteProject = makeProject({
       id: ProjectId.make("remote"),
       environmentId: remoteEnvId,
       name: "scratch",
-      cwd: "/workspace/scratch",
+      workspaceRoot: "/workspace/scratch",
     });
 
     expect(deriveProjectContextAssignmentKey(localProject)).not.toBe(
@@ -201,13 +205,13 @@ describe("projectContexts", () => {
       id: ProjectId.make("work-project"),
       environmentId: primaryEnvId,
       name: "work",
-      cwd: "/workspace/work",
+      workspaceRoot: "/workspace/work",
     });
     const startupProject = makeProject({
       id: ProjectId.make("startup-project"),
       environmentId: primaryEnvId,
       name: "startup",
-      cwd: "/workspace/startup",
+      workspaceRoot: "/workspace/startup",
     });
     const assignments = assignProjectToContext({
       project: workProject,
@@ -290,13 +294,13 @@ describe("projectContexts", () => {
       id: ProjectId.make("work-project"),
       environmentId: primaryEnvId,
       name: "work",
-      cwd: "/workspace/work",
+      workspaceRoot: "/workspace/work",
     });
     const startupProject = makeProject({
       id: ProjectId.make("startup-project"),
       environmentId: primaryEnvId,
       name: "startup",
-      cwd: "/workspace/startup",
+      workspaceRoot: "/workspace/startup",
     });
     const settings = makeSettings({
       activeProjectContextId: startupContextId,
@@ -349,7 +353,7 @@ describe("projectContexts", () => {
       id: ProjectId.make("project"),
       environmentId: primaryEnvId,
       name: "app",
-      cwd: "/Users/me/work/acme/app",
+      workspaceRoot: "/Users/me/work/acme/app",
       repositoryIdentity: {
         canonicalKey: "github.com/acme/app",
         locator: {
@@ -382,13 +386,13 @@ describe("projectContexts", () => {
       id: ProjectId.make("work-project"),
       environmentId: primaryEnvId,
       name: "work",
-      cwd: "/Users/me/work/acme/app",
+      workspaceRoot: "/Users/me/work/acme/app",
     });
     const startupProject = makeProject({
       id: ProjectId.make("startup-project"),
       environmentId: primaryEnvId,
       name: "startup",
-      cwd: "/Users/me/startup/app",
+      workspaceRoot: "/Users/me/startup/app",
       repositoryIdentity: {
         canonicalKey: "github.com/startup/app",
         locator: {

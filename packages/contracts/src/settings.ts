@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { EnvironmentId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -58,9 +58,17 @@ export type ProjectContext = typeof ProjectContext.Type;
 
 export const ProjectContextDefaults = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  defaultEnvironmentId: Schema.optionalKey(EnvironmentId),
+  defaultModelSelection: Schema.optionalKey(ModelSelection),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
 });
 export type ProjectContextDefaults = typeof ProjectContextDefaults.Type;
+
+export const ProjectContextProjectOverride = Schema.Struct({
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
+});
+export type ProjectContextProjectOverride = typeof ProjectContextProjectOverride.Type;
 
 export const ProjectContextRule = Schema.Struct({
   id: ProjectContextRuleId,
@@ -127,6 +135,10 @@ export const ClientSettingsSchema = Schema.Struct({
   projectContextDefaults: Schema.Record(ProjectContextId, ProjectContextDefaults).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  projectContextProjectOverrides: Schema.Record(
+    TrimmedNonEmptyString,
+    ProjectContextProjectOverride,
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   projectContextRules: Schema.Array(ProjectContextRule).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -433,6 +445,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  managedWorktreeBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -564,6 +577,7 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   observability: Schema.optionalKey(
     Schema.Struct({
@@ -621,6 +635,9 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   projectContextDefaults: Schema.optionalKey(
     Schema.Record(ProjectContextId, ProjectContextDefaults),
+  ),
+  projectContextProjectOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, ProjectContextProjectOverride),
   ),
   projectContextRules: Schema.optionalKey(Schema.Array(ProjectContextRule)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
