@@ -43,23 +43,10 @@ describe("resolveNativeTerminalSurfaceView", () => {
 
   it("returns null when the view manager cannot be required", async () => {
     setExpoViewConfigAvailable();
-    const cause = new Error("boom");
     expoMocks.requireNativeView.mockImplementation(() => {
-      throw cause;
+      throw new Error("boom");
     });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { resolveNativeTerminalSurfaceView } = await import("./nativeTerminalModule");
-
     expect(resolveNativeTerminalSurfaceView()).toBeNull();
-    expect(resolveNativeTerminalSurfaceView()).toBeNull();
-    expect(expoMocks.requireNativeView).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        _tag: "NativeViewResolutionError",
-        nativeModuleName: "T3TerminalSurface",
-        cause,
-      }),
-    );
-    expect(consoleError).toHaveBeenCalledTimes(1);
   });
 });

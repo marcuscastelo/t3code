@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { autoUpdater } from "electron-updater";
@@ -10,77 +10,67 @@ type AutoUpdater = typeof autoUpdater;
 
 export type ElectronUpdaterFeedUrl = Parameters<AutoUpdater["setFeedURL"]>[0];
 
-export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedErrorClass<ElectronUpdaterCheckForUpdatesError>()(
+export class ElectronUpdaterCheckForUpdatesError extends Data.TaggedError(
   "ElectronUpdaterCheckForUpdatesError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Electron updater failed to check for updates on channel ${this.channel ?? "default"}.`;
+)<{
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return "Electron updater failed to check for updates.";
   }
 }
 
-export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedErrorClass<ElectronUpdaterDownloadUpdateError>()(
+export class ElectronUpdaterDownloadUpdateError extends Data.TaggedError(
   "ElectronUpdaterDownloadUpdateError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Electron updater failed to download the update on channel ${this.channel ?? "default"}.`;
+)<{
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return "Electron updater failed to download the update.";
   }
 }
 
-export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedErrorClass<ElectronUpdaterQuitAndInstallError>()(
+export class ElectronUpdaterQuitAndInstallError extends Data.TaggedError(
   "ElectronUpdaterQuitAndInstallError",
-  {
-    channel: Schema.NullOr(Schema.String),
-    isSilent: Schema.Boolean,
-    isForceRunAfter: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Electron updater failed to quit and install the update on channel ${this.channel ?? "default"} (silent: ${this.isSilent}, force run after: ${this.isForceRunAfter}).`;
+)<{
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return "Electron updater failed to quit and install the update.";
   }
 }
 
-export const ElectronUpdaterError = Schema.Union([
-  ElectronUpdaterCheckForUpdatesError,
-  ElectronUpdaterDownloadUpdateError,
-  ElectronUpdaterQuitAndInstallError,
-]);
-export type ElectronUpdaterError = typeof ElectronUpdaterError.Type;
-export const isElectronUpdaterError = Schema.is(ElectronUpdaterError);
+export type ElectronUpdaterError =
+  | ElectronUpdaterCheckForUpdatesError
+  | ElectronUpdaterDownloadUpdateError
+  | ElectronUpdaterQuitAndInstallError;
 
-export class ElectronUpdater extends Context.Service<
-  ElectronUpdater,
-  {
-    readonly setFeedURL: (options: ElectronUpdaterFeedUrl) => Effect.Effect<void>;
-    readonly setAutoDownload: (value: boolean) => Effect.Effect<void>;
-    readonly setAutoInstallOnAppQuit: (value: boolean) => Effect.Effect<void>;
-    readonly setChannel: (channel: string) => Effect.Effect<void>;
-    readonly setAllowPrerelease: (value: boolean) => Effect.Effect<void>;
-    readonly allowDowngrade: Effect.Effect<boolean>;
-    readonly setAllowDowngrade: (value: boolean) => Effect.Effect<void>;
-    readonly setDisableDifferentialDownload: (value: boolean) => Effect.Effect<void>;
-    readonly checkForUpdates: Effect.Effect<void, ElectronUpdaterCheckForUpdatesError>;
-    readonly downloadUpdate: Effect.Effect<void, ElectronUpdaterDownloadUpdateError>;
-    readonly quitAndInstall: (options: {
-      readonly isSilent: boolean;
-      readonly isForceRunAfter: boolean;
-    }) => Effect.Effect<void, ElectronUpdaterQuitAndInstallError>;
-    readonly on: <Args extends ReadonlyArray<unknown>>(
-      eventName: string,
-      listener: (...args: Args) => void,
-    ) => Effect.Effect<void, never, Scope.Scope>;
-  }
->()("@t3tools/desktop/electron/ElectronUpdater") {}
+export interface ElectronUpdaterShape {
+  readonly setFeedURL: (options: ElectronUpdaterFeedUrl) => Effect.Effect<void>;
+  readonly setAutoDownload: (value: boolean) => Effect.Effect<void>;
+  readonly setAutoInstallOnAppQuit: (value: boolean) => Effect.Effect<void>;
+  readonly setChannel: (channel: string) => Effect.Effect<void>;
+  readonly setAllowPrerelease: (value: boolean) => Effect.Effect<void>;
+  readonly allowDowngrade: Effect.Effect<boolean>;
+  readonly setAllowDowngrade: (value: boolean) => Effect.Effect<void>;
+  readonly setDisableDifferentialDownload: (value: boolean) => Effect.Effect<void>;
+  readonly checkForUpdates: Effect.Effect<void, ElectronUpdaterCheckForUpdatesError>;
+  readonly downloadUpdate: Effect.Effect<void, ElectronUpdaterDownloadUpdateError>;
+  readonly quitAndInstall: (options: {
+    readonly isSilent: boolean;
+    readonly isForceRunAfter: boolean;
+  }) => Effect.Effect<void, ElectronUpdaterQuitAndInstallError>;
+  readonly on: <Args extends ReadonlyArray<unknown>>(
+    eventName: string,
+    listener: (...args: Args) => void,
+  ) => Effect.Effect<void, never, Scope.Scope>;
+}
 
-export const make = ElectronUpdater.of({
+export class ElectronUpdater extends Context.Service<ElectronUpdater, ElectronUpdaterShape>()(
+  "@t3tools/desktop/electron/ElectronUpdater",
+) {}
+
+export const layer = Layer.succeed(ElectronUpdater, {
   setFeedURL: (options) =>
     Effect.suspend(() => {
       autoUpdater.setFeedURL(options);
@@ -117,33 +107,18 @@ export const make = ElectronUpdater.of({
       autoUpdater.disableDifferentialDownload = value;
       return Effect.void;
     }),
-  checkForUpdates: Effect.suspend(() => {
-    const channel = autoUpdater.channel;
-    return Effect.tryPromise({
-      try: () => autoUpdater.checkForUpdates(),
-      catch: (cause) => new ElectronUpdaterCheckForUpdatesError({ channel, cause }),
-    }).pipe(Effect.asVoid);
-  }),
-  downloadUpdate: Effect.suspend(() => {
-    const channel = autoUpdater.channel;
-    return Effect.tryPromise({
-      try: () => autoUpdater.downloadUpdate(),
-      catch: (cause) => new ElectronUpdaterDownloadUpdateError({ channel, cause }),
-    }).pipe(Effect.asVoid);
-  }),
+  checkForUpdates: Effect.tryPromise({
+    try: () => autoUpdater.checkForUpdates(),
+    catch: (cause) => new ElectronUpdaterCheckForUpdatesError({ cause }),
+  }).pipe(Effect.asVoid),
+  downloadUpdate: Effect.tryPromise({
+    try: () => autoUpdater.downloadUpdate(),
+    catch: (cause) => new ElectronUpdaterDownloadUpdateError({ cause }),
+  }).pipe(Effect.asVoid),
   quitAndInstall: ({ isSilent, isForceRunAfter }) =>
-    Effect.suspend(() => {
-      const channel = autoUpdater.channel;
-      return Effect.try({
-        try: () => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
-        catch: (cause) =>
-          new ElectronUpdaterQuitAndInstallError({
-            channel,
-            isSilent,
-            isForceRunAfter,
-            cause,
-          }),
-      });
+    Effect.try({
+      try: () => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+      catch: (cause) => new ElectronUpdaterQuitAndInstallError({ cause }),
     }),
   on: (eventName, listener) => {
     const eventTarget = autoUpdater as unknown as {
@@ -161,6 +136,4 @@ export const make = ElectronUpdater.of({
         }),
     ).pipe(Effect.asVoid);
   },
-});
-
-export const layer = Layer.succeed(ElectronUpdater, make);
+} satisfies ElectronUpdaterShape);

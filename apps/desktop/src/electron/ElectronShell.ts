@@ -20,15 +20,16 @@ export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
   }
 }
 
-export class ElectronShell extends Context.Service<
-  ElectronShell,
-  {
-    readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
-    readonly copyText: (text: string) => Effect.Effect<void>;
-  }
->()("@t3tools/desktop/electron/ElectronShell") {}
+export interface ElectronShellShape {
+  readonly openExternal: (rawUrl: unknown) => Effect.Effect<boolean>;
+  readonly copyText: (text: string) => Effect.Effect<void>;
+}
 
-export const make = ElectronShell.of({
+export class ElectronShell extends Context.Service<ElectronShell, ElectronShellShape>()(
+  "@t3tools/desktop/electron/ElectronShell",
+) {}
+
+const make = ElectronShell.of({
   openExternal: (rawUrl) =>
     Option.match(parseSafeExternalUrl(rawUrl), {
       onNone: () => Effect.succeed(false),

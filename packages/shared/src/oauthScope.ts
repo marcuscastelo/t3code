@@ -1,19 +1,4 @@
-import * as Schema from "effect/Schema";
-
 const OAUTH_SCOPE_TOKEN = /^[\u0021\u0023-\u005b\u005d-\u007e]+$/u;
-
-export class OAuthScopeEncodingError extends Schema.TaggedErrorClass<OAuthScopeEncodingError>()(
-  "OAuthScopeEncodingError",
-  {
-    scopes: Schema.Array(Schema.String),
-    invalidScopes: Schema.Array(Schema.String),
-    duplicateScopes: Schema.Array(Schema.String),
-  },
-) {
-  override get message(): string {
-    return "OAuth scopes must be non-empty, syntactically valid, and unique.";
-  }
-}
 
 /**
  * Decodes an RFC 6749 `scope` value as a set while preserving its first-seen
@@ -33,22 +18,12 @@ export function parseOAuthScope(value: string): ReadonlyArray<string> | null {
 }
 
 export function encodeOAuthScope(scopes: ReadonlyArray<string>): string {
-  const invalidScopes = scopes.filter((scope) => !OAUTH_SCOPE_TOKEN.test(scope));
-  const seen = new Set<string>();
-  const duplicateScopes = new Set<string>();
-  for (const scope of scopes) {
-    if (seen.has(scope)) duplicateScopes.add(scope);
-    seen.add(scope);
+  const encoded = scopes.join(" ");
+  const parsed = parseOAuthScope(encoded);
+  if (parsed === null || parsed.length !== scopes.length) {
+    throw new Error("OAuth scopes must be non-empty, valid, and unique.");
   }
-
-  if (scopes.length === 0 || invalidScopes.length > 0 || duplicateScopes.size > 0) {
-    throw new OAuthScopeEncodingError({
-      scopes,
-      invalidScopes,
-      duplicateScopes: [...duplicateScopes],
-    });
-  }
-  return scopes.join(" ");
+  return encoded;
 }
 
 export function oauthScopeSetEquals(value: string, expectedScopes: ReadonlyArray<string>): boolean {

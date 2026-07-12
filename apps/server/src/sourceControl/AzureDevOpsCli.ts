@@ -1,192 +1,33 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
 import {
-  NonNegativeInt,
   TrimmedNonEmptyString,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import {
-  decodeAzureDevOpsPullRequestJson,
-  decodeAzureDevOpsPullRequestListJson,
-  type NormalizedAzureDevOpsPullRequestRecord,
-} from "./azureDevOpsPullRequests.ts";
+import * as AzureDevOpsPullRequests from "./azureDevOpsPullRequests.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-const azureDevOpsCommandErrorFields = {
-  operation: Schema.Literal("execute"),
-  command: Schema.Literal("az"),
-  cwd: Schema.String,
-  argumentCount: NonNegativeInt,
-  cause: Schema.Defect(),
-};
-
-export class AzureDevOpsCliUnavailableError extends Schema.TaggedErrorClass<AzureDevOpsCliUnavailableError>()(
-  "AzureDevOpsCliUnavailableError",
-  azureDevOpsCommandErrorFields,
-) {
-  get detail(): string {
-    return "Azure CLI (`az`) with the Azure DevOps extension is required but not available on PATH.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export class AzureDevOpsCliAuthenticationError extends Schema.TaggedErrorClass<AzureDevOpsCliAuthenticationError>()(
-  "AzureDevOpsCliAuthenticationError",
-  azureDevOpsCommandErrorFields,
-) {
-  get detail(): string {
-    return "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export class AzureDevOpsPullRequestNotFoundError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestNotFoundError>()(
-  "AzureDevOpsPullRequestNotFoundError",
-  azureDevOpsCommandErrorFields,
-) {
-  get detail(): string {
-    return "Pull request not found. Check the PR number or URL and try again.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export class AzureDevOpsCommandFailedError extends Schema.TaggedErrorClass<AzureDevOpsCommandFailedError>()(
-  "AzureDevOpsCommandFailedError",
-  azureDevOpsCommandErrorFields,
-) {
-  get detail(): string {
-    return "Azure DevOps CLI command failed.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-
-  static fromVcsError(
-    context: {
-      readonly operation: "execute";
-      readonly command: "az";
-      readonly cwd: string;
-      readonly argumentCount: number;
-    },
-    cause: VcsError,
-  ): AzureDevOpsCliError {
-    const fields = { ...context, cause };
-
-    if (
-      cause._tag === "VcsProcessSpawnError" &&
-      cause.cause instanceof PlatformError.PlatformError &&
-      cause.cause.reason._tag === "NotFound" &&
-      cause.cause.reason.pathOrDescriptor !== context.cwd &&
-      cause.cause.reason.syscall !== "chdir"
-    ) {
-      return new AzureDevOpsCliUnavailableError(fields);
-    }
-
-    if (cause._tag === "VcsProcessExitError") {
-      if (cause.failureKind === "authentication") {
-        return new AzureDevOpsCliAuthenticationError(fields);
-      }
-      if (cause.failureKind === "not-found") {
-        return new AzureDevOpsPullRequestNotFoundError(fields);
-      }
-    }
-
-    return new AzureDevOpsCommandFailedError(fields);
-  }
-}
-
-const azureDevOpsDecodeErrorFields = {
-  command: Schema.Literal("az"),
-  cwd: Schema.String,
-  outputLength: NonNegativeInt,
-  cause: Schema.Defect(),
-};
-
-export class AzureDevOpsPullRequestListDecodeError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestListDecodeError>()(
-  "AzureDevOpsPullRequestListDecodeError",
+export class AzureDevOpsCliError extends Schema.TaggedErrorClass<AzureDevOpsCliError>()(
+  "AzureDevOpsCliError",
   {
-    operation: Schema.Literal("listPullRequests"),
-    ...azureDevOpsDecodeErrorFields,
+    operation: Schema.String,
+    detail: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
-  get detail(): string {
-    return "Azure DevOps CLI returned invalid PR list JSON.";
-  }
-
   override get message(): string {
     return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
   }
 }
-
-export class AzureDevOpsPullRequestDecodeError extends Schema.TaggedErrorClass<AzureDevOpsPullRequestDecodeError>()(
-  "AzureDevOpsPullRequestDecodeError",
-  {
-    operation: Schema.Literal("getPullRequest"),
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
-  get detail(): string {
-    return "Azure DevOps CLI returned invalid pull request JSON.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-const AzureDevOpsRepositoryDecodeOperation = Schema.Literals([
-  "getRepositoryCloneUrls",
-  "getDefaultBranch",
-  "createRepository",
-]);
-
-export class AzureDevOpsRepositoryDecodeError extends Schema.TaggedErrorClass<AzureDevOpsRepositoryDecodeError>()(
-  "AzureDevOpsRepositoryDecodeError",
-  {
-    operation: AzureDevOpsRepositoryDecodeOperation,
-    ...azureDevOpsDecodeErrorFields,
-  },
-) {
-  get detail(): string {
-    return "Azure DevOps CLI returned invalid repository JSON.";
-  }
-
-  override get message(): string {
-    return `Azure DevOps CLI failed in ${this.operation}: ${this.detail}`;
-  }
-}
-
-export const AzureDevOpsCliError = Schema.Union([
-  AzureDevOpsCliUnavailableError,
-  AzureDevOpsCliAuthenticationError,
-  AzureDevOpsPullRequestNotFoundError,
-  AzureDevOpsCommandFailedError,
-  AzureDevOpsPullRequestListDecodeError,
-  AzureDevOpsPullRequestDecodeError,
-  AzureDevOpsRepositoryDecodeError,
-]);
-export type AzureDevOpsCliError = typeof AzureDevOpsCliError.Type;
-
-export const isAzureDevOpsCliError = Schema.is(AzureDevOpsCliError);
 
 export interface AzureDevOpsRepositoryCloneUrls {
   readonly nameWithOwner: string;
@@ -194,60 +35,133 @@ export interface AzureDevOpsRepositoryCloneUrls {
   readonly sshUrl: string;
 }
 
-export class AzureDevOpsCli extends Context.Service<
-  AzureDevOpsCli,
-  {
-    readonly execute: (input: {
-      readonly cwd: string;
-      readonly args: ReadonlyArray<string>;
-      readonly timeoutMs?: number;
-    }) => Effect.Effect<VcsProcess.VcsProcessOutput, AzureDevOpsCliError>;
+export interface AzureDevOpsCliShape {
+  readonly execute: (input: {
+    readonly cwd: string;
+    readonly args: ReadonlyArray<string>;
+    readonly timeoutMs?: number;
+  }) => Effect.Effect<VcsProcess.VcsProcessOutput, AzureDevOpsCliError>;
 
-    readonly listPullRequests: (input: {
-      readonly cwd: string;
-      readonly headSelector: string;
-      readonly source?: SourceControlProvider.SourceControlRefSelector;
-      readonly state: "open" | "closed" | "merged" | "all";
-      readonly limit?: number;
-    }) => Effect.Effect<ReadonlyArray<NormalizedAzureDevOpsPullRequestRecord>, AzureDevOpsCliError>;
+  readonly listPullRequests: (input: {
+    readonly cwd: string;
+    readonly headSelector: string;
+    readonly source?: SourceControlProvider.SourceControlRefSelector;
+    readonly state: "open" | "closed" | "merged" | "all";
+    readonly limit?: number;
+  }) => Effect.Effect<
+    ReadonlyArray<AzureDevOpsPullRequests.NormalizedAzureDevOpsPullRequestRecord>,
+    AzureDevOpsCliError
+  >;
 
-    readonly getPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-    }) => Effect.Effect<NormalizedAzureDevOpsPullRequestRecord, AzureDevOpsCliError>;
+  readonly getPullRequest: (input: {
+    readonly cwd: string;
+    readonly reference: string;
+  }) => Effect.Effect<
+    AzureDevOpsPullRequests.NormalizedAzureDevOpsPullRequestRecord,
+    AzureDevOpsCliError
+  >;
 
-    readonly getRepositoryCloneUrls: (input: {
-      readonly cwd: string;
-      readonly repository: string;
-    }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
+  readonly getRepositoryCloneUrls: (input: {
+    readonly cwd: string;
+    readonly repository: string;
+  }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
 
-    readonly createRepository: (input: {
-      readonly cwd: string;
-      readonly repository: string;
-      readonly visibility: SourceControlRepositoryVisibility;
-    }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
+  readonly createRepository: (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly visibility: SourceControlRepositoryVisibility;
+  }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
 
-    readonly createPullRequest: (input: {
-      readonly cwd: string;
-      readonly baseBranch: string;
-      readonly headSelector: string;
-      readonly source?: SourceControlProvider.SourceControlRefSelector;
-      readonly target?: SourceControlProvider.SourceControlRefSelector;
-      readonly title: string;
-      readonly bodyFile: string;
-    }) => Effect.Effect<void, AzureDevOpsCliError>;
+  readonly createPullRequest: (input: {
+    readonly cwd: string;
+    readonly baseBranch: string;
+    readonly headSelector: string;
+    readonly source?: SourceControlProvider.SourceControlRefSelector;
+    readonly target?: SourceControlProvider.SourceControlRefSelector;
+    readonly title: string;
+    readonly bodyFile: string;
+  }) => Effect.Effect<void, AzureDevOpsCliError>;
 
-    readonly getDefaultBranch: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<string | null, AzureDevOpsCliError>;
+  readonly updatePullRequest: (input: {
+    readonly cwd: string;
+    readonly reference: string;
+    readonly title: string;
+    readonly bodyFile: string;
+  }) => Effect.Effect<void, AzureDevOpsCliError>;
 
-    readonly checkoutPullRequest: (input: {
-      readonly cwd: string;
-      readonly reference: string;
-      readonly remoteName?: string;
-    }) => Effect.Effect<void, AzureDevOpsCliError>;
+  readonly getDefaultBranch: (input: {
+    readonly cwd: string;
+  }) => Effect.Effect<string | null, AzureDevOpsCliError>;
+
+  readonly checkoutPullRequest: (input: {
+    readonly cwd: string;
+    readonly reference: string;
+    readonly remoteName?: string;
+  }) => Effect.Effect<void, AzureDevOpsCliError>;
+}
+
+export class AzureDevOpsCli extends Context.Service<AzureDevOpsCli, AzureDevOpsCliShape>()(
+  "t3/sourceControl/AzureDevOpsCli",
+) {}
+
+function errorText(error: VcsError | unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : "";
+    const detail = "detail" in error && typeof error.detail === "string" ? error.detail : "";
+    const message = "message" in error && typeof error.message === "string" ? error.message : "";
+    return [tag, detail, message].filter(Boolean).join("\n");
   }
->()("t3/sourceControl/AzureDevOpsCli") {}
+
+  return String(error);
+}
+
+function normalizeAzureDevOpsCliError(
+  operation: "execute",
+  error: VcsError | unknown,
+): AzureDevOpsCliError {
+  const text = errorText(error);
+  const lower = text.toLowerCase();
+
+  if (lower.includes("command not found: az") || lower.includes("enoent")) {
+    return new AzureDevOpsCliError({
+      operation,
+      detail:
+        "Azure CLI (`az`) with the Azure DevOps extension is required but not available on PATH.",
+      cause: error,
+    });
+  }
+
+  if (
+    lower.includes("az devops login") ||
+    lower.includes("please run az login") ||
+    lower.includes("not logged in") ||
+    lower.includes("authentication failed") ||
+    lower.includes("unauthorized")
+  ) {
+    return new AzureDevOpsCliError({
+      operation,
+      detail: "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.",
+      cause: error,
+    });
+  }
+
+  if (
+    lower.includes("pull request") &&
+    (lower.includes("not found") || lower.includes("does not exist"))
+  ) {
+    return new AzureDevOpsCliError({
+      operation,
+      detail: "Pull request not found. Check the PR number or URL and try again.",
+      cause: error,
+    });
+  }
+
+  return new AzureDevOpsCliError({
+    operation,
+    detail: text,
+    cause: error,
+  });
+}
 
 function normalizeChangeRequestId(reference: string): string {
   const trimmed = reference.trim().replace(/^#/, "");
@@ -317,27 +231,25 @@ function parseRepositorySpecifier(repository: string): {
 function decodeAzureDevOpsJson<S extends Schema.Top>(
   raw: string,
   schema: S,
-  operation: typeof AzureDevOpsRepositoryDecodeOperation.Type,
-  cwd: string,
-): Effect.Effect<S["Type"], AzureDevOpsRepositoryDecodeError, S["DecodingServices"]> {
+  operation: "getRepositoryCloneUrls" | "getDefaultBranch" | "createRepository",
+  invalidDetail: string,
+): Effect.Effect<S["Type"], AzureDevOpsCliError, S["DecodingServices"]> {
   return Schema.decodeEffect(Schema.fromJsonString(schema))(raw).pipe(
     Effect.mapError(
-      (cause) =>
-        new AzureDevOpsRepositoryDecodeError({
+      (error) =>
+        new AzureDevOpsCliError({
           operation,
-          command: "az",
-          cwd,
-          outputLength: raw.length,
-          cause,
+          detail: `${invalidDetail}: ${SchemaIssue.makeFormatterDefault()(error.issue)}`,
+          cause: error,
         }),
     ),
   );
 }
 
-export const make = Effect.gen(function* () {
+export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
   const process = yield* VcsProcess.VcsProcess;
 
-  const execute: AzureDevOpsCli["Service"]["execute"] = (input) =>
+  const execute: AzureDevOpsCliShape["execute"] = (input) =>
     process
       .run({
         operation: "AzureDevOpsCli.execute",
@@ -346,21 +258,9 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       })
-      .pipe(
-        Effect.mapError((error) =>
-          AzureDevOpsCommandFailedError.fromVcsError(
-            {
-              operation: "execute",
-              command: "az",
-              cwd: input.cwd,
-              argumentCount: input.args.length,
-            },
-            error,
-          ),
-        ),
-      );
+      .pipe(Effect.mapError((error) => normalizeAzureDevOpsCliError("execute", error)));
 
-  const executeJson = (input: Parameters<AzureDevOpsCli["Service"]["execute"]>[0]) =>
+  const executeJson = (input: Parameters<AzureDevOpsCliShape["execute"]>[0]) =>
     execute({
       ...input,
       args: [...input.args, "--only-show-errors", "--output", "json"],
@@ -389,15 +289,15 @@ export const make = Effect.gen(function* () {
         Effect.flatMap((raw) =>
           raw.length === 0
             ? Effect.succeed([])
-            : Effect.sync(() => decodeAzureDevOpsPullRequestListJson(raw)).pipe(
+            : Effect.sync(() =>
+                AzureDevOpsPullRequests.decodeAzureDevOpsPullRequestListJson(raw),
+              ).pipe(
                 Effect.flatMap((decoded) => {
                   if (!Result.isSuccess(decoded)) {
                     return Effect.fail(
-                      new AzureDevOpsPullRequestListDecodeError({
+                      new AzureDevOpsCliError({
                         operation: "listPullRequests",
-                        command: "az",
-                        cwd: input.cwd,
-                        outputLength: raw.length,
+                        detail: `Azure DevOps CLI returned invalid PR list JSON: ${AzureDevOpsPullRequests.formatAzureDevOpsJsonDecodeError(decoded.failure)}`,
                         cause: decoded.failure,
                       }),
                     );
@@ -423,15 +323,13 @@ export const make = Effect.gen(function* () {
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
-          Effect.sync(() => decodeAzureDevOpsPullRequestJson(raw)).pipe(
+          Effect.sync(() => AzureDevOpsPullRequests.decodeAzureDevOpsPullRequestJson(raw)).pipe(
             Effect.flatMap((decoded) => {
               if (!Result.isSuccess(decoded)) {
                 return Effect.fail(
-                  new AzureDevOpsPullRequestDecodeError({
+                  new AzureDevOpsCliError({
                     operation: "getPullRequest",
-                    command: "az",
-                    cwd: input.cwd,
-                    outputLength: raw.length,
+                    detail: `Azure DevOps CLI returned invalid pull request JSON: ${AzureDevOpsPullRequests.formatAzureDevOpsJsonDecodeError(decoded.failure)}`,
                     cause: decoded.failure,
                   }),
                 );
@@ -453,7 +351,7 @@ export const make = Effect.gen(function* () {
             raw,
             RawAzureDevOpsRepositorySchema,
             "getRepositoryCloneUrls",
-            input.cwd,
+            "Azure DevOps CLI returned invalid repository JSON.",
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
@@ -478,7 +376,12 @@ export const make = Effect.gen(function* () {
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
-          decodeAzureDevOpsJson(raw, RawAzureDevOpsRepositorySchema, "createRepository", input.cwd),
+          decodeAzureDevOpsJson(
+            raw,
+            RawAzureDevOpsRepositorySchema,
+            "createRepository",
+            "Azure DevOps CLI returned invalid repository JSON.",
+          ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       );
@@ -503,6 +406,24 @@ export const make = Effect.gen(function* () {
           `@${input.bodyFile}`,
         ],
       }).pipe(Effect.asVoid),
+    updatePullRequest: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "repos",
+          "pr",
+          "update",
+          "--only-show-errors",
+          "--detect",
+          "true",
+          "--id",
+          normalizeChangeRequestId(input.reference),
+          "--title",
+          input.title,
+          "--description",
+          `@${input.bodyFile}`,
+        ],
+      }).pipe(Effect.asVoid),
     getDefaultBranch: (input) =>
       executeJson({
         cwd: input.cwd,
@@ -510,7 +431,12 @@ export const make = Effect.gen(function* () {
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
-          decodeAzureDevOpsJson(raw, RawAzureDevOpsRepositorySchema, "getDefaultBranch", input.cwd),
+          decodeAzureDevOpsJson(
+            raw,
+            RawAzureDevOpsRepositorySchema,
+            "getDefaultBranch",
+            "Azure DevOps CLI returned invalid repository JSON.",
+          ),
         ),
         Effect.map((repo) => normalizeDefaultBranch(repo.defaultBranch)),
       ),
@@ -533,4 +459,4 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(AzureDevOpsCli, make);
+export const layer = Layer.effect(AzureDevOpsCli, make());

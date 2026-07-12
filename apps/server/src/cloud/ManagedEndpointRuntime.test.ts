@@ -4,15 +4,13 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import * as RelayClient from "@t3tools/shared/relayClient";
 
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
+import { makeCloudManagedEndpointRuntime } from "./ManagedEndpointRuntime.ts";
 
 const relayClientAvailableLayer = Layer.succeed(
   RelayClient.RelayClient,
@@ -28,32 +26,11 @@ const relayClientAvailableLayer = Layer.succeed(
   }),
 );
 
-const runtimeDependencies = (
-  spawner: ReturnType<typeof ChildProcessSpawner.make>,
-  relayClientLayer = relayClientAvailableLayer,
-) =>
+const runtimeDependencies = (spawner: ReturnType<typeof ChildProcessSpawner.make>) =>
   Layer.mergeAll(
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    relayClientLayer,
-    Layer.mock(ServerSecretStore.ServerSecretStore)({
-      get: () => Effect.succeed(Option.none()),
-    }),
+    relayClientAvailableLayer,
   );
-
-const buildCloudManagedEndpointRuntime = (
-  spawner: ReturnType<typeof ChildProcessSpawner.make>,
-  relayClientLayer = relayClientAvailableLayer,
-) =>
-  Effect.gen(function* () {
-    const context = yield* Layer.build(
-      ManagedEndpointRuntime.layer.pipe(
-        Layer.provide(runtimeDependencies(spawner, relayClientLayer)),
-      ),
-    );
-    return yield* Effect.service(ManagedEndpointRuntime.CloudManagedEndpointRuntime).pipe(
-      Effect.provide(context),
-    );
-  });
 
 function makeHandle(input: {
   readonly pid: number;
@@ -80,24 +57,6 @@ function makeHandle(input: {
 }
 
 describe("CloudManagedEndpointRuntime", () => {
-  it("classifies Cloudflare connection and warning output", () => {
-    expect(
-      ManagedEndpointRuntime.classifyRelayClientOutput(
-        "2026-06-17T02:00:00Z INF Registered tunnel connection connIndex=0",
-      ),
-    ).toBe("connected");
-    expect(
-      ManagedEndpointRuntime.classifyRelayClientOutput(
-        "2026-06-17T02:00:00Z ERR Failed to serve tunnel connection",
-      ),
-    ).toBe("warning");
-    expect(
-      ManagedEndpointRuntime.classifyRelayClientOutput(
-        "2026-06-17T02:00:00Z INF Starting metrics server",
-      ),
-    ).toBe("debug");
-  });
-
   it.effect("starts, deduplicates, rotates, and stops the Cloudflare connector", () =>
     Effect.gen(function* () {
       const spawned: Array<ChildProcess.StandardCommand> = [];
@@ -121,7 +80,9 @@ describe("CloudManagedEndpointRuntime", () => {
           return handle;
         }),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
 
       yield* runtime.applyConfig({
         providerKind: "cloudflare_tunnel",
@@ -152,8 +113,8 @@ describe("CloudManagedEndpointRuntime", () => {
         "token-1",
         "token-2",
       ]);
-      expect(spawned.map((command) => command.options.stdout)).toEqual(["pipe", "pipe"]);
-      expect(spawned.map((command) => command.options.stderr)).toEqual(["pipe", "pipe"]);
+      expect(spawned.map((command) => command.options.stdout)).toEqual(["ignore", "ignore"]);
+      expect(spawned.map((command) => command.options.stderr)).toEqual(["ignore", "ignore"]);
       expect(spawned.map((command) => command.options.detached)).toEqual([false, false]);
       expect(spawned.map((command) => command.options.shell)).toEqual([false, false]);
       expect(killed).toEqual([100, 101]);
@@ -176,7 +137,9 @@ describe("CloudManagedEndpointRuntime", () => {
           return handle;
         }),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
 
       const started = yield* runtime.applyConfig({
         providerKind: "cloudflare_tunnel",
@@ -213,7 +176,9 @@ describe("CloudManagedEndpointRuntime", () => {
           return handle;
         }),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
       const config = {
         providerKind: "cloudflare_tunnel" as const,
         connectorToken: "token",
@@ -258,7 +223,9 @@ describe("CloudManagedEndpointRuntime", () => {
           return handle;
         }),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
 
       const started = yield* runtime.applyConfig({
         providerKind: "cloudflare_tunnel",
@@ -298,7 +265,9 @@ describe("CloudManagedEndpointRuntime", () => {
           return handle;
         }),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
 
       const first = yield* runtime
         .applyConfig({
@@ -336,7 +305,9 @@ describe("CloudManagedEndpointRuntime", () => {
           }),
         ),
       );
-      const runtime = yield* buildCloudManagedEndpointRuntime(spawner);
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(runtimeDependencies(spawner)),
+      );
 
       const status = yield* runtime.applyConfig({
         providerKind: "cloudflare_tunnel",
@@ -356,18 +327,22 @@ describe("CloudManagedEndpointRuntime", () => {
     Effect.gen(function* () {
       const spawn = vi.fn();
       const spawner = ChildProcessSpawner.make(spawn);
-      const runtime = yield* buildCloudManagedEndpointRuntime(
-        spawner,
-        Layer.succeed(
-          RelayClient.RelayClient,
-          RelayClient.RelayClient.of({
-            resolve: Effect.succeed({
-              status: "missing",
-              version: RelayClient.CLOUDFLARED_VERSION,
-            }),
-            install: Effect.die("unused"),
-            installWithProgress: () => Effect.die("unused"),
-          }),
+      const runtime = yield* makeCloudManagedEndpointRuntime.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Layer.succeed(
+              RelayClient.RelayClient,
+              RelayClient.RelayClient.of({
+                resolve: Effect.succeed({
+                  status: "missing",
+                  version: RelayClient.CLOUDFLARED_VERSION,
+                }),
+                install: Effect.die("unused"),
+                installWithProgress: () => Effect.die("unused"),
+              }),
+            ),
+          ),
         ),
       );
 

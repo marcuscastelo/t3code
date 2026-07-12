@@ -1,11 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off - The CLI loopback OAuth callback is a Node HTTP boundary.
-import * as NodeHttp from "node:http";
+import { createServer } from "node:http";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -14,12 +15,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { cloudCliOAuthConfig, type CloudCliOAuthConfig } from "./publicConfig.ts";
@@ -46,74 +45,35 @@ const OAuthTokenResponse = Schema.Struct({
   token_type: Schema.String,
 });
 
-export class CloudCliCredentialRemovalError extends Schema.TaggedErrorClass<CloudCliCredentialRemovalError>()(
-  "CloudCliCredentialRemovalError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not remove the stored T3 Connect CLI credential.";
-  }
-}
+export class CloudCliTokenManagerError extends Data.TaggedError("CloudCliTokenManagerError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
 
-export class CloudCliCredentialRefreshError extends Schema.TaggedErrorClass<CloudCliCredentialRefreshError>()(
-  "CloudCliCredentialRefreshError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not refresh the T3 Connect CLI credential.";
-  }
+export interface CloudCliTokenManagerShape {
+  readonly get: Effect.Effect<PersistedToken, CloudCliTokenManagerError>;
+  readonly getExisting: Effect.Effect<Option.Option<PersistedToken>, CloudCliTokenManagerError>;
+  readonly hasCredential: Effect.Effect<boolean, CloudCliTokenManagerError>;
+  readonly clear: Effect.Effect<void, CloudCliTokenManagerError>;
 }
-
-export class CloudCliCredentialReadError extends Schema.TaggedErrorClass<CloudCliCredentialReadError>()(
-  "CloudCliCredentialReadError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not read the stored T3 Connect CLI credential.";
-  }
-}
-
-export class CloudCliAuthorizationError extends Schema.TaggedErrorClass<CloudCliAuthorizationError>()(
-  "CloudCliAuthorizationError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Could not authorize the T3 Connect CLI.";
-  }
-}
-
-export class CloudCliAuthorizationTimeoutError extends Schema.TaggedErrorClass<CloudCliAuthorizationTimeoutError>()(
-  "CloudCliAuthorizationTimeoutError",
-  { cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return "Timed out waiting for T3 Connect authorization.";
-  }
-}
-
-export const CloudCliTokenManagerError = Schema.Union([
-  CloudCliCredentialRemovalError,
-  CloudCliCredentialRefreshError,
-  CloudCliCredentialReadError,
-  CloudCliAuthorizationError,
-  CloudCliAuthorizationTimeoutError,
-]);
-export type CloudCliTokenManagerError = typeof CloudCliTokenManagerError.Type;
 
 export class CloudCliTokenManager extends Context.Service<
   CloudCliTokenManager,
-  {
-    readonly get: Effect.Effect<PersistedToken, CloudCliTokenManagerError>;
-    readonly getExisting: Effect.Effect<Option.Option<PersistedToken>, CloudCliTokenManagerError>;
-    readonly hasCredential: Effect.Effect<boolean, CloudCliTokenManagerError>;
-    readonly clear: Effect.Effect<void, CloudCliTokenManagerError>;
-  }
+  CloudCliTokenManagerShape
 >()("t3/cloud/CliTokenManager/CloudCliTokenManager") {}
 
 const wrapError =
-  <WrappedError extends CloudCliTokenManagerError>(makeError: (cause: unknown) => WrappedError) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, WrappedError, R> =>
-    effect.pipe(Effect.mapError(makeError));
+  (message: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, CloudCliTokenManagerError, R> =>
+    effect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new CloudCliTokenManagerError({
+            message,
+            cause,
+          }),
+      ),
+    );
 
 function stringToBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);
@@ -123,7 +83,7 @@ function bytesToString(value: Uint8Array): string {
   return new TextDecoder().decode(value);
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
   const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -136,12 +96,12 @@ export const make = Effect.gen(function* () {
 
   const clear = secrets
     .remove(CLOUD_CLI_OAUTH_TOKEN_SECRET)
-    .pipe(wrapError((cause) => new CloudCliCredentialRemovalError({ cause })));
+    .pipe(wrapError("Could not remove the stored T3 Connect CLI credential."));
 
   const read = Effect.fn("cloud.cli_token.read")(function* () {
     const encoded = yield* secrets.get(CLOUD_CLI_OAUTH_TOKEN_SECRET);
-    if (Option.isNone(encoded)) return Option.none<PersistedToken>();
-    return Option.some(yield* decodePersistedToken(bytesToString(encoded.value)));
+    if (!encoded) return Option.none<PersistedToken>();
+    return Option.some(yield* decodePersistedToken(bytesToString(encoded)));
   });
 
   const exchangeToken = Effect.fn("cloud.cli_token.exchange")(function* (
@@ -206,7 +166,7 @@ export const make = Effect.gen(function* () {
       disableLogger: true,
     }).pipe(
       Layer.provide(
-        NodeHttpServer.layer(NodeHttp.createServer, {
+        NodeHttpServer.layer(createServer, {
           host: "127.0.0.1",
           port: 34338,
           disablePreemptiveShutdown: true,
@@ -225,10 +185,10 @@ export const make = Effect.gen(function* () {
     yield* Console.log(`Open this URL to authorize T3 Connect:\n${authorizationUrl.toString()}\n`);
     const code = yield* Deferred.await(callback).pipe(
       Effect.timeout(CLOUD_CLI_OAUTH_CALLBACK_TIMEOUT),
-      Effect.catchTag("TimeoutError", (cause) =>
+      Effect.catchTag("TimeoutError", () =>
         Effect.fail(
-          new CloudCliAuthorizationTimeoutError({
-            cause,
+          new CloudCliTokenManagerError({
+            message: "Timed out waiting for T3 Connect authorization.",
           }),
         ),
       ),
@@ -253,12 +213,12 @@ export const make = Effect.gen(function* () {
   });
 
   const getExisting = semaphore.withPermits(1)(
-    getExistingNoLock().pipe(wrapError((cause) => new CloudCliCredentialRefreshError({ cause }))),
+    getExistingNoLock().pipe(wrapError("Could not refresh the T3 Connect CLI credential.")),
   );
   const hasCredential = semaphore.withPermits(1)(
     read().pipe(
       Effect.map(Option.isSome),
-      wrapError((cause) => new CloudCliCredentialReadError({ cause })),
+      wrapError("Could not read the stored T3 Connect CLI credential."),
     ),
   );
   const get = semaphore.withPermits(1)(
@@ -267,7 +227,7 @@ export const make = Effect.gen(function* () {
       return Option.isSome(token)
         ? token.value
         : yield* Effect.scoped(login()).pipe(Effect.flatMap(persist));
-    }).pipe(wrapError((cause) => new CloudCliAuthorizationError({ cause }))),
+    }).pipe(wrapError("Could not authorize the T3 Connect CLI.")),
   );
 
   return CloudCliTokenManager.of({ get, getExisting, hasCredential, clear });

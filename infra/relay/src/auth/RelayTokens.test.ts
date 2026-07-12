@@ -33,7 +33,9 @@ const config = RelayConfiguration.RelayConfiguration.of({
   managedEndpointNamespace: undefined,
 });
 
-const layer = RelayTokens.layer.pipe(Layer.provide(RelayConfiguration.layer(config)));
+const layer = RelayTokens.layer.pipe(
+  Layer.provide(Layer.succeed(RelayConfiguration.RelayConfiguration, config)),
+);
 
 describe("RelayTokens", () => {
   it.effect("issues a user-bound environment link challenge", () =>
@@ -86,22 +88,20 @@ describe("RelayTokens", () => {
         proofKeyThumbprint: "proof-key-thumbprint",
         jti: "access-token-1",
         issuedAtEpochSeconds: 100,
-        expiresAtEpochSeconds: 1_900,
+        expiresAtEpochSeconds: 200,
         clientId: "t3-mobile",
         scopes: ["environment:connect", "environment:status", "mobile:registration"],
       });
 
       expect(
-        yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 700 }),
+        yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 150 }),
       ).toMatchObject({
         sub: "user_123",
         cnf: { jkt: "proof-key-thumbprint" },
         client_id: "t3-mobile",
         scope: ["environment:connect", "environment:status", "mobile:registration"],
       });
-      expect(
-        yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 1_961 }),
-      ).toBeNull();
+      expect(yield* relayTokens.verifyDpopAccessToken({ token, nowEpochSeconds: 261 })).toBeNull();
     }).pipe(Effect.provide(layer)),
   );
 

@@ -8,7 +8,6 @@ const { onMock, removeListenerMock, themeState } = vi.hoisted(() => ({
   themeState: {
     shouldUseDarkColors: true,
     themeSource: "system",
-    setSourceError: null as unknown,
   },
 }));
 
@@ -18,9 +17,6 @@ vi.mock("electron", () => ({
       return themeState.shouldUseDarkColors;
     },
     set themeSource(value: string) {
-      if (themeState.setSourceError !== null) {
-        throw themeState.setSourceError;
-      }
       themeState.themeSource = value;
     },
     on: onMock,
@@ -36,7 +32,6 @@ describe("ElectronTheme", () => {
     removeListenerMock.mockClear();
     themeState.shouldUseDarkColors = true;
     themeState.themeSource = "system";
-    themeState.setSourceError = null;
   });
 
   it.effect("scopes native theme update listeners", () =>
@@ -52,23 +47,6 @@ describe("ElectronTheme", () => {
 
       assert.deepEqual(onMock.mock.calls, [["updated", listener]]);
       assert.deepEqual(removeListenerMock.mock.calls, [["updated", listener]]);
-    }).pipe(Effect.provide(ElectronTheme.layer)),
-  );
-
-  it.effect("preserves the requested source and cause when setting the theme fails", () =>
-    Effect.gen(function* () {
-      const cause = new Error("theme source failed");
-      themeState.setSourceError = cause;
-      const electronTheme = yield* ElectronTheme.ElectronTheme;
-
-      const error = yield* Effect.flip(electronTheme.setSource("dark"));
-
-      assert.instanceOf(error, ElectronTheme.ElectronThemeSetSourceError);
-      assert.isTrue(ElectronTheme.isElectronThemeSetSourceError(error));
-      assert.strictEqual(error.source, "dark");
-      assert.strictEqual(error.cause, cause);
-      assert.include(error.message, "dark");
-      assert.notInclude(error.message, cause.message);
     }).pipe(Effect.provide(ElectronTheme.layer)),
   );
 });

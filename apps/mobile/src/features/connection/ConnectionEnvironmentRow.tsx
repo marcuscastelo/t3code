@@ -1,26 +1,31 @@
 import { SymbolView } from "expo-symbols";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { cn } from "../../lib/cn";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
-  return connectionStatusText({
-    phase: environment.connectionState,
-    error: environment.connectionError,
-    traceId: environment.connectionErrorTraceId,
-  });
+  if (environment.connectionError) {
+    return null;
+  }
+
+  switch (environment.connectionState) {
+    case "ready":
+      return "Connected";
+    case "connecting":
+      return "Connecting";
+    case "reconnecting":
+      return "Reconnecting";
+    case "disconnected":
+      return null;
+    case "idle":
+      return null;
+  }
 }
 
 export function ConnectionEnvironmentRow(props: {
@@ -32,34 +37,23 @@ export function ConnectionEnvironmentRow(props: {
   readonly onUpdate: (
     environmentId: EnvironmentId,
     updates: { readonly label: string; readonly displayUrl: string },
-  ) => Promise<AtomCommandResult<unknown, unknown>>;
+  ) => void;
 }) {
   const [label, setLabel] = useState(props.environment.environmentLabel);
   const [url, setUrl] = useState(props.environment.displayUrl);
 
   const mutedColor = useThemeColor("--color-icon-subtle");
+  const placeholderColor = useThemeColor("--color-placeholder");
   const primaryFg = useThemeColor("--color-primary-foreground");
   const dangerFg = useThemeColor("--color-danger-foreground");
   const statusLabel = connectionStatusLabel(props.environment);
-  const statusTraceId = props.environment.connectionErrorTraceId;
-  const hasConnectionFailure = props.environment.connectionError !== null;
-  const isRetrying =
-    props.environment.connectionState === "connecting" ||
-    props.environment.connectionState === "reconnecting";
-  const handleSave = useCallback(async () => {
-    const result = await props.onUpdate(props.environment.environmentId, {
+
+  const handleSave = useCallback(() => {
+    props.onUpdate(props.environment.environmentId, {
       label: label.trim(),
       displayUrl: url.trim(),
     });
-    if (AsyncResult.isSuccess(result)) {
-      props.onToggle();
-      return;
-    }
-    const error = Cause.squash(result.cause);
-    Alert.alert(
-      "Could not update environment",
-      error instanceof Error ? error.message : "The environment could not be updated.",
-    );
+    props.onToggle();
   }, [label, url, props]);
 
   return (
@@ -70,46 +64,34 @@ export function ConnectionEnvironmentRow(props: {
       >
         <ConnectionStatusDot
           state={props.environment.connectionState}
-          pulse={isRetrying}
+          pulse={
+            props.environment.connectionState === "connecting" ||
+            props.environment.connectionState === "reconnecting"
+          }
           size={8}
         />
 
         <View className="flex-1 gap-0.5">
-          <Text className="text-base font-t3-bold leading-snug text-foreground" numberOfLines={1}>
+          <Text
+            className="text-[16px] font-t3-bold leading-[21px] text-foreground"
+            numberOfLines={1}
+          >
             {props.environment.environmentLabel}
           </Text>
-          <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+          <Text className="text-[12px] leading-[16px] text-foreground-muted" numberOfLines={1}>
             {props.environment.displayUrl}
           </Text>
           {statusLabel ? (
-            <Text
-              className={cn(
-                "text-xs",
-                hasConnectionFailure ? "text-rose-500 dark:text-rose-400" : "text-foreground-muted",
-              )}
-              numberOfLines={props.expanded ? undefined : 1}
-              selectable={props.expanded}
-            >
+            <Text className="text-[12px] leading-[16px] text-foreground-muted" numberOfLines={1}>
               {statusLabel}
-              {statusTraceId ? (
-                <>
-                  {" Trace ID: "}
-                  <Text
-                    accessibilityHint="Copies the trace ID"
-                    accessibilityRole="button"
-                    className="underline decoration-dotted"
-                    onLongPress={(event) => {
-                      event.stopPropagation();
-                      copyTextWithHaptic(statusTraceId, { target: "connection-trace-id" });
-                    }}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    {statusTraceId}
-                  </Text>
-                </>
-              ) : null}
+            </Text>
+          ) : null}
+          {props.environment.connectionError ? (
+            <Text
+              className="text-[12px] leading-[16px] text-rose-500 dark:text-rose-400"
+              numberOfLines={2}
+            >
+              {props.environment.connectionError}
             </Text>
           ) : null}
         </View>
@@ -132,27 +114,34 @@ export function ConnectionEnvironmentRow(props: {
           className="gap-3 px-4 pb-4"
         >
           {props.environment.isRelayManaged ? (
-            <Text className="text-sm text-foreground-muted">
-              Managed by T3 Connect. Tunnel details update automatically.
+            <Text className="text-[13px] leading-[18px] text-foreground-muted">
+              Managed by T3 Cloud. Tunnel details update automatically.
             </Text>
           ) : (
             <>
               <View className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+                <Text
+                  className="text-[11px] font-t3-bold uppercase text-foreground-muted"
+                  style={{ letterSpacing: 0.8 }}
+                >
                   Label
                 </Text>
                 <TextInput
                   autoCapitalize="words"
                   autoCorrect={false}
                   placeholder="My MacBook"
+                  placeholderTextColor={placeholderColor}
                   value={label}
                   onChangeText={setLabel}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
+                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-[15px] text-foreground"
                 />
               </View>
 
               <View className="gap-1.5">
-                <Text className="text-2xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+                <Text
+                  className="text-[11px] font-t3-bold uppercase text-foreground-muted"
+                  style={{ letterSpacing: 0.8 }}
+                >
                   URL
                 </Text>
                 <TextInput
@@ -160,9 +149,10 @@ export function ConnectionEnvironmentRow(props: {
                   autoCorrect={false}
                   keyboardType="url"
                   placeholder="192.168.1.100:8080"
+                  placeholderTextColor={placeholderColor}
                   value={url}
                   onChangeText={setUrl}
-                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
+                  className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-[15px] text-foreground"
                 />
               </View>
             </>
@@ -175,7 +165,10 @@ export function ConnectionEnvironmentRow(props: {
                 onPress={handleSave}
               >
                 <SymbolView name="checkmark" size={13} tintColor={primaryFg} type="monochrome" />
-                <Text className="text-xs font-t3-bold tracking-[0.8px] uppercase text-primary-foreground">
+                <Text
+                  className="text-[12px] font-t3-bold uppercase text-primary-foreground"
+                  style={{ letterSpacing: 0.8 }}
+                >
                   Save
                 </Text>
               </Pressable>

@@ -6,7 +6,6 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import {
-  getComposerPromptInjectionState,
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
@@ -62,13 +61,6 @@ const ULTRATHINK_FRAME_CLASSES = {
 } as const;
 
 describe("getComposerProviderState", () => {
-  it("derives a stable prompt injection state for ordinary prompt edits", () => {
-    expect(getComposerPromptInjectionState("Investigate this failure")).toBe("none");
-    expect(getComposerPromptInjectionState("Ultrathink:\nInvestigate this failure")).toBe(
-      "ultrathink",
-    );
-  });
-
   it("returns descriptor defaults when no selections are provided", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
@@ -79,6 +71,7 @@ describe("getComposerProviderState", () => {
           { id: "high", label: "High", isDefault: true },
         ]),
       ]),
+      prompt: "",
       modelOptions: undefined,
     });
 
@@ -100,6 +93,7 @@ describe("getComposerProviderState", () => {
         ]),
         booleanDescriptor("fastMode"),
       ]),
+      prompt: "",
       modelOptions: selections(["effort", "low"], ["fastMode", true]),
     });
 
@@ -118,6 +112,7 @@ describe("getComposerProviderState", () => {
         selectDescriptor("effort", [{ id: "high", label: "High", isDefault: true }]),
         booleanDescriptor("fastMode"),
       ]),
+      prompt: "",
       modelOptions: selections(["effort", "high"], ["fastMode", false]),
     });
 
@@ -131,6 +126,7 @@ describe("getComposerProviderState", () => {
       provider: PROVIDER,
       model: MODEL,
       models: modelWith([booleanDescriptor("thinking")]),
+      prompt: "",
       modelOptions: selections(["effort", "max"], ["thinking", false]),
     });
 
@@ -156,6 +152,7 @@ describe("getComposerProviderState", () => {
           { id: "plan", label: "Plan" },
         ]),
       ]),
+      prompt: "",
       modelOptions: selections(["agent", "plan"]),
     });
 
@@ -170,6 +167,7 @@ describe("getComposerProviderState", () => {
       provider: PROVIDER,
       model: MODEL,
       models: modelWith([]),
+      prompt: "",
       modelOptions: selections(["anything", "value"]),
     });
 
@@ -195,9 +193,7 @@ describe("getComposerProviderState", () => {
           ["ultrathink"],
         ),
       ]),
-      promptInjectionState: getComposerPromptInjectionState(
-        "Ultrathink:\nInvestigate this failure",
-      ),
+      prompt: "Ultrathink:\nInvestigate this failure",
       modelOptions: selections(["effort", "medium"]),
     });
 
@@ -216,9 +212,7 @@ describe("getComposerProviderState", () => {
       models: modelWith([
         selectDescriptor("effort", [{ id: "high", label: "High", isDefault: true }]),
       ]),
-      promptInjectionState: getComposerPromptInjectionState(
-        "Ultrathink:\nInvestigate this failure",
-      ),
+      prompt: "Ultrathink:\nInvestigate this failure",
       modelOptions: undefined,
     });
 

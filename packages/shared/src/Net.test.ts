@@ -81,9 +81,9 @@ it.layer(NetService.layer)("NetService", (it) => {
       }),
     );
 
-    it.effect("findAvailablePort falls back when a wildcard listener occupies IPv4", () =>
+    it.effect("findAvailablePort falls back when preferred is occupied", () =>
       Effect.acquireUseRelease(
-        openServer("0.0.0.0"),
+        openServer(),
         (server) =>
           Effect.gen(function* () {
             const net = yield* NetService.NetService;

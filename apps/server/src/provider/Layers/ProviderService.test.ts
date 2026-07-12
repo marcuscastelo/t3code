@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import type {
   ProviderApprovalDecision,
@@ -43,23 +43,27 @@ import {
   type ProviderAdapterError,
 } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
-import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
-import * as ProviderService from "../Services/ProviderService.ts";
-import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
+import {
+  ProviderAdapterRegistry,
+  type ProviderAdapterRegistryShape,
+} from "../Services/ProviderAdapterRegistry.ts";
+import { ProviderService } from "../Services/ProviderService.ts";
+import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import { makeProviderServiceLive } from "./ProviderService.ts";
-import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import { ProviderSessionRuntimeRepositoryLive } from "../../persistence/Layers/ProviderSessionRuntime.ts";
+import { ProviderSessionRuntimeRepository } from "../../persistence/Services/ProviderSessionRuntime.ts";
 import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
-import * as ServerSettings from "../../serverSettings.ts";
-import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
+import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
-const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
+const defaultServerSettingsLayer = ServerSettingsService.layerTest();
 
 const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
@@ -277,11 +281,8 @@ function makeProviderServiceLayer() {
     [ProviderDriverKind.make("cursor")]: cursor.adapter,
   });
 
-  const providerAdapterLayer = Layer.succeed(
-    ProviderAdapterRegistry.ProviderAdapterRegistry,
-    registry,
-  );
-  const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+  const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
+  const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
     Layer.provide(SqlitePersistenceMemory),
   );
   const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
@@ -293,12 +294,7 @@ function makeProviderServiceLayer() {
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provideMerge(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       ),
       directoryLayer,
 
@@ -330,11 +326,8 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const registry = makeAdapterRegistryMock({
       [CODEX_DRIVER]: codex.adapter,
     });
-    const providerAdapterLayer = Layer.succeed(
-      ProviderAdapterRegistry.ProviderAdapterRegistry,
-      registry,
-    );
-    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
       Layer.provide(SqlitePersistenceMemory),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
@@ -344,12 +337,7 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provideMerge(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       ),
       directoryLayer,
       runtimeRepositoryLayer,
@@ -358,7 +346,7 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const scope = yield* Scope.make();
     const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
 
-    yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+    yield* ProviderService.pipe(Effect.provide(runtimeServices));
     const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
 
     assert.equal(Exit.isSuccess(closeExit), true);
@@ -374,7 +362,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
       [CODEX_DRIVER]: codex.adapter,
       [CLAUDE_AGENT_DRIVER]: claude.adapter,
     });
-    const registry: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"] = {
+    const registry: ProviderAdapterRegistryShape = {
       ...registryBase,
       getInstanceInfo: (instanceId) =>
         instanceId === claudeAgentInstanceId
@@ -390,11 +378,8 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
             })
           : registryBase.getInstanceInfo(instanceId),
     };
-    const providerAdapterLayer = Layer.succeed(
-      ProviderAdapterRegistry.ProviderAdapterRegistry,
-      registry,
-    );
-    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
       Layer.provide(SqlitePersistenceMemory),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
@@ -403,17 +388,12 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
-      Layer.provide(
-        Layer.succeed(
-          ProviderEventLoggers.ProviderEventLoggers,
-          ProviderEventLoggers.NoOpProviderEventLoggers,
-        ),
-      ),
+      Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     );
 
     const failure = yield* Effect.flip(
       Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         return yield* provider.startSession(asThreadId("thread-disabled"), {
           provider: ProviderDriverKind.make("claudeAgent"),
           providerInstanceId: claudeAgentInstanceId,
@@ -440,7 +420,7 @@ it.effect(
         new ProviderUnsupportedError({
           provider: driverKind,
         });
-      const registry: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"] = {
+      const registry: ProviderAdapterRegistryShape = {
         getByInstance: (requestedInstanceId) =>
           requestedInstanceId === instanceId
             ? Effect.succeed(codex.adapter)
@@ -465,18 +445,15 @@ it.effect(
           PubSub.subscribe(pubsub),
         ),
       };
-      const providerAdapterLayer = Layer.succeed(
-        ProviderAdapterRegistry.ProviderAdapterRegistry,
-        registry,
-      );
-      const serverSettingsLayer = ServerSettings.ServerSettingsService.layerTest({
+      const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
+      const serverSettingsLayer = ServerSettingsService.layerTest({
         providers: {
           codex: {
             enabled: false,
           },
         },
       });
-      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
         Layer.provide(SqlitePersistenceMemory),
       );
       const directoryLayer = ProviderSessionDirectoryLive.pipe(
@@ -487,16 +464,11 @@ it.effect(
         Layer.provide(directoryLayer),
         Layer.provide(serverSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       );
 
       const session = yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         return yield* provider.startSession(asThreadId("thread-enabled-custom"), {
           provider: driverKind,
           providerInstanceId: instanceId,
@@ -519,7 +491,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
       new ProviderUnsupportedError({
         provider: ProviderDriverKind.make("codex"),
       });
-    const registry: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"] = {
+    const registry: ProviderAdapterRegistryShape = {
       getByInstance: (requestedInstanceId) =>
         requestedInstanceId === instanceId
           ? Effect.succeed(codex.adapter)
@@ -544,11 +516,8 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
         PubSub.subscribe(pubsub),
       ),
     };
-    const providerAdapterLayer = Layer.succeed(
-      ProviderAdapterRegistry.ProviderAdapterRegistry,
-      registry,
-    );
-    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
       Layer.provide(SqlitePersistenceMemory),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
@@ -557,17 +526,12 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
-      Layer.provide(
-        Layer.succeed(
-          ProviderEventLoggers.ProviderEventLoggers,
-          ProviderEventLoggers.NoOpProviderEventLoggers,
-        ),
-      ),
+      Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     );
 
     const failure = yield* Effect.flip(
       Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         return yield* provider.startSession(asThreadId("thread-disabled-instance"), {
           provider: ProviderDriverKind.make("codex"),
           providerInstanceId: instanceId,
@@ -593,7 +557,7 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
     const registry = makeAdapterRegistryMock({
       [ProviderDriverKind.make("codex")]: codex.adapter,
     });
-    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
       Layer.provide(SqlitePersistenceMemory),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
@@ -608,20 +572,15 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
         close: () => Effect.void,
       },
     }).pipe(
-      Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+      Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
-      Layer.provide(
-        Layer.succeed(
-          ProviderEventLoggers.ProviderEventLoggers,
-          ProviderEventLoggers.NoOpProviderEventLoggers,
-        ),
-      ),
+      Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     );
 
     yield* Effect.gen(function* () {
-      yield* ProviderService.ProviderService;
+      yield* ProviderService;
       yield* advanceTestClock(10);
       codex.emit({
         eventId: asEventId("evt-canonical-thread-segment"),
@@ -644,8 +603,8 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
 
 it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", () =>
   Effect.gen(function* () {
-    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-service-"));
-    const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-"));
+    const dbPath = path.join(tempDir, "orchestration.sqlite");
 
     const codex = makeFakeCodexAdapter();
     const registry = makeAdapterRegistryMock({
@@ -653,13 +612,13 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
     });
 
     const persistenceLayer = makeSqlitePersistenceLive(dbPath);
-    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
       Layer.provide(persistenceLayer),
     );
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
 
     yield* Effect.gen(function* () {
-      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const directory = yield* ProviderSessionDirectory;
       yield* directory.upsert({
         provider: ProviderDriverKind.make("codex"),
         providerInstanceId: codexInstanceId,
@@ -668,28 +627,23 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
     }).pipe(Effect.provide(directoryLayer));
 
     const providerLayer = makeProviderServiceLive().pipe(
-      Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+      Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
-      Layer.provide(
-        Layer.succeed(
-          ProviderEventLoggers.ProviderEventLoggers,
-          ProviderEventLoggers.NoOpProviderEventLoggers,
-        ),
-      ),
+      Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     );
 
-    yield* ProviderService.ProviderService.pipe(Effect.provide(providerLayer));
+    yield* ProviderService.pipe(Effect.provide(providerLayer));
 
     const persistedProvider = yield* Effect.gen(function* () {
-      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const directory = yield* ProviderSessionDirectory;
       return yield* directory.getProvider(asThreadId("thread-stale"));
     }).pipe(Effect.provide(directoryLayer));
     assert.equal(persistedProvider, "codex");
 
     const runtime = yield* Effect.gen(function* () {
-      const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const repository = yield* ProviderSessionRuntimeRepository;
       return yield* repository.getByThreadId({
         threadId: asThreadId("thread-stale"),
       });
@@ -706,7 +660,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
     }).pipe(Effect.provide(persistenceLayer));
     assert.equal(legacyTableRows.length, 0);
 
-    NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
@@ -714,12 +668,10 @@ it.effect(
   "ProviderServiceLive restores rollback routing after restart using persisted thread mapping",
   () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-provider-service-restart-"),
-      );
-      const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-restart-"));
+      const dbPath = path.join(tempDir, "orchestration.sqlite");
       const persistenceLayer = makeSqlitePersistenceLive(dbPath);
-      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
         Layer.provide(persistenceLayer),
       );
 
@@ -732,18 +684,11 @@ it.effect(
         Layer.provide(runtimeRepositoryLayer),
       );
       const firstProviderLayer = makeProviderServiceLive().pipe(
-        Layer.provide(
-          Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
-        ),
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, firstRegistry)),
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       );
       const updatedResumeCursor = {
         threadId: asThreadId("thread-1"),
@@ -753,7 +698,7 @@ it.effect(
       };
 
       const startedSession = yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         const threadId = asThreadId("thread-1");
         const session = yield* provider.startSession(threadId, {
           provider: ProviderDriverKind.make("codex"),
@@ -772,7 +717,7 @@ it.effect(
       }).pipe(Effect.provide(firstProviderLayer));
 
       const persistedAfterStopAll = yield* Effect.gen(function* () {
-        const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+        const repository = yield* ProviderSessionRuntimeRepository;
         return yield* repository.getByThreadId({
           threadId: startedSession.threadId,
         });
@@ -791,25 +736,18 @@ it.effect(
         Layer.provide(runtimeRepositoryLayer),
       );
       const secondProviderLayer = makeProviderServiceLive().pipe(
-        Layer.provide(
-          Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
-        ),
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, secondRegistry)),
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       );
 
       secondCodex.startSession.mockClear();
       secondCodex.rollbackThread.mockClear();
 
       yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         yield* provider.rollbackConversation({
           threadId: startedSession.threadId,
           numTurns: 1,
@@ -836,14 +774,14 @@ it.effect(
       assert.equal(typeof rollbackCall?.[0], "string");
       assert.equal(rollbackCall?.[1], 1);
 
-      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const session = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -929,7 +867,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("recovers stale persisted sessions for rollback by resuming thread identity", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const initial = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -970,8 +908,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("preserves the persisted binding when stopping a session", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       const initial = yield* provider.startSession(asThreadId("thread-reap-preserve"), {
         provider: ProviderDriverKind.make("codex"),
@@ -1022,7 +960,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("routes explicit claudeAgent provider session starts to the claude adapter", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const session = yield* provider.startSession(asThreadId("thread-claude"), {
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -1051,8 +989,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("dies when an active session conflicts with its persisted binding", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const provider = yield* ProviderService;
+      const directory = yield* ProviderSessionDirectory;
       const threadId = asThreadId("thread-binding-mismatch");
 
       yield* provider.startSession(threadId, {
@@ -1082,7 +1020,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("stops stale sessions in other providers after a successful replacement start", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
       const threadId = asThreadId("thread-provider-replacement");
 
       const codexSession = yield* provider.startSession(threadId, {
@@ -1121,7 +1059,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("recovers stale sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const initial = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -1162,7 +1100,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("recovers stale claudeAgent sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const initial = yield* provider.startSession(asThreadId("thread-claude-send-turn"), {
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -1215,7 +1153,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("lists no sessions after adapter runtime clears", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -1240,8 +1178,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("persists runtime status transitions in provider_session_runtime", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       const threadId = asThreadId("thread-runtime-status");
       const session = yield* provider.startSession(threadId, {
@@ -1285,12 +1223,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
   it.effect("reuses persisted resume cursor when startSession is called after a restart", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-provider-service-start-"),
-      );
-      const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-start-"));
+      const dbPath = path.join(tempDir, "orchestration.sqlite");
       const persistenceLayer = makeSqlitePersistenceLive(dbPath);
-      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
         Layer.provide(persistenceLayer),
       );
 
@@ -1302,22 +1238,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(runtimeRepositoryLayer),
       );
       const firstProviderLayer = makeProviderServiceLive().pipe(
-        Layer.provide(
-          Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
-        ),
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, firstRegistry)),
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       );
 
       const initial = yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         return yield* provider.startSession(asThreadId("thread-claude-start"), {
           provider: ProviderDriverKind.make("claudeAgent"),
           providerInstanceId: claudeAgentInstanceId,
@@ -1328,7 +1257,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       }).pipe(Effect.provide(firstProviderLayer));
 
       yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         yield* provider.listSessions();
       }).pipe(Effect.provide(firstProviderLayer));
 
@@ -1340,24 +1269,17 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(runtimeRepositoryLayer),
       );
       const secondProviderLayer = makeProviderServiceLive().pipe(
-        Layer.provide(
-          Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
-        ),
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry, secondRegistry)),
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
-        Layer.provide(
-          Layer.succeed(
-            ProviderEventLoggers.ProviderEventLoggers,
-            ProviderEventLoggers.NoOpProviderEventLoggers,
-          ),
-        ),
+        Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
       );
 
       secondClaude.startSession.mockClear();
 
       yield* Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
         yield* provider.startSession(initial.threadId, {
           provider: ProviderDriverKind.make("claudeAgent"),
           providerInstanceId: claudeAgentInstanceId,
@@ -1383,7 +1305,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, initial.threadId);
       }
 
-      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -1391,12 +1313,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
     "reuses persisted cwd when startSession resumes a claude session without cwd input",
     () =>
       Effect.gen(function* () {
-        const tempDir = NodeFS.mkdtempSync(
-          NodePath.join(NodeOS.tmpdir(), "t3-provider-service-cwd-"),
-        );
-        const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-cwd-"));
+        const dbPath = path.join(tempDir, "orchestration.sqlite");
         const persistenceLayer = makeSqlitePersistenceLive(dbPath);
-        const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
           Layer.provide(persistenceLayer),
         );
 
@@ -1408,22 +1328,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
           Layer.provide(runtimeRepositoryLayer),
         );
         const firstProviderLayer = makeProviderServiceLive().pipe(
-          Layer.provide(
-            Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
-          ),
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry, firstRegistry)),
           Layer.provide(firstDirectoryLayer),
           Layer.provide(defaultServerSettingsLayer),
           Layer.provide(AnalyticsService.layerTest),
-          Layer.provide(
-            Layer.succeed(
-              ProviderEventLoggers.ProviderEventLoggers,
-              ProviderEventLoggers.NoOpProviderEventLoggers,
-            ),
-          ),
+          Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
         );
 
         const initial = yield* Effect.gen(function* () {
-          const provider = yield* ProviderService.ProviderService;
+          const provider = yield* ProviderService;
           return yield* provider.startSession(asThreadId("thread-claude-cwd"), {
             provider: ProviderDriverKind.make("claudeAgent"),
             providerInstanceId: claudeAgentInstanceId,
@@ -1441,24 +1354,17 @@ routing.layer("ProviderServiceLive routing", (it) => {
           Layer.provide(runtimeRepositoryLayer),
         );
         const secondProviderLayer = makeProviderServiceLive().pipe(
-          Layer.provide(
-            Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
-          ),
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry, secondRegistry)),
           Layer.provide(secondDirectoryLayer),
           Layer.provide(defaultServerSettingsLayer),
           Layer.provide(AnalyticsService.layerTest),
-          Layer.provide(
-            Layer.succeed(
-              ProviderEventLoggers.ProviderEventLoggers,
-              ProviderEventLoggers.NoOpProviderEventLoggers,
-            ),
-          ),
+          Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
         );
 
         secondClaude.startSession.mockClear();
 
         yield* Effect.gen(function* () {
-          const provider = yield* ProviderService.ProviderService;
+          const provider = yield* ProviderService;
           yield* provider.startSession(initial.threadId, {
             provider: ProviderDriverKind.make("claudeAgent"),
             providerInstanceId: claudeAgentInstanceId,
@@ -1483,7 +1389,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
           assert.equal(startPayload.threadId, initial.threadId);
         }
 
-        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+        fs.rmSync(tempDir, { recursive: true, force: true });
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
@@ -1492,7 +1398,7 @@ const fanout = makeProviderServiceLayer();
 fanout.layer("ProviderServiceLive fanout", (it) => {
   it.effect("fans out adapter turn completion events", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
       const session = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
         providerInstanceId: codexInstanceId,
@@ -1538,7 +1444,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
 
   it.effect("fans out canonical runtime events in emission order", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
       const session = yield* provider.startSession(asThreadId("thread-seq"), {
         provider: ProviderDriverKind.make("codex"),
         providerInstanceId: codexInstanceId,
@@ -1594,7 +1500,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
 
   it.effect("keeps subscriber delivery ordered and isolates failing subscribers", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
       const session = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
         providerInstanceId: codexInstanceId,
@@ -1666,7 +1572,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
 
   it.effect("records provider metrics with the routed provider label", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const session = yield* provider.startSession(asThreadId("thread-metrics"), {
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -1744,7 +1650,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
     "records sendTurn metrics with the resolved provider when modelSelection is omitted",
     () =>
       Effect.gen(function* () {
-        const provider = yield* ProviderService.ProviderService;
+        const provider = yield* ProviderService;
 
         const session = yield* provider.startSession(asThreadId("thread-send-metrics"), {
           provider: ProviderDriverKind.make("claudeAgent"),
@@ -1785,7 +1691,7 @@ const validation = makeProviderServiceLayer();
 validation.layer("ProviderServiceLive validation", (it) => {
   it.effect("rejects session starts without an explicit provider instance id", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       validation.codex.startSession.mockClear();
       const failure = yield* Effect.flip(
@@ -1804,7 +1710,7 @@ validation.layer("ProviderServiceLive validation", (it) => {
 
   it.effect("rejects mismatched provider kind and provider instance id", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       validation.codex.startSession.mockClear();
       validation.claude.startSession.mockClear();
@@ -1829,7 +1735,7 @@ validation.layer("ProviderServiceLive validation", (it) => {
 
   it.effect("returns ProviderValidationError for invalid input payloads", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
+      const provider = yield* ProviderService;
 
       const failure = yield* Effect.result(
         provider.startSession(asThreadId("thread-validation"), {
@@ -1854,8 +1760,8 @@ validation.layer("ProviderServiceLive validation", (it) => {
 
   it.effect("accepts startSession when adapter has not emitted provider thread id yet", () =>
     Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
       validation.codex.startSession.mockImplementationOnce((input: ProviderSessionStartInput) =>
         Effect.sync(() => {

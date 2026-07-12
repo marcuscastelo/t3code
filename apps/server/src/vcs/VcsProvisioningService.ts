@@ -10,11 +10,13 @@ import {
 } from "@t3tools/contracts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 
+export interface VcsProvisioningServiceShape {
+  readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
+}
+
 export class VcsProvisioningService extends Context.Service<
   VcsProvisioningService,
-  {
-    readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
-  }
+  VcsProvisioningServiceShape
 >()("t3/vcs/VcsProvisioningService") {}
 
 function resolveRequestedKind(
@@ -35,10 +37,10 @@ function resolveRequestedKind(
   return Effect.succeed(kind);
 }
 
-export const make = Effect.gen(function* () {
+export const make = Effect.fn("makeVcsProvisioningService")(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
 
-  const initRepository: VcsProvisioningService["Service"]["initRepository"] = Effect.fn(
+  const initRepository: VcsProvisioningServiceShape["initRepository"] = Effect.fn(
     "VcsProvisioningService.initRepository",
   )(function* (input) {
     const kind = yield* resolveRequestedKind(input.kind);
@@ -51,4 +53,4 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(VcsProvisioningService, make);
+export const layer = Layer.effect(VcsProvisioningService, make());

@@ -108,11 +108,7 @@ export function useNativeReviewDiffHighlighting(input: {
       } catch (error) {
         if (!abortController.signal.aborted) {
           logReviewDiffDiagnostic("native visible highlight failed", {
-            error,
-            resetKey,
-            scheme,
-            firstRowIndex: requestRange.firstRowIndex,
-            lastRowIndex: requestRange.lastRowIndex,
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       }

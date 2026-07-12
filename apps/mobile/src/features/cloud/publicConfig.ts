@@ -1,18 +1,6 @@
 import Constants from "expo-constants";
 import { relayClerkTokenOptions } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
-import * as Schema from "effect/Schema";
-
-export class CloudPublicConfigMissingError extends Schema.TaggedErrorClass<CloudPublicConfigMissingError>()(
-  "CloudPublicConfigMissingError",
-  {
-    key: Schema.Literal("T3CODE_CLERK_JWT_TEMPLATE"),
-  },
-) {
-  override get message(): string {
-    return `${this.key} is not configured.`;
-  }
-}
 
 export interface CloudPublicConfig {
   readonly clerk: {
@@ -82,13 +70,13 @@ type Configured<T> = {
   readonly [Key in keyof T]: NonNullable<T[Key]>;
 };
 
-type TracingPublicConfig = Omit<CloudPublicConfig, "observability"> & {
+type MobileTracingPublicConfig = Omit<CloudPublicConfig, "observability"> & {
   readonly observability: Configured<CloudPublicConfig["observability"]>;
 };
 
-export function hasTracingPublicConfig(
+export function hasMobileTracingPublicConfig(
   config: CloudPublicConfig = resolveCloudPublicConfig(),
-): config is TracingPublicConfig {
+): config is MobileTracingPublicConfig {
   return Boolean(
     config.observability.tracesUrl &&
     config.observability.tracesDataset &&
@@ -99,7 +87,7 @@ export function hasTracingPublicConfig(
 export function resolveRelayClerkTokenOptions() {
   const { jwtTemplate } = resolveCloudPublicConfig().clerk;
   if (!jwtTemplate) {
-    throw new CloudPublicConfigMissingError({ key: "T3CODE_CLERK_JWT_TEMPLATE" });
+    throw new Error("T3CODE_CLERK_JWT_TEMPLATE is not configured.");
   }
   return relayClerkTokenOptions(jwtTemplate);
 }

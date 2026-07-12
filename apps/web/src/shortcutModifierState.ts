@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { create } from "zustand";
 
 export interface ShortcutModifierState {
   metaKey: boolean;
@@ -26,32 +26,24 @@ export function areShortcutModifierStatesEqual(
   );
 }
 
+const useShortcutModifierStateStore = create<{
+  state: ShortcutModifierState;
+  setState: (state: ShortcutModifierState) => void;
+  clear: () => void;
+}>((set) => ({
+  state: EMPTY_SHORTCUT_MODIFIER_STATE,
+  setState: (state) =>
+    set((current) => (areShortcutModifierStatesEqual(current.state, state) ? current : { state })),
+  clear: () =>
+    set((current) =>
+      areShortcutModifierStatesEqual(current.state, EMPTY_SHORTCUT_MODIFIER_STATE)
+        ? current
+        : { state: EMPTY_SHORTCUT_MODIFIER_STATE },
+    ),
+}));
+
 export function useShortcutModifierState(): ShortcutModifierState {
-  const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
-
-  useEffect(() => {
-    const onKeyboardEvent = (event: KeyboardEvent) => {
-      setState((current) => shortcutModifierStateAfterKeyboardEvent(current, event));
-    };
-    const onWindowBlur = () => {
-      setState((current) =>
-        areShortcutModifierStatesEqual(current, EMPTY_SHORTCUT_MODIFIER_STATE)
-          ? current
-          : EMPTY_SHORTCUT_MODIFIER_STATE,
-      );
-    };
-
-    window.addEventListener("keydown", onKeyboardEvent, true);
-    window.addEventListener("keyup", onKeyboardEvent, true);
-    window.addEventListener("blur", onWindowBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyboardEvent, true);
-      window.removeEventListener("keyup", onKeyboardEvent, true);
-      window.removeEventListener("blur", onWindowBlur);
-    };
-  }, []);
-
-  return state;
+  return useShortcutModifierStateStore((store) => store.state);
 }
 
 function normalizeModifierKey(key: string): keyof ShortcutModifierState | null {
@@ -72,25 +64,33 @@ function normalizeModifierKey(key: string): keyof ShortcutModifierState | null {
   }
 }
 
-export function shortcutModifierStateAfterKeyboardEvent(
-  currentState: ShortcutModifierState,
-  event: KeyboardEvent,
-): ShortcutModifierState {
+export function syncShortcutModifierStateFromKeyboardEvent(event: KeyboardEvent): void {
   const normalizedModifierKey = normalizeModifierKey(event.key);
-  let nextState: ShortcutModifierState;
   if (normalizedModifierKey) {
-    nextState = {
+    const currentState = useShortcutModifierStateStore.getState().state;
+    useShortcutModifierStateStore.getState().setState({
       ...currentState,
       [normalizedModifierKey]: event.type === "keydown",
-    };
-  } else {
-    nextState = {
-      metaKey: event.metaKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
-    };
+    });
+    return;
   }
 
-  return areShortcutModifierStatesEqual(currentState, nextState) ? currentState : nextState;
+  useShortcutModifierStateStore.getState().setState({
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
+    shiftKey: event.shiftKey,
+  });
+}
+
+export function setShortcutModifierState(state: ShortcutModifierState): void {
+  useShortcutModifierStateStore.getState().setState(state);
+}
+
+export function clearShortcutModifierState(): void {
+  useShortcutModifierStateStore.getState().clear();
+}
+
+export function readShortcutModifierState(): ShortcutModifierState {
+  return useShortcutModifierStateStore.getState().state;
 }

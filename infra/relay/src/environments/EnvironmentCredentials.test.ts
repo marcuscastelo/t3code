@@ -4,93 +4,11 @@ import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import * as RelayDb from "../db.ts";
+import { RelayDb, type RelayDatabase } from "../db.ts";
 import { relayEnvironmentCredentials } from "../persistence/schema.ts";
 import * as EnvironmentCredentials from "./EnvironmentCredentials.ts";
 
 describe("EnvironmentCredentials", () => {
-  it.effect("reports the credential creation persistence stage and preserves its cause", () => {
-    const cause = new Error("database unavailable");
-    const fakeDb = {
-      insert: (table: unknown) => {
-        expect(table).toBe(relayEnvironmentCredentials);
-        return {
-          values: () => Effect.void,
-        };
-      },
-      update: (table: unknown) => {
-        expect(table).toBe(relayEnvironmentCredentials);
-        return {
-          set: () => ({
-            where: () => Effect.fail(cause),
-          }),
-        };
-      },
-    } as unknown as RelayDb.RelayDb["Service"];
-
-    return Effect.gen(function* () {
-      const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
-      const error = yield* Effect.flip(
-        credentials.create({
-          environmentId: "env_test",
-          environmentPublicKey: "sensitive-public-key-material",
-        }),
-      );
-
-      expect(error).toMatchObject({
-        _tag: "EnvironmentCredentialCreatePersistenceError",
-        stage: "revoke-previous-credentials",
-        environmentId: "env_test",
-      });
-      expect(error.credentialId).toMatch(/^[0-9a-f]{64}$/);
-      expect(error.cause).toBe(cause);
-      expect(error).not.toHaveProperty("environmentPublicKey");
-    }).pipe(
-      Effect.provide(
-        EnvironmentCredentials.layer.pipe(
-          Layer.provide(NodeCryptoLayer.layer),
-          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
-        ),
-      ),
-    );
-  });
-
-  it.effect("does not retain credential tokens when lookup persistence fails", () => {
-    const cause = new Error("database unavailable");
-    const token = "t3env_sensitive-credential-token";
-    const fakeDb = {
-      select: () => ({
-        from: (table: unknown) => {
-          expect(table).toBe(relayEnvironmentCredentials);
-          return {
-            where: () => ({
-              limit: () => Effect.fail(cause),
-            }),
-          };
-        },
-      }),
-    } as unknown as RelayDb.RelayDb["Service"];
-
-    return Effect.gen(function* () {
-      const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
-      const error = yield* Effect.flip(credentials.authenticate(token));
-
-      expect(error).toMatchObject({
-        _tag: "EnvironmentCredentialAuthenticatePersistenceError",
-        stage: "lookup-credential",
-      });
-      expect(error.cause).toBe(cause);
-      expect(error).not.toHaveProperty("token");
-    }).pipe(
-      Effect.provide(
-        EnvironmentCredentials.layer.pipe(
-          Layer.provide(NodeCryptoLayer.layer),
-          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
-        ),
-      ),
-    );
-  });
-
   it.effect(
     "creates opaque credentials and revokes only older credentials for the same key",
     () => {
@@ -129,7 +47,7 @@ describe("EnvironmentCredentials", () => {
             }),
           };
         },
-      } as unknown as RelayDb.RelayDb["Service"];
+      } as unknown as RelayDatabase;
 
       return Effect.gen(function* () {
         const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
@@ -169,7 +87,7 @@ describe("EnvironmentCredentials", () => {
         Effect.provide(
           EnvironmentCredentials.layer.pipe(
             Layer.provide(NodeCryptoLayer.layer),
-            Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+            Layer.provide(Layer.succeed(RelayDb, fakeDb)),
           ),
         ),
       );
@@ -200,7 +118,7 @@ describe("EnvironmentCredentials", () => {
           },
         };
       },
-    } as unknown as RelayDb.RelayDb["Service"];
+    } as unknown as RelayDatabase;
 
     return Effect.gen(function* () {
       const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
@@ -232,7 +150,7 @@ describe("EnvironmentCredentials", () => {
       Effect.provide(
         EnvironmentCredentials.layer.pipe(
           Layer.provide(NodeCryptoLayer.layer),
-          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+          Layer.provide(Layer.succeed(RelayDb, fakeDb)),
         ),
       ),
     );

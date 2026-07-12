@@ -1,4 +1,4 @@
-import * as NodeAssert from "node:assert/strict";
+import assert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -238,11 +238,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.equal(session.provider, "opencode");
-      NodeAssert.equal(session.threadId, "thread-opencode");
-      NodeAssert.deepEqual(runtimeMock.state.startCalls, []);
-      NodeAssert.deepEqual(runtimeMock.state.sessionCreateUrls, ["http://127.0.0.1:9999"]);
-      NodeAssert.deepEqual(runtimeMock.state.authHeaders, [
+      assert.equal(session.provider, "opencode");
+      assert.equal(session.threadId, "thread-opencode");
+      assert.deepEqual(runtimeMock.state.startCalls, []);
+      assert.deepEqual(runtimeMock.state.sessionCreateUrls, ["http://127.0.0.1:9999"]);
+      assert.deepEqual(runtimeMock.state.authHeaders, [
         `Basic ${btoa("opencode:secret-password")}`,
       ]);
     }),
@@ -259,8 +259,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
 
       yield* adapter.stopSession(asThreadId("thread-opencode"));
 
-      NodeAssert.deepEqual(runtimeMock.state.startCalls, []);
-      NodeAssert.deepEqual(
+      assert.deepEqual(runtimeMock.state.startCalls, []);
+      assert.deepEqual(
         runtimeMock.state.abortCalls.includes("http://127.0.0.1:9999/session"),
         true,
       );
@@ -286,7 +286,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       yield* adapter.stopSession(threadId);
 
       const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
-      NodeAssert.deepEqual(
+      assert.deepEqual(
         events.map((event) => event.type),
         ["session.started", "thread.started", "session.exited"],
       );
@@ -316,11 +316,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       yield* Effect.exit(adapter.stopAll());
       const sessions = yield* adapter.listSessions();
 
-      NodeAssert.deepEqual(runtimeMock.state.closeCalls, [
+      assert.deepEqual(runtimeMock.state.closeCalls, [
         "http://127.0.0.1:9999",
         "http://127.0.0.1:9999",
       ]);
-      NodeAssert.deepEqual(sessions, []);
+      assert.deepEqual(sessions, []);
     }),
   );
 
@@ -348,7 +348,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         scopeClosed = true;
 
         const exit = yield* Fiber.await(eventsFiber).pipe(Effect.timeout("1 second"));
-        NodeAssert.equal(Exit.hasInterrupts(exit), true);
+        assert.equal(Exit.hasInterrupts(exit), true);
       } finally {
         if (!scopeClosed) {
           yield* Scope.close(scope, Exit.void).pipe(Effect.ignore);
@@ -379,19 +379,19 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         .pipe(Effect.flip);
       const sessions = yield* adapter.listSessions();
 
-      NodeAssert.equal(error._tag, "ProviderAdapterRequestError");
+      assert.equal(error._tag, "ProviderAdapterRequestError");
       if (error._tag !== "ProviderAdapterRequestError") {
         throw new Error("Unexpected error type");
       }
-      NodeAssert.equal(error.detail, "prompt failed");
-      NodeAssert.equal(
+      assert.equal(error.detail, "prompt failed");
+      assert.equal(
         error.message,
         "Provider adapter request failed (opencode) for session.promptAsync: prompt failed",
       );
-      NodeAssert.equal(sessions.length, 1);
-      NodeAssert.equal(sessions[0]?.status, "ready");
-      NodeAssert.equal(sessions[0]?.activeTurnId, undefined);
-      NodeAssert.equal(sessions[0]?.lastError, "prompt failed");
+      assert.equal(sessions.length, 1);
+      assert.equal(sessions[0]?.status, "ready");
+      assert.equal(sessions[0]?.activeTurnId, undefined);
+      assert.equal(sessions[0]?.lastError, "prompt failed");
     }),
   );
 
@@ -424,13 +424,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           model: "openai/gpt-5",
         },
       });
-      NodeAssert.equal(String(steeredTurn.turnId), String(turn.turnId));
+      assert.equal(String(steeredTurn.turnId), String(turn.turnId));
 
       const sessions = yield* adapter.listSessions();
       const session = sessions.find((entry) => entry.threadId === threadId);
-      NodeAssert.equal(session?.status, "running");
-      NodeAssert.equal(String(session?.activeTurnId), String(turn.turnId));
-      NodeAssert.equal(runtimeMock.state.promptCalls.length, 2);
+      assert.equal(session?.status, "running");
+      assert.equal(String(session?.activeTurnId), String(turn.turnId));
+      assert.equal(runtimeMock.state.promptCalls.length, 2);
     }),
   );
 
@@ -466,11 +466,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         .pipe(Effect.flip);
 
       // The original turn keeps running — only the steer prompt failed.
-      NodeAssert.equal(error._tag, "ProviderAdapterRequestError");
+      assert.equal(error._tag, "ProviderAdapterRequestError");
       const sessions = yield* adapter.listSessions();
       const session = sessions.find((entry) => entry.threadId === threadId);
-      NodeAssert.equal(session?.status, "running");
-      NodeAssert.equal(String(session?.activeTurnId), String(turn.turnId));
+      assert.equal(session?.status, "running");
+      assert.equal(String(session?.activeTurnId), String(turn.turnId));
     }),
   );
 
@@ -508,7 +508,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         ),
       });
 
-      NodeAssert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
+      assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
         sessionID: "http://127.0.0.1:9999/session",
         model: {
           providerID: "anthropic",
@@ -552,7 +552,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         input: "Fix it",
       });
 
-      NodeAssert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
+      assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
         sessionID: "http://127.0.0.1:9999/session",
         model: {
           providerID: "anthropic",
@@ -596,15 +596,15 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         })
         .pipe(Effect.flip);
 
-      NodeAssert.equal(error._tag, "ProviderAdapterValidationError");
+      assert.equal(error._tag, "ProviderAdapterValidationError");
       if (error._tag !== "ProviderAdapterValidationError") {
         throw new Error("Unexpected error type");
       }
-      NodeAssert.equal(
+      assert.equal(
         error.issue,
         "OpenCode model selection is bound to instance 'opencode', expected 'opencode_zen'.",
       );
-      NodeAssert.deepEqual(runtimeMock.state.promptCalls, []);
+      assert.deepEqual(runtimeMock.state.promptCalls, []);
     }).pipe(Effect.provide(adapterLayer));
   });
 
@@ -631,10 +631,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
 
       const snapshot = yield* adapter.rollbackThread(threadId, 2);
 
-      NodeAssert.deepEqual(runtimeMock.state.revertCalls, [
+      assert.deepEqual(runtimeMock.state.revertCalls, [
         { sessionID: "http://127.0.0.1:9999/session" },
       ]);
-      NodeAssert.deepEqual(snapshot.turns, []);
+      assert.deepEqual(snapshot.turns, []);
     }),
   );
 
@@ -644,11 +644,11 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       const overlapDelta = appendOpenCodeAssistantTextDelta(firstUpdate.latestText, "lo world");
       const secondUpdate = mergeOpenCodeAssistantText(overlapDelta.nextText, "Hellolo world");
 
-      NodeAssert.deepEqual(
+      assert.deepEqual(
         [firstUpdate.deltaToEmit, overlapDelta.deltaToEmit, secondUpdate.deltaToEmit],
         ["Hello", "lo world", ""],
       );
-      NodeAssert.equal(secondUpdate.latestText, "Hellolo world");
+      assert.equal(secondUpdate.latestText, "Hellolo world");
     }),
   );
 
@@ -721,14 +721,14 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
 
       const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
       const deltas = events.filter((event) => event.type === "content.delta");
-      NodeAssert.deepEqual(
+      assert.deepEqual(
         deltas.map((event) => (event.type === "content.delta" ? event.payload.delta : "")),
         ["A B", "Bonus"],
       );
-      NodeAssert.equal(events.at(-1)?.type, "item.completed");
+      assert.equal(events.at(-1)?.type, "item.completed");
       const completed = events.at(-1);
       if (completed?.type === "item.completed") {
-        NodeAssert.equal(completed.payload.detail, "A BBonus");
+        assert.equal(completed.payload.detail, "A BBonus");
       }
     }),
   );
@@ -820,27 +820,27 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         return started;
       }).pipe(Effect.provide(adapterLayer));
 
-      NodeAssert.equal(session.threadId, "thread-native-log");
-      NodeAssert.equal(nativeEvents.length, 1);
-      NodeAssert.equal(
+      assert.equal(session.threadId, "thread-native-log");
+      assert.equal(nativeEvents.length, 1);
+      assert.equal(
         nativeEvents.some((record) => record.event?.provider === "opencode"),
         true,
       );
-      NodeAssert.equal(
+      assert.equal(
         nativeEvents.some(
           (record) => record.event?.providerThreadId === "http://127.0.0.1:9999/session",
         ),
         true,
       );
-      NodeAssert.equal(
+      assert.equal(
         nativeEvents.some((record) => record.event?.threadId === "thread-native-log"),
         true,
       );
-      NodeAssert.equal(
+      assert.equal(
         nativeEvents.some((record) => record.event?.type === "message.updated"),
         true,
       );
-      NodeAssert.equal(
+      assert.equal(
         nativeThreadIds.every((threadId) => threadId === "thread-native-log"),
         true,
       );
@@ -911,9 +911,9 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         };
       }).pipe(Effect.provide(adapterLayer));
 
-      NodeAssert.equal(sessions.length, 1);
-      NodeAssert.equal(sessions[0]?.threadId, "thread-native-log-failure");
-      NodeAssert.deepEqual(closeCallsDuringRun, []);
+      assert.equal(sessions.length, 1);
+      assert.equal(sessions[0]?.threadId, "thread-native-log-failure");
+      assert.deepEqual(closeCallsDuringRun, []);
     }),
   );
 });

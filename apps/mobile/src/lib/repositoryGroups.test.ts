@@ -3,11 +3,15 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
 import { groupProjectsByRepository } from "./repositoryGroups";
-import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  EnvironmentScopedProjectShell,
+  EnvironmentScopedThreadShell,
+} from "@t3tools/client-runtime";
 
 function makeProject(
-  input: Partial<EnvironmentProject> & Pick<EnvironmentProject, "environmentId" | "id" | "title">,
-): EnvironmentProject {
+  input: Partial<EnvironmentScopedProjectShell> &
+    Pick<EnvironmentScopedProjectShell, "environmentId" | "id" | "title">,
+): EnvironmentScopedProjectShell {
   return {
     workspaceRoot: `/workspaces/${input.id}`,
     repositoryIdentity: null,
@@ -20,14 +24,18 @@ function makeProject(
 }
 
 function makeThread(
-  input: Partial<EnvironmentThreadShell> &
-    Pick<EnvironmentThreadShell, "environmentId" | "id" | "projectId" | "title" | "modelSelection">,
-): EnvironmentThreadShell {
+  input: Partial<EnvironmentScopedThreadShell> &
+    Pick<
+      EnvironmentScopedThreadShell,
+      "environmentId" | "id" | "projectId" | "title" | "modelSelection"
+    >,
+): EnvironmentScopedThreadShell {
   return {
     runtimeMode: "full-access",
     interactionMode: "default",
     branch: null,
     worktreePath: null,
+    worktreeOwnership: null,
     latestTurn: null,
     createdAt: "2026-04-01T00:00:00.000Z",
     updatedAt: "2026-04-01T00:00:00.000Z",

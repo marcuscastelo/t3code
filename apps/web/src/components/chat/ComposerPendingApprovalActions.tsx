@@ -8,7 +8,7 @@ interface ComposerPendingApprovalActionsProps {
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
-  ) => Promise<unknown>;
+  ) => Promise<void>;
 }
 
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({

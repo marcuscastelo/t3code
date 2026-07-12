@@ -1,8 +1,18 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import { stripPairingTokenFromUrl } from "@t3tools/shared/remote";
-import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import {
+  bootstrapRemoteBearerSession,
+  fetchRemoteEnvironmentDescriptor,
+} from "@t3tools/client-runtime";
+import { resolveRemotePairingTarget, stripPairingTokenFromUrl } from "@t3tools/shared/remote";
+import * as Effect from "effect/Effect";
+import { mobileAuthClientMetadata } from "./authClientMetadata";
+import { mobileRuntime } from "./runtime";
 
-export { authClientMetadata } from "./authClientMetadata";
+export { mobileAuthClientMetadata } from "./authClientMetadata";
+
+export interface RemoteConnectionInput {
+  readonly pairingUrl: string;
+}
 
 export interface SavedRemoteConnection {
   readonly environmentId: EnvironmentId;
@@ -17,7 +27,12 @@ export interface SavedRemoteConnection {
   readonly relayManaged?: true;
 }
 
-export type RemoteClientConnectionState = EnvironmentConnectionPhase;
+export type RemoteClientConnectionState =
+  | "idle"
+  | "connecting"
+  | "ready"
+  | "reconnecting"
+  | "disconnected";
 
 export function redactPairingCredential(pairingUrl: string): string {
   const trimmed = pairingUrl.trim();
@@ -43,4 +58,39 @@ export function toStableSavedRemoteConnection(
 
   const { dpopAccessToken: _, ...stableConnection } = connection;
   return stableConnection;
+}
+
+export async function bootstrapRemoteConnection(
+  input: RemoteConnectionInput,
+): Promise<SavedRemoteConnection> {
+  const target = resolveRemotePairingTarget({
+    pairingUrl: input.pairingUrl,
+  });
+
+  const { descriptor, bootstrap } = await mobileRuntime.runPromise(
+    Effect.all(
+      {
+        descriptor: fetchRemoteEnvironmentDescriptor({
+          httpBaseUrl: target.httpBaseUrl,
+        }),
+        bootstrap: bootstrapRemoteBearerSession({
+          httpBaseUrl: target.httpBaseUrl,
+          credential: target.credential,
+          clientMetadata: mobileAuthClientMetadata(),
+        }),
+      },
+      { concurrency: "unbounded" },
+    ),
+  );
+
+  return {
+    environmentId: descriptor.environmentId,
+    environmentLabel: descriptor.label,
+    pairingUrl: redactPairingCredential(input.pairingUrl),
+    displayUrl: target.httpBaseUrl,
+    httpBaseUrl: target.httpBaseUrl,
+    wsBaseUrl: target.wsBaseUrl,
+    bearerToken: bootstrap.access_token,
+    authenticationMethod: "bearer",
+  };
 }

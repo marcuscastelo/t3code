@@ -1,10 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useMemo, useState } from "react";
 
-import { ApprovalRequestId, type ProviderApprovalDecision } from "@t3tools/contracts";
+import { ApprovalRequestId, CommandId, type ProviderApprovalDecision } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
-import { threadEnvironment } from "../state/threads";
 import { scopedRequestKey } from "../lib/scopedEntities";
 import {
   buildPendingUserInputAnswers,
@@ -13,10 +12,11 @@ import {
   setPendingUserInputCustomAnswer,
   type PendingUserInputDraftAnswer,
 } from "../lib/threadActivity";
+import { uuidv4 } from "../lib/uuid";
 import { appAtomRegistry } from "./atom-registry";
+import { getEnvironmentClient } from "./environment-session-registry";
 import { useSelectedThreadDetail } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
-import { useAtomCommand } from "./use-atom-command";
 
 const userInputDraftsByRequestKeyAtom = Atom.make<
   Record<string, Record<string, PendingUserInputDraftAnswer>>
@@ -54,14 +54,6 @@ function setUserInputDraftCustomAnswer(
 }
 
 export function useSelectedThreadRequests() {
-  const respondToApproval = useAtomCommand(
-    threadEnvironment.respondToApproval,
-    "thread approval response",
-  );
-  const respondToUserInput = useAtomCommand(
-    threadEnvironment.respondToUserInput,
-    "thread user input response",
-  );
   const { selectedThread: selectedThreadShell } = useThreadSelection();
   const selectedThread = useSelectedThreadDetail();
   const userInputDraftsByRequestKey = useAtomValue(userInputDraftsByRequestKeyAtom);
@@ -120,19 +112,26 @@ export function useSelectedThreadRequests() {
         return;
       }
 
+      const client = getEnvironmentClient(selectedThreadShell.environmentId);
+      if (!client) {
+        return;
+      }
+
       setRespondingApprovalId(requestId);
-      const result = await respondToApproval({
-        environmentId: selectedThreadShell.environmentId,
-        input: {
+      try {
+        await client.orchestration.dispatchCommand({
+          type: "thread.approval.respond",
+          commandId: CommandId.make(uuidv4()),
           threadId: selectedThreadShell.id,
           requestId,
           decision,
-        },
-      });
-      setRespondingApprovalId((current) => (current === requestId ? null : current));
-      return result;
+          createdAt: new Date().toISOString(),
+        });
+      } finally {
+        setRespondingApprovalId((current) => (current === requestId ? null : current));
+      }
     },
-    [respondToApproval, selectedThreadShell],
+    [selectedThreadShell],
   );
 
   const onSubmitUserInput = useCallback(async () => {
@@ -140,25 +139,27 @@ export function useSelectedThreadRequests() {
       return;
     }
 
+    const client = getEnvironmentClient(selectedThreadShell.environmentId);
+    if (!client) {
+      return;
+    }
+
     setRespondingUserInputId(activePendingUserInput.requestId);
-    const result = await respondToUserInput({
-      environmentId: selectedThreadShell.environmentId,
-      input: {
+    try {
+      await client.orchestration.dispatchCommand({
+        type: "thread.user-input.respond",
+        commandId: CommandId.make(uuidv4()),
         threadId: selectedThreadShell.id,
         requestId: activePendingUserInput.requestId,
         answers: activePendingUserInputAnswers,
-      },
-    });
-    setRespondingUserInputId((current) =>
-      current === activePendingUserInput.requestId ? null : current,
-    );
-    return result;
-  }, [
-    activePendingUserInput,
-    activePendingUserInputAnswers,
-    respondToUserInput,
-    selectedThreadShell,
-  ]);
+        createdAt: new Date().toISOString(),
+      });
+    } finally {
+      setRespondingUserInputId((current) =>
+        current === activePendingUserInput.requestId ? null : current,
+      );
+    }
+  }, [activePendingUserInput, activePendingUserInputAnswers, selectedThreadShell]);
 
   return {
     activePendingApproval,

@@ -10,16 +10,16 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
-import type * as ClaudeAdapter from "../Services/ClaudeAdapter.ts";
-import type * as CodexAdapter from "../Services/CodexAdapter.ts";
-import type * as CursorAdapter from "../Services/CursorAdapter.ts";
-import type * as OpenCodeAdapter from "../Services/OpenCodeAdapter.ts";
-import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
-import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
+import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
+import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
+import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
+import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
-import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
-import * as ProviderAdapterRegistryLayer from "./ProviderAdapterRegistry.ts";
+import type { TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
+import { ProviderAdapterRegistryLive } from "./ProviderAdapterRegistry.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
@@ -27,7 +27,7 @@ const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 
-const fakeCodexAdapter: CodexAdapter.CodexAdapterShape = {
+const fakeCodexAdapter: CodexAdapterShape = {
   provider: CODEX_DRIVER,
   capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
@@ -44,7 +44,7 @@ const fakeCodexAdapter: CodexAdapter.CodexAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-const fakeClaudeAdapter: ClaudeAdapter.ClaudeAdapterShape = {
+const fakeClaudeAdapter: ClaudeAdapterShape = {
   provider: CLAUDE_AGENT_DRIVER,
   capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
@@ -61,7 +61,7 @@ const fakeClaudeAdapter: ClaudeAdapter.ClaudeAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-const fakeOpenCodeAdapter: OpenCodeAdapter.OpenCodeAdapterShape = {
+const fakeOpenCodeAdapter: OpenCodeAdapterShape = {
   provider: OPENCODE_DRIVER,
   capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
@@ -78,7 +78,7 @@ const fakeOpenCodeAdapter: OpenCodeAdapter.OpenCodeAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-const fakeCursorAdapter: CursorAdapter.CursorAdapterShape = {
+const fakeCursorAdapter: CursorAdapterShape = {
   provider: CURSOR_DRIVER,
   capabilities: { sessionModelSwitch: "in-session" },
   startSession: vi.fn(),
@@ -124,7 +124,7 @@ const makeFakeInstance = (
       streamChanges: Stream.empty,
     },
     adapter,
-    textGeneration: {} as unknown as TextGeneration.TextGeneration["Service"],
+    textGeneration: {} as unknown as TextGenerationShape,
   };
 };
 
@@ -135,7 +135,7 @@ const fakeInstances: ReadonlyArray<ProviderInstance> = [
   makeFakeInstance("cursor", fakeCursorAdapter),
 ];
 
-const fakeInstanceRegistryLayer = Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+const fakeInstanceRegistryLayer = Layer.succeed(ProviderInstanceRegistry, {
   getInstance: (instanceId) =>
     Effect.succeed(fakeInstances.find((instance) => instance.instanceId === instanceId)),
   listInstances: Effect.succeed(fakeInstances),
@@ -147,17 +147,14 @@ const fakeInstanceRegistryLayer = Layer.succeed(ProviderInstanceRegistry.Provide
 });
 
 const layer = Layer.mergeAll(
-  Layer.provide(
-    ProviderAdapterRegistryLayer.ProviderAdapterRegistryLive,
-    fakeInstanceRegistryLayer,
-  ),
+  Layer.provide(ProviderAdapterRegistryLive, fakeInstanceRegistryLayer),
   NodeServices.layer,
 );
 
 it.layer(layer)("ProviderAdapterRegistryLive", (it) => {
   it("resolves adapters and routing metadata from provider instances", () =>
     Effect.gen(function* () {
-      const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
+      const registry = yield* ProviderAdapterRegistry;
       const claudeInstanceId = defaultInstanceIdForDriver(CLAUDE_AGENT_DRIVER);
 
       const adapter = yield* registry.getByInstance(claudeInstanceId);

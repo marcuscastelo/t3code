@@ -21,11 +21,9 @@ export type ComposerProviderStateInput = {
   provider: ProviderDriverKind;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
-  promptInjectionState?: ComposerPromptInjectionState;
+  prompt: string;
   modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined;
 };
-
-export type ComposerPromptInjectionState = "none" | "ultrathink";
 
 export type ComposerProviderState = {
   provider: ProviderDriverKind;
@@ -48,12 +46,8 @@ type TraitsRenderInput = {
   onPromptChange: (prompt: string) => void;
 };
 
-export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
-  return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
-}
-
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
-  const { provider, model, models, modelOptions, promptInjectionState = "none" } = input;
+  const { provider, model, models, prompt, modelOptions } = input;
   const caps = getProviderModelCapabilities(models, model, provider);
   const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
   const primarySelectDescriptor = descriptors.find(
@@ -64,7 +58,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   const promptEffort = typeof primaryValue === "string" ? primaryValue : null;
   const ultrathinkActive =
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
-    promptInjectionState === "ultrathink";
+    isClaudeUltrathinkPrompt(prompt);
 
   return {
     provider,

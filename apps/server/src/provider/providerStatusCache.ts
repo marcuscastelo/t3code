@@ -4,7 +4,7 @@ import {
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
 } from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -134,7 +134,7 @@ export const readProviderStatusCache = (filePath: string) =>
         onFailure: (cause) =>
           Effect.logWarning("failed to parse provider status cache, ignoring", {
             path: filePath,
-            errorTag: causeErrorTag(cause),
+            issues: Cause.pretty(cause),
           }).pipe(Effect.as(undefined)),
         onSuccess: Effect.succeed,
       }),

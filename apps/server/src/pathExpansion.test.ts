@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import { expandHomePath } from "./pathExpansion.ts";
@@ -17,15 +17,15 @@ describe("expandHomePath", () => {
   });
 
   it("expands a lone tilde to the home directory", () => {
-    expect(expandHomePath("~")).toBe(NodeOS.homedir());
+    expect(expandHomePath("~")).toBe(homedir());
   });
 
   it("expands ~/ to a subpath of the home directory", () => {
-    expect(expandHomePath("~/.codex-work")).toBe(NodePath.join(NodeOS.homedir(), ".codex-work"));
+    expect(expandHomePath("~/.codex-work")).toBe(join(homedir(), ".codex-work"));
   });
 
   it("expands a Windows-style ~\\ prefix", () => {
-    expect(expandHomePath("~\\.codex")).toBe(NodePath.join(NodeOS.homedir(), ".codex"));
+    expect(expandHomePath("~\\.codex")).toBe(join(homedir(), ".codex"));
   });
 
   it("does not expand ~user paths", () => {

@@ -5,9 +5,9 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopClientSettings from "../../settings/DesktopClientSettings.ts";
 import * as IpcChannels from "../channels.ts";
-import * as DesktopIpc from "../DesktopIpc.ts";
+import { makeIpcMethod } from "../DesktopIpc.ts";
 
-export const getClientSettings = DesktopIpc.makeIpcMethod({
+export const getClientSettings = makeIpcMethod({
   channel: IpcChannels.GET_CLIENT_SETTINGS_CHANNEL,
   payload: Schema.Void,
   result: Schema.NullOr(ClientSettingsSchema),
@@ -17,7 +17,7 @@ export const getClientSettings = DesktopIpc.makeIpcMethod({
   }),
 });
 
-export const setClientSettings = DesktopIpc.makeIpcMethod({
+export const setClientSettings = makeIpcMethod({
   channel: IpcChannels.SET_CLIENT_SETTINGS_CHANNEL,
   payload: ClientSettingsSchema,
   result: Schema.Void,

@@ -21,7 +21,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   Settings,
 >(input: {
   readonly maintenanceCapabilities: ServerProviderShape["maintenanceCapabilities"];
-  readonly getSettings: Effect.Effect<Settings, ServerSettingsError>;
+  readonly getSettings: Effect.Effect<Settings>;
   readonly streamSettings: Stream.Stream<Settings>;
   readonly haveSettingsChanged: (previous: Settings, next: Settings) => boolean;
   readonly initialSnapshot: (settings: Settings) => Effect.Effect<ServerProvider>;

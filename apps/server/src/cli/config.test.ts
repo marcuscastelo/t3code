@@ -1,4 +1,4 @@
-import * as NodeOS from "node:os";
+import NodeOS from "node:os";
 
 import { assert, expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";

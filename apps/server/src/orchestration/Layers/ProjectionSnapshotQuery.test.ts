@@ -14,7 +14,8 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
+import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
+import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -27,7 +28,7 @@ const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(val
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
-    Layer.provideMerge(RepositoryIdentityResolver.layer),
+    Layer.provideMerge(RepositoryIdentityResolverLive),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
   ),
@@ -273,6 +274,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               command: "bun run build",
               icon: "build",
               runOnWorktreeCreate: false,
+              runOnEvents: [],
             },
           ],
           createdAt: "2026-02-24T00:00:00.000Z",
@@ -293,6 +295,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          worktreeOwnership: null,
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -384,6 +387,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               command: "bun run build",
               icon: "build",
               runOnWorktreeCreate: false,
+              runOnEvents: [],
             },
           ],
           createdAt: "2026-02-24T00:00:00.000Z",
@@ -403,6 +407,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          worktreeOwnership: null,
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -1440,7 +1445,7 @@ it.effect(
     const resolveCalls: string[] = [];
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provideMerge(
-        Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        Layer.succeed(RepositoryIdentityResolver, {
           resolve: (cwd: string) =>
             Effect.sync(() => {
               resolveCalls.push(cwd);

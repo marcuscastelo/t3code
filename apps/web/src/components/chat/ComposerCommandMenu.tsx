@@ -18,7 +18,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "../ui/command";
-import { PierreEntryIcon } from "./PierreEntryIcon";
+import { VscodeEntryIcon } from "./VscodeEntryIcon";
 
 export type ComposerCommandItem =
   | {
@@ -228,7 +228,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       }}
     >
       {props.item.type === "path" ? (
-        <PierreEntryIcon
+        <VscodeEntryIcon
           pathValue={props.item.path}
           kind={props.item.pathKind}
           theme={props.resolvedTheme}

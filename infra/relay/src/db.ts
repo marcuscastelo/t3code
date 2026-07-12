@@ -10,12 +10,11 @@ import * as Effect from "effect/Effect";
 
 import { relayDatabaseMode } from "./dbConfig.ts";
 
-export class RelayDb extends Context.Service<
-  RelayDb,
-  EffectPgDatabase & {
-    readonly $client: PgClient;
-  }
->()("t3code-relay/db/RelayDb") {}
+export interface RelayDatabase extends EffectPgDatabase {
+  readonly $client: PgClient;
+}
+
+export class RelayDb extends Context.Service<RelayDb, RelayDatabase>()("t3code-relay/db/RelayDb") {}
 
 export const PlanetscaleDatabase = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;

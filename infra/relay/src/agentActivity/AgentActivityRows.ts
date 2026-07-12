@@ -3,88 +3,60 @@ import { RelayAgentActivityState as RelayAgentActivityStateSchema } from "@t3too
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Function from "effect/Function";
+import { cast } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
-import * as RelayDb from "../db.ts";
+import { RelayDb } from "../db.ts";
 import { relayAgentActivityRows, relayEnvironmentLinks } from "../persistence/schema.ts";
 
 export class AgentActivityRowUpsertPersistenceError extends Schema.TaggedErrorClass<AgentActivityRowUpsertPersistenceError>()(
   "AgentActivityRowUpsertPersistenceError",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    cause: Schema.Defect(),
-  },
+  { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `Failed to persist agent activity state for environment ${this.environmentId}, thread ${this.threadId}.`;
+    return "Failed to persist agent activity state";
   }
 }
 
 export class AgentActivityRowDeletePersistenceError extends Schema.TaggedErrorClass<AgentActivityRowDeletePersistenceError>()(
   "AgentActivityRowDeletePersistenceError",
-  {
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    cause: Schema.Defect(),
-  },
+  { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `Failed to delete agent activity state for environment ${this.environmentId}, thread ${this.threadId}.`;
-  }
-}
-
-export class AgentActivityRowPruneTerminalPersistenceError extends Schema.TaggedErrorClass<AgentActivityRowPruneTerminalPersistenceError>()(
-  "AgentActivityRowPruneTerminalPersistenceError",
-  {
-    updatedBefore: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to prune terminal agent activity rows updated before ${this.updatedBefore}.`;
+    return "Failed to delete agent activity state";
   }
 }
 
 export class AgentActivityRowListPersistenceError extends Schema.TaggedErrorClass<AgentActivityRowListPersistenceError>()(
   "AgentActivityRowListPersistenceError",
-  {
-    userId: Schema.String,
-    cause: Schema.Defect(),
-  },
+  { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `Failed to list agent activity state for user ${this.userId}.`;
+    return "Failed to list agent activity state";
   }
 }
 
-export class AgentActivityRows extends Context.Service<
-  AgentActivityRows,
-  {
-    readonly upsert: (input: {
-      readonly environmentPublicKey: string;
-      readonly state: RelayAgentActivityState;
-    }) => Effect.Effect<void, AgentActivityRowUpsertPersistenceError>;
-    readonly pruneTerminal: (input: {
-      readonly updatedBefore: string;
-    }) => Effect.Effect<void, AgentActivityRowPruneTerminalPersistenceError>;
-    readonly remove: (input: {
-      readonly environmentId: string;
-      readonly environmentPublicKey: string;
-      readonly threadId: string;
-    }) => Effect.Effect<void, AgentActivityRowDeletePersistenceError>;
-    readonly listForUser: (input: {
-      readonly userId: string;
-    }) => Effect.Effect<
-      ReadonlyArray<RelayAgentActivityState>,
-      AgentActivityRowListPersistenceError
-    >;
-  }
->()("t3code-relay/agentActivity/AgentActivityRows") {}
+export interface AgentActivityRowsShape {
+  readonly upsert: (input: {
+    readonly environmentPublicKey: string;
+    readonly state: RelayAgentActivityState;
+  }) => Effect.Effect<void, AgentActivityRowUpsertPersistenceError>;
+  readonly remove: (input: {
+    readonly environmentId: string;
+    readonly environmentPublicKey: string;
+    readonly threadId: string;
+  }) => Effect.Effect<void, AgentActivityRowDeletePersistenceError>;
+  readonly listForUser: (input: {
+    readonly userId: string;
+  }) => Effect.Effect<ReadonlyArray<RelayAgentActivityState>, AgentActivityRowListPersistenceError>;
+}
+
+export class AgentActivityRows extends Context.Service<AgentActivityRows, AgentActivityRowsShape>()(
+  "t3code-relay/agentActivity/AgentActivityRows",
+) {}
 
 const decodeJsonString = Schema.decodeEffect(Schema.UnknownFromJsonString);
 const encodeJsonValue = Schema.encodeEffect(Schema.UnknownFromJsonString);
@@ -97,60 +69,45 @@ const decodeRelayAgentActivityStateJson = Schema.decodeUnknownOption(
   Schema.fromJsonString(RelayAgentActivityStateSchema),
 );
 
-export const make = Effect.gen(function* () {
-  const db = yield* RelayDb.RelayDb;
+const make = Effect.gen(function* () {
+  const db = yield* RelayDb;
 
   return AgentActivityRows.of({
-    upsert: Effect.fn("relay.agent_activity_rows.upsert")(function* (input) {
-      yield* Effect.annotateCurrentSpan({
-        "relay.environment_id": input.state.environmentId,
-        "relay.thread_id": input.state.threadId,
-      });
-      const now = yield* DateTime.now;
-      const stateJson = yield* encodeRelayAgentActivityStateJson(input.state).pipe(
-        Effect.flatMap(decodeJsonString),
-        Effect.map(Function.cast<unknown, RelayAgentActivityState>),
-        Effect.mapError(
-          (cause) =>
-            new AgentActivityRowUpsertPersistenceError({
-              environmentId: input.state.environmentId,
-              threadId: input.state.threadId,
-              cause,
-            }),
-        ),
-      );
-      yield* db
-        .insert(relayAgentActivityRows)
-        .values({
-          environmentId: input.state.environmentId,
-          environmentPublicKey: input.environmentPublicKey,
-          threadId: input.state.threadId,
-          stateJson,
-          updatedAt: input.state.updatedAt,
-          createdAt: DateTime.formatIso(now),
-        })
-        .onConflictDoUpdate({
-          target: [
-            relayAgentActivityRows.environmentId,
-            relayAgentActivityRows.environmentPublicKey,
-            relayAgentActivityRows.threadId,
-          ],
-          set: {
+    upsert: Effect.fn("relay.agent_activity_rows.upsert")(
+      function* (input) {
+        yield* Effect.annotateCurrentSpan({
+          "relay.environment_id": input.state.environmentId,
+          "relay.thread_id": input.state.threadId,
+        });
+        const now = yield* DateTime.now;
+        const stateJson = yield* encodeRelayAgentActivityStateJson(input.state).pipe(
+          Effect.flatMap(decodeJsonString),
+          Effect.map(cast<unknown, RelayAgentActivityState>),
+        );
+        yield* db
+          .insert(relayAgentActivityRows)
+          .values({
+            environmentId: input.state.environmentId,
+            environmentPublicKey: input.environmentPublicKey,
+            threadId: input.state.threadId,
             stateJson,
             updatedAt: input.state.updatedAt,
-          },
-        })
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new AgentActivityRowUpsertPersistenceError({
-                environmentId: input.state.environmentId,
-                threadId: input.state.threadId,
-                cause,
-              }),
-          ),
-        );
-    }),
+            createdAt: DateTime.formatIso(now),
+          })
+          .onConflictDoUpdate({
+            target: [
+              relayAgentActivityRows.environmentId,
+              relayAgentActivityRows.environmentPublicKey,
+              relayAgentActivityRows.threadId,
+            ],
+            set: {
+              stateJson,
+              updatedAt: input.state.updatedAt,
+            },
+          });
+      },
+      Effect.mapError((cause) => new AgentActivityRowUpsertPersistenceError({ cause })),
+    ),
 
     remove: Effect.fn("relay.agent_activity_rows.remove")(function* (input) {
       yield* Effect.annotateCurrentSpan({
@@ -166,39 +123,7 @@ export const make = Effect.gen(function* () {
             eq(relayAgentActivityRows.threadId, input.threadId),
           ),
         )
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new AgentActivityRowDeletePersistenceError({
-                environmentId: input.environmentId,
-                threadId: input.threadId,
-                cause,
-              }),
-          ),
-        );
-    }),
-
-    pruneTerminal: Effect.fn("relay.agent_activity_rows.prune_terminal")(function* (input) {
-      yield* Effect.annotateCurrentSpan({
-        "relay.agent_activity_prune.before": input.updatedBefore,
-      });
-      yield* db
-        .delete(relayAgentActivityRows)
-        .where(
-          and(
-            sql`${relayAgentActivityRows.stateJson} ->> 'phase' IN ('completed', 'failed')`,
-            lt(relayAgentActivityRows.updatedAt, input.updatedBefore),
-          ),
-        )
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new AgentActivityRowPruneTerminalPersistenceError({
-                updatedBefore: input.updatedBefore,
-                cause,
-              }),
-          ),
-        );
+        .pipe(Effect.mapError((cause) => new AgentActivityRowDeletePersistenceError({ cause })));
     }),
 
     listForUser: Effect.fn("relay.agent_activity_rows.list_for_user")(function* (input) {
@@ -232,13 +157,7 @@ export const make = Effect.gen(function* () {
           Effect.map((rows) =>
             rows.flatMap((row) => Option.toArray(decodeRelayAgentActivityStateJson(row))),
           ),
-          Effect.mapError(
-            (cause) =>
-              new AgentActivityRowListPersistenceError({
-                userId: input.userId,
-                cause,
-              }),
-          ),
+          Effect.mapError((cause) => new AgentActivityRowListPersistenceError({ cause })),
         );
     }),
   });

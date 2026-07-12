@@ -1,8 +1,6 @@
 import type { ComponentType } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
-import { requireNativeView, requireOptionalNativeModule } from "expo";
-
-import { NativeViewResolutionError } from "../../native/nativeViewResolutionError";
+import { requireNativeView } from "expo";
 
 const NATIVE_TERMINAL_MODULE_NAME = "T3TerminalSurface";
 
@@ -23,7 +21,6 @@ interface TerminalResizeEvent {
 
 export interface NativeTerminalSurfaceProps extends ViewProps {
   readonly appearanceScheme?: "light" | "dark";
-  readonly focusRequest?: number;
   readonly themeConfig?: string;
   readonly backgroundColor?: string;
   readonly foregroundColor?: string;
@@ -36,7 +33,6 @@ export interface NativeTerminalSurfaceProps extends ViewProps {
 }
 
 let cachedNativeTerminalSurfaceView: ComponentType<NativeTerminalSurfaceProps> | undefined;
-let nativeTerminalSurfaceViewResolutionFailed = false;
 
 function getExpoViewConfig(moduleName: string) {
   return (globalThis as typeof globalThis & ExpoGlobalWithViewConfig).expo?.getViewConfig?.(
@@ -49,10 +45,6 @@ export function resolveNativeTerminalSurfaceView(): ComponentType<NativeTerminal
     return cachedNativeTerminalSurfaceView;
   }
 
-  if (nativeTerminalSurfaceViewResolutionFailed) {
-    return null;
-  }
-
   if (getExpoViewConfig(NATIVE_TERMINAL_MODULE_NAME) == null) {
     return null;
   }
@@ -61,37 +53,11 @@ export function resolveNativeTerminalSurfaceView(): ComponentType<NativeTerminal
     cachedNativeTerminalSurfaceView = requireNativeView<NativeTerminalSurfaceProps>(
       NATIVE_TERMINAL_MODULE_NAME,
     );
-  } catch (cause) {
-    nativeTerminalSurfaceViewResolutionFailed = true;
-    console.error(
-      new NativeViewResolutionError({
-        nativeModuleName: NATIVE_TERMINAL_MODULE_NAME,
-        cause,
-      }),
-    );
+  } catch {
     return null;
   }
 
   return cachedNativeTerminalSurfaceView ?? null;
-}
-
-/**
- * Revision of the native hardware-keyboard handling compiled into the installed binary,
- * or `null` when the binary predates the revision constant (or the module is missing).
- * Used in terminal debug logs to detect stale native builds.
- */
-export function getNativeTerminalHardwareKeyRevision(): number | null {
-  try {
-    if (typeof requireOptionalNativeModule !== "function") {
-      return null;
-    }
-    const module = requireOptionalNativeModule<{ readonly hardwareKeyRevision?: number }>(
-      NATIVE_TERMINAL_MODULE_NAME,
-    );
-    return module?.hardwareKeyRevision ?? null;
-  } catch {
-    return null;
-  }
 }
 
 export function hasNativeTerminalSurface() {

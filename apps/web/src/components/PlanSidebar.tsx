@@ -1,9 +1,5 @@
 import { memo, useState, useCallback } from "react";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -15,6 +11,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   LoaderIcon,
+  PanelRightCloseIcon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { ActivePlanState } from "../session-logic";
@@ -28,10 +25,9 @@ import {
   stripDisplayedPlanMarkdown,
 } from "../proposedPlan";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
-import { projectEnvironment } from "~/state/projects";
+import { readEnvironmentApi } from "~/environmentApi";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useAtomCommand } from "~/state/use-atom-command";
 
 function stepStatusIcon(status: string): React.ReactNode {
   if (status === "completed") {
@@ -60,11 +56,11 @@ interface PlanSidebarProps {
   activeProposedPlan: LatestProposedPlanState | null;
   label?: string;
   environmentId: EnvironmentId;
-  threadRef?: ScopedThreadRef | undefined;
   markdownCwd: string | undefined;
   workspaceRoot: string | undefined;
   timestampFormat: TimestampFormat;
-  mode?: "sheet" | "sidebar" | "embedded";
+  mode?: "sheet" | "sidebar";
+  onClose: () => void;
 }
 
 const PlanSidebar = memo(function PlanSidebar({
@@ -72,18 +68,15 @@ const PlanSidebar = memo(function PlanSidebar({
   activeProposedPlan,
   label = "Plan",
   environmentId,
-  threadRef,
   markdownCwd,
   workspaceRoot,
   timestampFormat,
   mode = "sidebar",
+  onClose,
 }: PlanSidebarProps) {
   const [proposedPlanExpanded, setProposedPlanExpanded] = useState(false);
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
-  const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, {
-    reportFailure: false,
-  });
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "plan" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   const planMarkdown = activeProposedPlan?.planMarkdown ?? null;
   const displayedPlanMarkdown = planMarkdown ? stripDisplayedPlanMarkdown(planMarkdown) : null;
@@ -101,29 +94,24 @@ const PlanSidebar = memo(function PlanSidebar({
   }, [planMarkdown]);
 
   const handleSaveToWorkspace = useCallback(() => {
-    if (!workspaceRoot || !planMarkdown) return;
+    const api = readEnvironmentApi(environmentId);
+    if (!api || !workspaceRoot || !planMarkdown) return;
     const filename = buildProposedPlanMarkdownFilename(planMarkdown);
     setIsSavingToWorkspace(true);
-    void (async () => {
-      const result = await writeProjectFile({
-        environmentId,
-        input: {
-          cwd: workspaceRoot,
-          relativePath: filename,
-          contents: normalizePlanMarkdownForExport(planMarkdown),
-        },
-      });
-      setIsSavingToWorkspace(false);
-      if (result._tag === "Success") {
+    void api.projects
+      .writeFile({
+        cwd: workspaceRoot,
+        relativePath: filename,
+        contents: normalizePlanMarkdownForExport(planMarkdown),
+      })
+      .then((result) => {
         toastManager.add({
           type: "success",
           title: "Plan saved",
-          description: result.value.relativePath,
+          description: result.relativePath,
         });
-        return;
-      }
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+      })
+      .catch((error) => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -131,9 +119,12 @@ const PlanSidebar = memo(function PlanSidebar({
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
-      }
-    })();
-  }, [environmentId, planMarkdown, workspaceRoot, writeProjectFile]);
+      })
+      .then(
+        () => setIsSavingToWorkspace(false),
+        () => setIsSavingToWorkspace(false),
+      );
+  }, [environmentId, planMarkdown, workspaceRoot]);
 
   return (
     <div
@@ -189,6 +180,15 @@ const PlanSidebar = memo(function PlanSidebar({
               </MenuPopup>
             </Menu>
           ) : null}
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            onClick={onClose}
+            aria-label={`Close ${label.toLowerCase()} sidebar`}
+            className="text-muted-foreground/50 hover:text-foreground/70"
+          >
+            <PanelRightCloseIcon className="size-3.5" />
+          </Button>
         </div>
       </div>
 
@@ -257,7 +257,6 @@ const PlanSidebar = memo(function PlanSidebar({
                   <ChatMarkdown
                     text={displayedPlanMarkdown ?? ""}
                     cwd={markdownCwd}
-                    threadRef={threadRef}
                     isStreaming={false}
                   />
                 </div>

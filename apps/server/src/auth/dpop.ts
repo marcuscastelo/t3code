@@ -3,26 +3,37 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
-import * as Option from "effect/Option";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
-import {
-  ServerAuthDpopReplayKeyCalculationError,
-  ServerAuthDpopReplayStateRecordError,
-  ServerAuthInvalidCredentialError,
-  type ServerAuthInternalError,
-} from "./EnvironmentAuth.ts";
+import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+
+function firstHeaderValue(value: string | undefined): string | undefined {
+  const first = value?.split(",")[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
+}
+
+export function requestAbsoluteUrl(request: HttpServerRequest.HttpServerRequest): string {
+  try {
+    return new URL(request.originalUrl).href;
+  } catch {
+    const host = firstHeaderValue(request.headers.host) ?? "127.0.0.1";
+    const forwardedProto = firstHeaderValue(request.headers["x-forwarded-proto"]);
+    const proto = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : "http";
+    return new URL(request.originalUrl, `${proto}://${host}`).href;
+  }
+}
 
 export const mapDpopReplayStoreError = (
   error: ServerSecretStore.SecretStoreError,
-): ServerAuthInvalidCredentialError | ServerAuthInternalError =>
+): EnvironmentAuth.ServerAuthInvalidCredentialError | EnvironmentAuth.ServerAuthInternalError =>
   ServerSecretStore.isSecretAlreadyExistsError(error)
-    ? new ServerAuthInvalidCredentialError({
-        diagnostic: "DPoP proof replayed.",
-        cause: error,
+    ? new EnvironmentAuth.ServerAuthInvalidCredentialError({
+        reason: "invalid_credential",
+        cause: "DPoP proof replayed.",
       })
-    : new ServerAuthDpopReplayStateRecordError({
+    : new EnvironmentAuth.ServerAuthInternalError({
+        message: "Failed to record DPoP proof replay state.",
         cause: error,
       });
 
@@ -33,24 +44,19 @@ export const verifyRequestDpopProof = (input: {
 }) =>
   Effect.gen(function* () {
     const proof = input.request.headers.dpop;
-    const url = HttpServerRequest.toURL(input.request);
-    if (Option.isNone(url)) {
-      return yield* new ServerAuthInvalidCredentialError({
-        diagnostic: "Invalid DPoP request URL.",
-      });
-    }
     const now = yield* DateTime.now;
     const result = verifyDpopProof({
       proof,
       method: input.request.method,
-      url: url.value.href,
+      url: requestAbsoluteUrl(input.request),
       nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
       ...(input.expectedThumbprint ? { expectedThumbprint: input.expectedThumbprint } : {}),
       ...(input.expectedAccessToken ? { expectedAccessToken: input.expectedAccessToken } : {}),
     });
     if (!result.ok) {
-      return yield* new ServerAuthInvalidCredentialError({
-        diagnostic: result.reason,
+      return yield* new EnvironmentAuth.ServerAuthInvalidCredentialError({
+        reason: "invalid_credential",
+        cause: result.reason,
       });
     }
     const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -61,7 +67,8 @@ export const verifyRequestDpopProof = (input: {
       Effect.map(Encoding.encodeBase64Url),
       Effect.mapError(
         (cause) =>
-          new ServerAuthDpopReplayKeyCalculationError({
+          new EnvironmentAuth.ServerAuthInternalError({
+            message: "Failed to calculate DPoP replay key.",
             cause,
           }),
       ),
@@ -79,9 +86,7 @@ export const verifyRequestDpopProof = (input: {
         ),
       )
       .pipe(
-        Effect.catchIf(ServerSecretStore.isSecretStoreError, (error) =>
-          Effect.fail(mapDpopReplayStoreError(error)),
-        ),
+        Effect.catchTag("SecretStoreError", (error) => Effect.fail(mapDpopReplayStoreError(error))),
       );
     return result.thumbprint;
   });

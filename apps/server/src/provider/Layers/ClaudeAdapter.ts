@@ -69,7 +69,6 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
@@ -249,8 +248,21 @@ function toMessage(cause: unknown, fallback: string): string {
   return fallback;
 }
 
+function toProcessError(
+  cause: unknown,
+  fallback: string,
+  threadId: ThreadId,
+): ProviderAdapterProcessError {
+  return new ProviderAdapterProcessError({
+    provider: PROVIDER,
+    threadId,
+    detail: toMessage(cause, fallback),
+    cause,
+  });
+}
+
 function normalizeClaudeStreamMessages(
-  cause: Cause.Cause<ProviderAdapterProcessError>,
+  cause: Cause.Cause<{ readonly message: string }>,
 ): ReadonlyArray<string> {
   const errors: Array<string> = [];
   for (const error of Cause.prettyErrors(cause)) {
@@ -284,15 +296,25 @@ function isClaudeInterruptedMessage(message: string): boolean {
   );
 }
 
-function isClaudeInterruptedCause(cause: Cause.Cause<ProviderAdapterProcessError>): boolean {
+function isClaudeInterruptedCause(cause: Cause.Cause<{ readonly message: string }>): boolean {
   return (
     Cause.hasInterruptsOnly(cause) ||
-    normalizeClaudeStreamMessages(cause).some(isClaudeInterruptedMessage) ||
-    cause.reasons.some(
-      (reason) =>
-        Cause.isFailReason(reason) && isClaudeInterruptedMessage(toMessage(reason.error.cause, "")),
-    )
+    normalizeClaudeStreamMessages(cause).some(isClaudeInterruptedMessage)
   );
+}
+
+function messageFromClaudeStreamCause(
+  cause: Cause.Cause<{ readonly message: string }>,
+  fallback: string,
+): string {
+  return normalizeClaudeStreamMessages(cause)[0] ?? fallback;
+}
+
+function interruptionMessageFromClaudeCause(
+  cause: Cause.Cause<{ readonly message: string }>,
+): string {
+  const message = messageFromClaudeStreamCause(cause, "Claude runtime interrupted.");
+  return isClaudeInterruptedMessage(message) ? "Claude runtime interrupted." : message;
 }
 
 function resultErrorsText(result: SDKResultMessage): string {
@@ -981,7 +1003,7 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
           new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "turn/start",
-            detail: "Failed to read attachment file.",
+            detail: toMessage(cause, "Failed to read attachment file."),
             cause,
           }),
       ),
@@ -1219,7 +1241,7 @@ function toRequestError(threadId: ThreadId, method: string, cause: unknown): Pro
   return new ProviderAdapterRequestError({
     provider: PROVIDER,
     method,
-    detail: `${method} failed`,
+    detail: toMessage(cause, `${method} failed`),
     cause,
   });
 }
@@ -2573,6 +2595,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const base = {
       eventId: stamp.eventId,
       provider: PROVIDER,
+      providerInstanceId: context.session.providerInstanceId,
       createdAt: stamp.createdAt,
       threadId: context.session.threadId,
       ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
@@ -2778,6 +2801,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const base = {
       eventId: stamp.eventId,
       provider: PROVIDER,
+      providerInstanceId: context.session.providerInstanceId,
       createdAt: stamp.createdAt,
       threadId: context.session.threadId,
       ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
@@ -2887,27 +2911,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const runSdkStream = (
     context: ClaudeSessionContext,
   ): Effect.Effect<void, ProviderAdapterProcessError> =>
-    Stream.fromAsyncIterable(
-      context.query,
-      (cause) =>
-        new ProviderAdapterProcessError({
-          provider: PROVIDER,
-          threadId: context.session.threadId,
-          detail: "Claude runtime stream failed.",
-          cause,
-        }),
+    Stream.fromAsyncIterable(context.query, (cause) =>
+      toProcessError(cause, "Claude runtime stream failed.", context.session.threadId),
     ).pipe(
       Stream.takeWhile(() => !context.stopped),
       Stream.runForEach((message) =>
         handleSdkMessage(context, message).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ProviderAdapterProcessError({
-                provider: PROVIDER,
-                threadId: context.session.threadId,
-                detail: "Failed to process Claude runtime event.",
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            toProcessError(
+              cause,
+              "Failed to process Claude runtime event.",
+              context.session.threadId,
+            ),
           ),
         ),
       ),
@@ -2924,17 +2939,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (Exit.isFailure(exit)) {
       if (isClaudeInterruptedCause(exit.cause)) {
         if (context.turnState) {
-          yield* completeTurn(context, "interrupted", "Claude runtime interrupted.");
+          yield* completeTurn(
+            context,
+            "interrupted",
+            interruptionMessageFromClaudeCause(exit.cause),
+          );
         }
       } else {
-        const failures = exit.cause.reasons.flatMap((reason) =>
-          Cause.isFailReason(reason) ? [reason.error] : [],
-        );
-        const message = failures[0]?.detail ?? "Claude runtime stream failed.";
-        yield* emitRuntimeError(context, message, {
-          failureCount: failures.length,
-          failureTags: failures.map((failure) => failure._tag),
-        });
+        const message = messageFromClaudeStreamCause(exit.cause, "Claude runtime stream failed.");
+        yield* emitRuntimeError(context, message, Cause.pretty(exit.cause));
         yield* completeTurn(context, "failed", message);
       }
     } else if (context.turnState) {
@@ -2992,17 +3005,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         new ProviderAdapterProcessError({
           provider: PROVIDER,
           threadId: context.session.threadId,
-          detail: "Failed to close Claude runtime query.",
+          detail: toMessage(cause, "Failed to close Claude runtime query."),
           cause,
         }),
     }).pipe(
-      Effect.catch((error) =>
-        emitRuntimeError(context, "Failed to close Claude runtime query.", {
-          errorTag: error._tag,
-          provider: error.provider,
-          threadId: error.threadId,
-          detail: error.detail,
-        }),
+      Effect.catch((cause) =>
+        emitRuntimeError(context, "Failed to close Claude runtime query.", cause),
       ),
     );
 
@@ -3439,7 +3447,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
         ...(ultracode ? { ultracode: true } : {}),
       };
-      const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -3465,19 +3472,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         env: claudeEnvironment,
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
-          ? {
-              mcpServers: {
-                "t3-code": {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
-                  },
-                },
-              },
-            }
-          : {}),
       };
 
       yield* Effect.annotateCurrentSpan({
@@ -3515,7 +3509,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           new ProviderAdapterProcessError({
             provider: PROVIDER,
             threadId,
-            detail: "Failed to start Claude runtime session.",
+            detail: toMessage(cause, "Failed to start Claude runtime session."),
             cause,
           }),
       });

@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { VcsProcessSpawnError } from "@t3tools/contracts";
 
-import * as ServerConfig from "../config.ts";
+import { ServerConfig } from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
@@ -17,15 +17,15 @@ import * as SourceControlDiscovery from "./SourceControlDiscovery.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
 const sourceControlProviderRegistryTestLayer = (input: {
-  readonly bitbucket: Partial<BitbucketApi.BitbucketApi["Service"]>;
-  readonly process: Partial<VcsProcess.VcsProcess["Service"]>;
+  readonly bitbucket: Partial<BitbucketApi.BitbucketApiShape>;
+  readonly process: Partial<VcsProcess.VcsProcessShape>;
 }) =>
   SourceControlProviderRegistry.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3-source-control-registry-test-",
-        }).pipe(Layer.provide(NodeServices.layer)),
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-registry-test-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)(input.bitbucket),
         Layer.mock(GitHubCli.GitHubCli)({}),
@@ -88,12 +88,10 @@ it.effect("reports implemented tools separately from locally available executabl
         }),
       );
     },
-  } satisfies Partial<VcsProcess.VcsProcess["Service"]>;
+  } satisfies Partial<VcsProcess.VcsProcessShape>;
   const testLayer = SourceControlDiscovery.layer.pipe(
     Layer.provide(
-      ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-source-control-discovery-",
-      }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }),
     ),
     Layer.provide(Layer.mock(VcsProcess.VcsProcess)(processMock)),
     Layer.provide(
@@ -217,12 +215,10 @@ Logged in to gitlab.com as gitlab-user
         }),
       );
     },
-  } satisfies Partial<VcsProcess.VcsProcess["Service"]>;
+  } satisfies Partial<VcsProcess.VcsProcessShape>;
   const testLayer = SourceControlDiscovery.layer.pipe(
     Layer.provide(
-      ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-source-control-auth-discovery-",
-      }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-auth-discovery-" }),
     ),
     Layer.provide(Layer.mock(VcsProcess.VcsProcess)(processMock)),
     Layer.provide(

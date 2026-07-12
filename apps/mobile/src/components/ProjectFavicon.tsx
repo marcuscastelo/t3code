@@ -1,87 +1,65 @@
 import { SymbolView } from "expo-symbols";
-import { Image } from "expo-image";
 import { useState } from "react";
-import { View } from "react-native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { Image, View } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
-import { useAssetUrl } from "../state/assets";
 
 /* ─── Favicon cache (matches web pattern) ────────────────────────────── */
 const loadedFaviconUrls = new Set<string>();
 
 /* ─── Component ──────────────────────────────────────────────────────── */
 export function ProjectFavicon(props: {
-  readonly environmentId: EnvironmentId;
   readonly size?: number;
   readonly projectTitle: string;
+  readonly httpBaseUrl?: string | null;
   readonly workspaceRoot?: string | null;
+  readonly bearerToken?: string | null;
 }) {
   const size = props.size ?? 42;
-  const faviconUrl = useAssetUrl(
-    props.environmentId,
-    props.workspaceRoot === null || props.workspaceRoot === undefined
-      ? null
-      : { _tag: "project-favicon", cwd: props.workspaceRoot },
-  );
-
-  return (
-    <ProjectFaviconImage
-      key={faviconUrl}
-      faviconUrl={faviconUrl}
-      projectTitle={props.projectTitle}
-      size={size}
-    />
-  );
-}
-
-function ProjectFaviconImage(props: {
-  readonly faviconUrl: string | null;
-  readonly projectTitle: string;
-  readonly size: number;
-}) {
   const iconMuted = useThemeColor("--color-icon-subtle");
 
+  const faviconUrl =
+    props.httpBaseUrl && props.workspaceRoot
+      ? `${props.httpBaseUrl}/api/project-favicon?cwd=${encodeURIComponent(props.workspaceRoot)}`
+      : null;
+
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() =>
-    props.faviconUrl && loadedFaviconUrls.has(props.faviconUrl) ? "loaded" : "loading",
+    faviconUrl && loadedFaviconUrls.has(faviconUrl) ? "loaded" : "loading",
   );
 
-  const showImage = props.faviconUrl !== null && status === "loaded";
+  const showImage = faviconUrl && status === "loaded";
 
   return (
     <View
       style={{
-        width: props.size,
-        height: props.size,
+        width: size,
+        height: size,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
       {/* Folder icon fallback (matches web's FolderIcon) */}
       {!showImage ? (
-        <SymbolView
-          name="folder.fill"
-          size={props.size * 0.78}
-          tintColor={iconMuted}
-          type="monochrome"
-        />
+        <SymbolView name="folder.fill" size={size * 0.78} tintColor={iconMuted} type="monochrome" />
       ) : null}
 
       {/* Favicon image (hidden until loaded) */}
-      {props.faviconUrl ? (
+      {faviconUrl ? (
         <Image
           source={{
-            uri: props.faviconUrl,
+            uri: faviconUrl,
+            ...(props.bearerToken
+              ? { headers: { Authorization: `Bearer ${props.bearerToken}` } }
+              : {}),
           }}
-          accessibilityLabel={`${props.projectTitle} favicon`}
           style={{
-            width: props.size,
-            height: props.size,
-            borderRadius: props.size * 0.16,
+            width: size,
+            height: size,
+            borderRadius: size * 0.16,
             ...(showImage ? {} : { position: "absolute" as const, opacity: 0 }),
           }}
-          contentFit="contain"
+          resizeMode="contain"
           onLoad={() => {
-            if (props.faviconUrl) loadedFaviconUrls.add(props.faviconUrl);
+            if (faviconUrl) loadedFaviconUrls.add(faviconUrl);
             setStatus("loaded");
           }}
           onError={() => setStatus("error")}

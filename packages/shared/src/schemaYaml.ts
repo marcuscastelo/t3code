@@ -5,7 +5,6 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
-  YAMLParseError,
   parse as parseYamlString,
   stringify as stringifyYamlValue,
   type CreateNodeOptions,
@@ -23,14 +22,8 @@ export type YamlStringifyOptions = DocumentOptions &
   CreateNodeOptions &
   ToStringOptions;
 
-function formatYamlParseError(error: unknown): string {
-  if (!(error instanceof YAMLParseError)) {
-    return "Invalid YAML.";
-  }
-
-  const position = error.linePos?.[0];
-  const location = position === undefined ? "" : `, line=${position.line}, column=${position.col}`;
-  return `Invalid YAML (code=${error.code}${location}).`;
+function formatYamlError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -63,7 +56,7 @@ export function parseYaml<E extends string>(
     Effect.try({
       try: () => parseYamlString(input, options) as unknown,
       catch: (error) =>
-        new SchemaIssue.InvalidValue(Option.none(), { message: formatYamlParseError(error) }),
+        new SchemaIssue.InvalidValue(Option.some(input), { message: formatYamlError(error) }),
     }),
   );
 }
@@ -97,8 +90,8 @@ export function stringifyYaml(
   return SchemaGetter.transformOrFail((input: unknown) =>
     Effect.try({
       try: () => stringifyYamlValue(input, options),
-      catch: () =>
-        new SchemaIssue.InvalidValue(Option.none(), { message: "Failed to stringify YAML." }),
+      catch: (error) =>
+        new SchemaIssue.InvalidValue(Option.some(input), { message: formatYamlError(error) }),
     }),
   );
 }

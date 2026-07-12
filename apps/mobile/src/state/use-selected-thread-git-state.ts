@@ -2,10 +2,9 @@ import { useMemo } from "react";
 
 import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
 
-import { useBranches } from "./queries";
-import { useEnvironmentQuery } from "./query";
-import { sourceControlEnvironment } from "./sourceControl";
 import { useVcsActionState } from "./use-vcs-action-state";
+import { useVcsRefs } from "./use-vcs-refs";
+import { useSourceControlDiscovery } from "./use-source-control-discovery";
 import { useThreadSelection } from "./use-thread-selection";
 import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
@@ -21,14 +20,7 @@ export function useSelectedThreadGitState() {
     [selectedThread?.environmentId, selectedThreadCwd],
   );
   const gitActionState = useVcsActionState(selectedThreadGitTarget);
-  const sourceControlDiscovery = useEnvironmentQuery(
-    selectedThread === null
-      ? null
-      : sourceControlEnvironment.discovery({
-          environmentId: selectedThread.environmentId,
-          input: {},
-        }),
-  );
+  const sourceControlDiscovery = useSourceControlDiscovery(selectedThread?.environmentId ?? null);
 
   const selectedThreadBranchTarget = useMemo(
     () => ({
@@ -38,7 +30,7 @@ export function useSelectedThreadGitState() {
     }),
     [selectedThread?.environmentId, selectedThreadProject?.workspaceRoot],
   );
-  const selectedThreadBranchState = useBranches(selectedThreadBranchTarget);
+  const selectedThreadBranchState = useVcsRefs(selectedThreadBranchTarget);
   const selectedThreadBranches = useMemo(
     () =>
       dedupeRemoteBranchesWithLocalMatches(selectedThreadBranchState.data?.refs ?? []).filter(

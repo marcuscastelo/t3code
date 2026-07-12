@@ -24,29 +24,58 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
+export interface SourceControlRepositoryServiceShape {
+  readonly lookupRepository: (
+    input: SourceControlRepositoryLookupInput,
+  ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
+  readonly cloneRepository: (
+    input: SourceControlCloneRepositoryInput,
+  ) => Effect.Effect<SourceControlCloneRepositoryResult, SourceControlRepositoryError>;
+  readonly publishRepository: (
+    input: SourceControlPublishRepositoryInput,
+  ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
+}
+
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
-  {
-    readonly lookupRepository: (
-      input: SourceControlRepositoryLookupInput,
-    ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
-    readonly cloneRepository: (
-      input: SourceControlCloneRepositoryInput,
-    ) => Effect.Effect<SourceControlCloneRepositoryResult, SourceControlRepositoryError>;
-    readonly publishRepository: (
-      input: SourceControlPublishRepositoryInput,
-    ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
-  }
+  SourceControlRepositoryServiceShape
 >()("t3/sourceControl/SourceControlRepositoryService") {}
+
+function detailFromUnknown(cause: unknown): string {
+  if (typeof cause === "object" && cause !== null) {
+    if ("detail" in cause && typeof cause.detail === "string" && cause.detail.length > 0) {
+      return cause.detail;
+    }
+    if ("message" in cause && typeof cause.message === "string" && cause.message.length > 0) {
+      return cause.message;
+    }
+  }
+
+  return "An unexpected source control error occurred.";
+}
+
+function repositoryError(input: {
+  readonly operation: string;
+  readonly provider: SourceControlProviderKind;
+  readonly detail: string;
+  readonly cause?: unknown;
+}): SourceControlRepositoryError {
+  return new SourceControlRepositoryError({
+    provider: input.provider,
+    operation: input.operation,
+    detail: input.detail,
+    ...(input.cause === undefined ? {} : { cause: input.cause }),
+  });
+}
 
 function mapRepositoryError(operation: string, provider: SourceControlProviderKind) {
   return Effect.mapError((cause: unknown) =>
     isSourceControlRepositoryError(cause)
       ? cause
-      : new SourceControlRepositoryError({
+      : repositoryError({
           operation,
           provider,
-          detail: "The source control operation could not be completed.",
+          detail: detailFromUnknown(cause),
           cause,
         }),
   );
@@ -87,7 +116,7 @@ function expandHomePath(input: string, path: Path.Path): string {
   return input;
 }
 
-export const make = Effect.gen(function* () {
+export const make = Effect.fn("makeSourceControlRepositoryService")(function* () {
   const config = yield* ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -103,7 +132,7 @@ export const make = Effect.gen(function* () {
     }
 
     return Effect.fail(
-      new SourceControlRepositoryError({
+      repositoryError({
         operation: input.operation,
         provider: input.provider,
         detail: "Choose a source control provider before continuing.",
@@ -130,7 +159,7 @@ export const make = Effect.gen(function* () {
     function* (destinationPath: string) {
       const trimmed = destinationPath.trim();
       if (trimmed.length === 0) {
-        return yield* new SourceControlRepositoryError({
+        return yield* repositoryError({
           operation: "cloneRepository",
           provider: "unknown",
           detail: "Choose a destination path before cloning.",
@@ -144,22 +173,21 @@ export const make = Effect.gen(function* () {
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
     function* (destinationPath: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
-      if (yield* fileSystem.exists(normalizedDestination)) {
+      if (yield* fileSystem.exists(normalizedDestination).pipe(Effect.orElseSucceed(() => false))) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
           .pipe(
-            Effect.mapError(
-              (cause) =>
-                new SourceControlRepositoryError({
-                  operation: "cloneRepository",
-                  provider: "unknown",
-                  detail: "Destination path already exists and is not a directory.",
-                  cause,
-                }),
+            Effect.mapError((cause) =>
+              repositoryError({
+                operation: "cloneRepository",
+                provider: "unknown",
+                detail: "Destination path already exists and is not a directory.",
+                cause,
+              }),
             ),
           );
         if (entries.length > 0) {
-          return yield* new SourceControlRepositoryError({
+          return yield* repositoryError({
             operation: "cloneRepository",
             provider: "unknown",
             detail: "Destination path already exists and is not empty.",
@@ -196,7 +224,7 @@ export const make = Effect.gen(function* () {
     }
 
     if (!remoteUrl) {
-      return yield* new SourceControlRepositoryError({
+      return yield* repositoryError({
         operation: "cloneRepository",
         provider,
         detail: "Enter a repository path or clone URL before cloning.",
@@ -287,4 +315,4 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(SourceControlRepositoryService, make);
+export const layer = Layer.effect(SourceControlRepositoryService, make());

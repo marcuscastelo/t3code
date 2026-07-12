@@ -1,46 +1,37 @@
 import { p256 } from "@noble/curves/nist";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Encoding from "effect/Encoding";
-import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { DpopPublicJwk as DpopPublicJwkSchema, normalizeDpopHtu } from "./dpopCommon.ts";
-import type { DpopPublicJwk as DpopPublicJwkType } from "./dpopCommon.ts";
 import { stableStringify } from "./relaySigning.ts";
 
 const DPOP_TYP = "dpop+jwt";
 const DPOP_ALG = "ES256";
 const DEFAULT_MAX_AGE_SECONDS = 300;
 
-export const DpopPublicJwk = DpopPublicJwkSchema;
-export type DpopPublicJwk = DpopPublicJwkType;
-export { normalizeDpopHtu };
-
-const DpopJwtHeaderPublicJwk = Schema.Struct({
-  ...DpopPublicJwkSchema.fields,
-  d: Schema.optionalKey(Schema.Never),
+export const DpopPublicJwk = Schema.Struct({
+  kty: Schema.Literal("EC"),
+  crv: Schema.Literal("P-256"),
+  x: Schema.String.check(Schema.isNonEmpty()),
+  y: Schema.String.check(Schema.isNonEmpty()),
 });
+export type DpopPublicJwk = typeof DpopPublicJwk.Type;
+const isDpopPublicJwk = Schema.is(DpopPublicJwk);
 
-const DpopJwtHeaderJson = Schema.fromJsonString(
-  Schema.Struct({
-    typ: Schema.Literal(DPOP_TYP),
-    alg: Schema.Literal(DPOP_ALG),
-    jwk: DpopJwtHeaderPublicJwk,
-  }),
-);
-const decodeDpopJwtHeaderJson = Schema.decodeUnknownOption(DpopJwtHeaderJson);
+interface DpopJwtHeader {
+  readonly typ: string;
+  readonly alg: string;
+  readonly jwk: DpopPublicJwk;
+}
 
-const DpopJwtPayloadJson = Schema.fromJsonString(
-  Schema.Struct({
-    htm: Schema.String.check(Schema.isNonEmpty()),
-    htu: Schema.String.check(Schema.isNonEmpty()),
-    jti: Schema.String.check(Schema.isNonEmpty()),
-    iat: Schema.Int,
-    ath: Schema.optionalKey(Schema.String),
-  }),
-);
-const decodeDpopJwtPayloadJson = Schema.decodeUnknownOption(DpopJwtPayloadJson);
+interface DpopJwtPayload {
+  readonly htm: string;
+  readonly htu: string;
+  readonly jti: string;
+  readonly iat: number;
+  readonly ath?: string;
+}
 
 export type DpopVerificationResult =
   | {
@@ -58,15 +49,43 @@ function base64UrlToBytes(value: string): Uint8Array {
   return Result.getOrThrow(Encoding.decodeBase64Url(value));
 }
 
-function decodeBase64UrlDpopJwtHeader(value: string) {
-  return decodeDpopJwtHeaderJson(Result.getOrThrow(Encoding.decodeBase64UrlString(value)));
+function decodeBase64UrlJson(value: string): unknown {
+  return JSON.parse(Result.getOrThrow(Encoding.decodeBase64UrlString(value))) as unknown;
 }
 
-function decodeBase64UrlDpopJwtPayload(value: string) {
-  return decodeDpopJwtPayloadJson(Result.getOrThrow(Encoding.decodeBase64UrlString(value)));
+function isDpopJwtHeader(value: unknown): value is DpopJwtHeader {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.typ === DPOP_TYP &&
+    record.alg === DPOP_ALG &&
+    typeof record.jwk === "object" &&
+    record.jwk !== null &&
+    !("d" in record.jwk) &&
+    isDpopPublicJwk(record.jwk)
+  );
 }
 
-function dpopThumbprintInput(jwk: DpopPublicJwkType): string {
+function isDpopJwtPayload(value: unknown): value is DpopJwtPayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.htm === "string" &&
+    record.htm.length > 0 &&
+    typeof record.htu === "string" &&
+    record.htu.length > 0 &&
+    typeof record.jti === "string" &&
+    record.jti.length > 0 &&
+    typeof record.iat === "number" &&
+    Number.isInteger(record.iat)
+  );
+}
+
+function dpopThumbprintInput(jwk: DpopPublicJwk): string {
   return stableStringify({
     crv: jwk.crv,
     kty: jwk.kty,
@@ -75,7 +94,18 @@ function dpopThumbprintInput(jwk: DpopPublicJwkType): string {
   });
 }
 
-export function computeDpopJwkThumbprint(jwk: DpopPublicJwkType): string {
+export function normalizeDpopHtu(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function computeDpopJwkThumbprint(jwk: DpopPublicJwk): string {
   return Encoding.encodeBase64Url(sha256(new TextEncoder().encode(dpopThumbprintInput(jwk))));
 }
 
@@ -83,7 +113,7 @@ export function computeDpopAccessTokenHash(accessToken: string): string {
   return Encoding.encodeBase64Url(sha256(new TextEncoder().encode(accessToken)));
 }
 
-function publicKeyBytesFromJwk(jwk: DpopPublicJwkType): Uint8Array {
+function publicKeyBytesFromJwk(jwk: DpopPublicJwk): Uint8Array {
   const x = base64UrlToBytes(jwk.x);
   const y = base64UrlToBytes(jwk.y);
   if (x.length !== 32 || y.length !== 32) {
@@ -115,58 +145,53 @@ export function verifyDpopProof(input: {
   }
 
   try {
-    const header = decodeBase64UrlDpopJwtHeader(parts[0]);
-    const payload = decodeBase64UrlDpopJwtPayload(parts[1]);
-    if (Option.isNone(header)) {
+    const header = decodeBase64UrlJson(parts[0]);
+    const payload = decodeBase64UrlJson(parts[1]);
+    if (!isDpopJwtHeader(header)) {
       return { ok: false, reason: "Invalid DPoP JWT header." };
     }
-    if (Option.isNone(payload)) {
+    if (!isDpopJwtPayload(payload)) {
       return { ok: false, reason: "Invalid DPoP JWT payload." };
     }
 
-    const thumbprint = computeDpopJwkThumbprint(header.value.jwk);
+    const thumbprint = computeDpopJwkThumbprint(header.jwk);
     if (input.expectedThumbprint && thumbprint !== input.expectedThumbprint) {
       return { ok: false, reason: "DPoP key thumbprint mismatch." };
     }
-    if (payload.value.htm.toUpperCase() !== input.method.toUpperCase()) {
+    if (payload.htm.toUpperCase() !== input.method.toUpperCase()) {
       return { ok: false, reason: "DPoP method mismatch." };
     }
     const normalizedHtu = normalizeDpopHtu(input.url);
-    if (normalizedHtu === null || payload.value.htu !== normalizedHtu) {
+    if (normalizedHtu === null || payload.htu !== normalizedHtu) {
       return { ok: false, reason: "DPoP URL mismatch." };
     }
     if (input.expectedAccessToken) {
       const expectedAth = computeDpopAccessTokenHash(input.expectedAccessToken);
-      if (payload.value.ath !== expectedAth) {
+      if (payload.ath !== expectedAth) {
         return { ok: false, reason: "DPoP access token hash mismatch." };
       }
     }
 
     const maxAgeSeconds = input.maxAgeSeconds ?? DEFAULT_MAX_AGE_SECONDS;
     if (
-      payload.value.iat > input.nowEpochSeconds + 5 ||
-      input.nowEpochSeconds - payload.value.iat > maxAgeSeconds
+      payload.iat > input.nowEpochSeconds + 5 ||
+      input.nowEpochSeconds - payload.iat > maxAgeSeconds
     ) {
       return { ok: false, reason: "DPoP proof is outside the allowed time window." };
     }
 
     const signature = base64UrlToBytes(parts[2]);
     const signatureInputHash = sha256(new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
-    const verified = p256.verify(
-      signature,
-      signatureInputHash,
-      publicKeyBytesFromJwk(header.value.jwk),
-      {
-        prehash: false,
-        format: "compact",
-      },
-    );
+    const verified = p256.verify(signature, signatureInputHash, publicKeyBytesFromJwk(header.jwk), {
+      prehash: false,
+      format: "compact",
+    });
     return verified
       ? {
           ok: true,
           thumbprint,
-          jti: payload.value.jti,
-          iat: payload.value.iat,
+          jti: payload.jti,
+          iat: payload.iat,
         }
       : { ok: false, reason: "Invalid DPoP signature." };
   } catch {

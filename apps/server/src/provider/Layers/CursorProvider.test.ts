@@ -4,7 +4,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type { CursorSettings } from "@t3tools/contracts";
@@ -25,11 +24,7 @@ import {
 } from "./CursorProvider.ts";
 
 const runNode = <A, E>(
-  effect: Effect.Effect<
-    A,
-    E,
-    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
-  >,
+  effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
 ): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)));
 
 const resolveMockAgentPath = Effect.fn("resolveMockAgentPath")(function* () {
@@ -298,18 +293,6 @@ const baseCursorSettings: CursorSettings = {
   apiEndpoint: "",
   customModels: [],
 };
-const cursorAcpDiscoveryFailedMessage = [
-  "Cursor ACP model discovery failed.",
-  "Cursor CLI setup may be incomplete; install or enable the Cursor CLI, restart T3 Code, and try again.",
-  "See https://cursor.com/docs/cli/installation.",
-  "Check server logs for ACP details.",
-].join(" ");
-const missingCursorBinaryPath = "/definitely/not/installed/t3-cursor-agent";
-const cursorCliCommandMissingMessage = [
-  `Cursor CLI command \`${missingCursorBinaryPath}\` was not found.`,
-  `Install or enable the Cursor CLI, make sure \`${missingCursorBinaryPath}\` is on PATH, then restart T3 Code.`,
-  "See https://cursor.com/docs/cli/installation.",
-].join(" ");
 
 describe("getCursorFallbackModels", () => {
   it("does not publish any built-in cursor models before ACP discovery", () => {
@@ -355,11 +338,12 @@ describe("buildCursorProviderSnapshot", () => {
           auth: { status: "unauthenticated" },
           message: "Cursor Agent is not authenticated. Run `agent login` and try again.",
         },
-        discoveryWarning: cursorAcpDiscoveryFailedMessage,
+        discoveryWarning: "Cursor ACP model discovery failed. Check server logs for details.",
       }),
     ).toMatchObject({
       status: "error",
-      message: `Cursor Agent is not authenticated. Run \`agent login\` and try again. ${cursorAcpDiscoveryFailedMessage}`,
+      message:
+        "Cursor Agent is not authenticated. Run `agent login` and try again. Cursor ACP model discovery failed. Check server logs for details.",
       models: [
         {
           slug: "claude-sonnet-4-6",
@@ -427,28 +411,10 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
 });
 
 describe("checkCursorProviderStatus", () => {
-  it("reports the install docs when the Cursor CLI command is missing", async () => {
-    const provider = await runNode(
-      checkCursorProviderStatus({
-        enabled: true,
-        binaryPath: missingCursorBinaryPath,
-        apiEndpoint: "",
-        customModels: [],
-      }),
-    );
-
-    expect(provider).toMatchObject({
-      installed: false,
-      status: "error",
-      auth: { status: "unknown" },
-      message: cursorCliCommandMissingMessage,
-    });
-  });
-
   it("passes the injected environment to ACP model discovery", async () => {
     const { requestLogPath, wrapperPath } = await runNode(makeProviderStatusEnvFixture());
 
-    const provider = await runNode(
+    const provider = await Effect.runPromise(
       checkCursorProviderStatus(
         {
           enabled: true,
@@ -460,7 +426,7 @@ describe("checkCursorProviderStatus", () => {
           ...process.env,
           T3_ACP_REQUEST_LOG_PATH: requestLogPath,
         },
-      ),
+      ).pipe(Effect.provide(NodeServices.layer)),
     );
 
     expect(provider.models.map((model) => model.slug)).toEqual([
@@ -477,13 +443,13 @@ describe("discoverCursorModelsViaAcp", () => {
   it("keeps the ACP probe runtime alive long enough to discover models", async () => {
     const wrapperPath = await runNode(makeMockAgentWrapper());
 
-    const models = await runNode(
+    const models = await Effect.runPromise(
       discoverCursorModelsViaAcp({
         enabled: true,
         binaryPath: wrapperPath,
         apiEndpoint: "",
         customModels: [],
-      }).pipe(Effect.scoped),
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
     );
 
     expect(models.map((model) => model.slug)).toEqual([
@@ -499,13 +465,13 @@ describe("discoverCursorModelsViaAcp", () => {
       makeExitLogFixture("cursor-provider-exit-log-"),
     );
 
-    await runNode(
+    await Effect.runPromise(
       discoverCursorModelsViaAcp({
         enabled: true,
         binaryPath: wrapperPath,
         apiEndpoint: "",
         customModels: [],
-      }),
+      }).pipe(Effect.provide(NodeServices.layer)),
     );
 
     const exitLog = await runNode(waitForFileContent(exitLogPath));

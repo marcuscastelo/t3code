@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveActiveWorkStartedAt,
+  deriveActiveWorkTurnId,
   deriveActivePlanState,
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -300,7 +301,7 @@ describe("derivePendingUserInputs", () => {
         payload: {
           requestId: "req-user-input-stale-1",
           detail:
-            "Provider adapter request failed (codex) for item/tool/requestUserInput: Unknown pending Codex user input request: req-user-input-stale-1",
+            "ProviderAdapterRequestError: Provider adapter request failed (codex) for item/tool/requestUserInput: Unknown pending Codex user input request: req-user-input-stale-1",
         },
       }),
     ];
@@ -691,7 +692,7 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
-  it("omits tool started entries and keeps completed entries", () => {
+  it("collapses tool started entries into matching completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "tool-complete",
@@ -709,6 +710,70 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities);
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+    expect(entries[0]?.status).toBe("completed");
+  });
+
+  it("keeps open tool started entries as running work", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Ran command started",
+        kind: "tool.started",
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          detail: "bun lint",
+        },
+      }),
+    ]);
+
+    expect(entries).toMatchObject([
+      {
+        id: "tool-start",
+        label: "Ran command started",
+        status: "running",
+        command: "bun lint",
+      },
+    ]);
+  });
+
+  it("settles legacy tool lifecycle entries by item type when item ids are missing", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        summary: "Tool started",
+        kind: "tool.started",
+        payload: {
+          itemType: "command_execution",
+          detail: "bun lint",
+        },
+      }),
+      makeActivity({
+        id: "tool-update",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Tool updated",
+        kind: "tool.updated",
+        payload: {
+          itemType: "command_execution",
+          detail: "bun lint",
+        },
+      }),
+      makeActivity({
+        id: "tool-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        summary: "Ran command",
+        kind: "tool.completed",
+        payload: {
+          itemType: "command_execution",
+          detail: "bun lint\nExit code: 0",
+        },
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+    expect(entries[0]?.status).toBe("completed");
   });
 
   it("omits task.started but shows task.progress and task.completed", () => {
@@ -932,67 +997,6 @@ describe("deriveWorkLogEntries", () => {
 
     const [entry] = deriveWorkLogEntries(activities);
     expect(entry?.toolLifecycleStatus).toBe("completed");
-  });
-
-  it("preserves MCP server, tool, arguments, and results for expanded display", () => {
-    const item = {
-      type: "mcpToolCall",
-      server: "t3-code",
-      tool: "preview_status",
-      arguments: {},
-      status: "completed",
-      result: { content: [{ type: "text", text: "attached" }] },
-    };
-    const activities: OrchestrationThreadActivity[] = [
-      makeActivity({
-        id: "mcp-tool-done",
-        kind: "tool.completed",
-        summary: "t3-code · preview_status",
-        payload: {
-          itemType: "mcp_tool_call",
-          title: "t3-code · preview_status",
-          data: { item },
-        },
-      }),
-    ];
-
-    const [entry] = deriveWorkLogEntries(activities);
-    expect(entry?.toolTitle).toBe("t3-code · preview_status");
-    expect(entry?.toolData).toEqual(item);
-  });
-
-  it("keeps MCP payloads while collapsing lifecycle updates", () => {
-    const item = {
-      type: "mcpToolCall",
-      server: "t3-code",
-      tool: "preview_snapshot",
-      arguments: { interactiveOnly: true },
-      status: "completed",
-    };
-    const activities: OrchestrationThreadActivity[] = [
-      makeActivity({
-        id: "mcp-tool-progress",
-        kind: "tool.updated",
-        summary: "t3-code · preview_snapshot",
-        payload: {
-          itemType: "mcp_tool_call",
-          toolCallId: "call-1",
-          data: { item },
-        },
-      }),
-      makeActivity({
-        id: "mcp-tool-complete",
-        kind: "tool.completed",
-        summary: "t3-code · preview_snapshot",
-        payload: {
-          itemType: "mcp_tool_call",
-          toolCallId: "call-1",
-        },
-      }),
-    ];
-
-    const [entry] = deriveWorkLogEntries(activities);
-    expect(entry?.toolData).toEqual(item);
   });
 
   it("unwraps PowerShell command wrappers for displayed command text", () => {
@@ -1259,7 +1263,53 @@ describe("deriveWorkLogEntries", () => {
       id: "read-complete",
       toolTitle: "Read File",
       detail: 'import * as Effect from "effect/Effect"',
+      toolOutput: 'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"',
       itemType: "dynamic_tool_call",
+    });
+  });
+
+  it("keeps dynamic tool response output on collapsed completed tool rows", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "ask-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Tool call",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          detail: 'AskUserQuestion: {"questions":[{"question":"Continue?"}]}',
+          data: {
+            toolCallId: "tool-ask-1",
+            kind: "ask",
+          },
+        },
+      }),
+      makeActivity({
+        id: "ask-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Tool call completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Tool call",
+          data: {
+            toolCallId: "tool-ask-1",
+            kind: "ask",
+            rawOutput: {
+              result: { answer: "Go until the design is fully implemented." },
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "ask-complete",
+      detail: 'AskUserQuestion: {"questions":[{"question":"Continue?"}]}',
+      toolOutput: '{\n  "answer": "Go until the design is fully implemented."\n}',
     });
   });
 
@@ -1501,8 +1551,6 @@ describe("deriveTimelineEntries", () => {
           role: "assistant",
           text: "hello",
           createdAt: "2026-02-23T00:00:01.000Z",
-          turnId: null,
-          updatedAt: "2026-02-23T00:00:01.000Z",
           streaming: false,
         },
       ],
@@ -1522,6 +1570,7 @@ describe("deriveTimelineEntries", () => {
           id: "work-1",
           createdAt: "2026-02-23T00:00:03.000Z",
           label: "Ran tests",
+          status: "completed",
           tone: "tool",
         },
       ],
@@ -1588,7 +1637,7 @@ describe("isLatestTurnSettled", () => {
   it("returns false while the same turn is still active in a running session", () => {
     expect(
       isLatestTurnSettled(latestTurn, {
-        status: "running",
+        orchestrationStatus: "running",
         activeTurnId: TurnId.make("turn-1"),
       }),
     ).toBe(false);
@@ -1597,7 +1646,7 @@ describe("isLatestTurnSettled", () => {
   it("returns false while any turn is running to avoid stale latest-turn banners", () => {
     expect(
       isLatestTurnSettled(latestTurn, {
-        status: "running",
+        orchestrationStatus: "running",
         activeTurnId: TurnId.make("turn-2"),
       }),
     ).toBe(false);
@@ -1606,8 +1655,8 @@ describe("isLatestTurnSettled", () => {
   it("returns true once the session is no longer running that turn", () => {
     expect(
       isLatestTurnSettled(latestTurn, {
-        status: "ready",
-        activeTurnId: null,
+        orchestrationStatus: "ready",
+        activeTurnId: undefined,
       }),
     ).toBe(true);
   });
@@ -1638,7 +1687,7 @@ describe("deriveActiveWorkStartedAt", () => {
       deriveActiveWorkStartedAt(
         latestTurn,
         {
-          status: "running",
+          orchestrationStatus: "running",
           activeTurnId: TurnId.make("turn-1"),
         },
         "2026-02-27T21:11:00.000Z",
@@ -1651,7 +1700,7 @@ describe("deriveActiveWorkStartedAt", () => {
       deriveActiveWorkStartedAt(
         latestTurn,
         {
-          status: "running",
+          orchestrationStatus: "running",
           activeTurnId: TurnId.make("turn-2"),
         },
         "2026-02-27T21:11:00.000Z",
@@ -1664,8 +1713,8 @@ describe("deriveActiveWorkStartedAt", () => {
       deriveActiveWorkStartedAt(
         latestTurn,
         {
-          status: "ready",
-          activeTurnId: null,
+          orchestrationStatus: "ready",
+          activeTurnId: undefined,
         },
         "2026-02-27T21:11:00.000Z",
       ),
@@ -1684,5 +1733,35 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:11:00.000Z");
+  });
+});
+
+describe("deriveActiveWorkTurnId", () => {
+  it("prefers the running session turn when latest turn snapshot is stale", () => {
+    expect(
+      deriveActiveWorkTurnId(
+        {
+          turnId: TurnId.make("turn-completed"),
+        },
+        {
+          activeTurnId: TurnId.make("turn-live"),
+          orchestrationStatus: "running",
+        },
+      ),
+    ).toBe("turn-live");
+  });
+
+  it("falls back to latest turn when session has no active turn", () => {
+    expect(
+      deriveActiveWorkTurnId(
+        {
+          turnId: TurnId.make("turn-latest"),
+        },
+        {
+          activeTurnId: undefined,
+          orchestrationStatus: "ready",
+        },
+      ),
+    ).toBe("turn-latest");
   });
 });

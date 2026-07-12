@@ -9,9 +9,7 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG, decodeRuntimeConfig } from "./config.ts";
@@ -23,11 +21,22 @@ function bytesToString(bytes: Uint8Array): string {
 const readRuntimeConfig = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const bytes = yield* secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG);
-  if (Option.isNone(bytes)) {
+  if (!bytes) {
     return null;
   }
-  return Option.getOrNull(decodeRuntimeConfig(bytesToString(bytes.value)));
+  return Option.getOrNull(decodeRuntimeConfig(bytesToString(bytes)));
 });
+
+export interface CloudManagedEndpointRuntimeShape {
+  readonly applyConfig: (
+    config: RelayManagedEndpointRuntimeConfig | null,
+  ) => Effect.Effect<CloudManagedEndpointRuntimeStatus>;
+}
+
+export class CloudManagedEndpointRuntime extends Context.Service<
+  CloudManagedEndpointRuntime,
+  CloudManagedEndpointRuntimeShape
+>()("t3/cloud/ManagedEndpointRuntime/CloudManagedEndpointRuntime") {}
 
 export type CloudManagedEndpointRuntimeStatus =
   | {
@@ -52,27 +61,11 @@ export type CloudManagedEndpointRuntimeStatus =
       readonly providerKind: RelayManagedEndpointRuntimeConfig["providerKind"];
     };
 
-export class CloudManagedEndpointRuntime extends Context.Service<
-  CloudManagedEndpointRuntime,
-  {
-    readonly applyConfig: (
-      config: RelayManagedEndpointRuntimeConfig | null,
-    ) => Effect.Effect<CloudManagedEndpointRuntimeStatus>;
-  }
->()("t3/cloud/ManagedEndpointRuntime/CloudManagedEndpointRuntime") {}
-
 interface ActiveConnector {
   readonly child: ChildProcessSpawner.ChildProcessHandle;
   readonly scope: Scope.Closeable;
   readonly configKey: string;
   readonly config: RelayManagedEndpointRuntimeConfig;
-}
-
-export function classifyRelayClientOutput(line: string): "connected" | "warning" | "debug" {
-  if (/\bRegistered tunnel connection\b/iu.test(line)) {
-    return "connected";
-  }
-  return /\b(?:ERR|WRN)\b/u.test(line) ? "warning" : "debug";
 }
 
 function runtimeConfigKey(config: RelayManagedEndpointRuntimeConfig): string {
@@ -96,13 +89,13 @@ const stopConnector = (connector: ActiveConnector | null) =>
       )
     : Effect.void;
 
-export const make = Effect.gen(function* () {
+export const makeCloudManagedEndpointRuntime = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const relayClient = yield* RelayClient.RelayClient;
   const activeRef = yield* Ref.make<ActiveConnector | null>(null);
   const desiredConfigRef = yield* Ref.make<RelayManagedEndpointRuntimeConfig | null>(null);
   const reconcileSemaphore = yield* Semaphore.make(1);
-  let reconcileConfig: CloudManagedEndpointRuntime["Service"]["applyConfig"];
+  let reconcileConfig: CloudManagedEndpointRuntimeShape["applyConfig"];
 
   const stopActive = Effect.gen(function* () {
     const active = yield* Ref.getAndSet(activeRef, null);
@@ -146,39 +139,6 @@ export const make = Effect.gen(function* () {
       );
     }).pipe(
       Effect.catchCause((cause) => Effect.logWarning("Relay client supervisor failed", { cause })),
-    );
-
-  const observeConnectorOutput = (connector: ActiveConnector) =>
-    connector.child.all.pipe(
-      Stream.decodeText(),
-      Stream.splitLines,
-      Stream.map((line) => line.trim()),
-      Stream.filter((line) => line.length > 0),
-      Stream.runForEach((line) => {
-        const output = line.replaceAll(connector.config.connectorToken, "<redacted>");
-        const attributes = {
-          pid: Number(connector.child.pid),
-          tunnelId: connector.config.tunnelId,
-          tunnelName: connector.config.tunnelName,
-          output,
-        };
-        switch (classifyRelayClientOutput(line)) {
-          case "connected":
-            return Effect.logInfo("Relay client tunnel connection registered", attributes);
-          case "warning":
-            return Effect.logWarning("Relay client reported a transport warning", attributes);
-          case "debug":
-            return Effect.logDebug("Relay client output", attributes);
-        }
-      }),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Relay client output observer failed", {
-          cause,
-          pid: Number(connector.child.pid),
-          tunnelId: connector.config.tunnelId,
-          tunnelName: connector.config.tunnelName,
-        }),
-      ),
     );
 
   reconcileConfig = Effect.fn("CloudManagedEndpointRuntime.reconcileConfig")(function* (config) {
@@ -230,15 +190,14 @@ export const make = Effect.gen(function* () {
             TUNNEL_TOKEN: config.connectorToken,
           },
           shell: false,
-          stderr: "pipe",
-          stdout: "pipe",
+          stderr: "ignore",
+          stdout: "ignore",
         }),
       )
       .pipe(
         Effect.provideService(Scope.Scope, connectorScope),
-        Effect.tap((child) =>
-          Effect.logInfo("Relay client process started; waiting for tunnel connection", {
-            pid: Number(child.pid),
+        Effect.tap(() =>
+          Effect.logInfo("Relay client started", {
             tunnelId: config.tunnelId,
             tunnelName: config.tunnelName,
           }),
@@ -273,7 +232,6 @@ export const make = Effect.gen(function* () {
         config,
       } satisfies ActiveConnector;
       yield* Ref.set(activeRef, connector);
-      yield* Effect.forkIn(observeConnectorOutput(connector), connectorScope);
       yield* Effect.forkIn(superviseConnector(connector), connectorScope);
       return {
         status: "running",
@@ -300,20 +258,24 @@ export const make = Effect.gen(function* () {
       ),
   );
 
-  const runtime = CloudManagedEndpointRuntime.of({
+  return CloudManagedEndpointRuntime.of({
     applyConfig,
   });
-
-  const initialConfig = yield* readRuntimeConfig.pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to read managed endpoint runtime config", { cause }).pipe(
-        Effect.as(null),
-      ),
-    ),
-  );
-  yield* runtime.applyConfig(initialConfig);
-  yield* Effect.addFinalizer(() => runtime.applyConfig(null));
-  return runtime;
 });
 
-export const layer = Layer.effect(CloudManagedEndpointRuntime, make);
+export const layer = Layer.effect(
+  CloudManagedEndpointRuntime,
+  Effect.gen(function* () {
+    const runtime = yield* makeCloudManagedEndpointRuntime;
+    const initialConfig = yield* readRuntimeConfig.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Failed to read managed endpoint runtime config", { cause }).pipe(
+          Effect.as(null),
+        ),
+      ),
+    );
+    yield* runtime.applyConfig(initialConfig);
+    yield* Effect.addFinalizer(() => runtime.applyConfig(null));
+    return runtime;
+  }),
+);

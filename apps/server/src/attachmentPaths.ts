@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodePath from "node:path";
+import NodePath from "node:path";
+
+export const ATTACHMENTS_ROUTE_PREFIX = "/attachments";
 
 export function normalizeAttachmentRelativePath(rawRelativePath: string): string | null {
   const normalized = NodePath.normalize(rawRelativePath).replace(/^[/\\]+/, "");

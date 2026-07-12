@@ -1,13 +1,10 @@
 import type {
   ProjectScript,
+  ProjectScriptHookEvent,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-  type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+import { projectScriptHookEvents } from "@t3tools/shared/projectScripts";
 import {
   BugIcon,
   ChevronDownIcon,
@@ -42,6 +39,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import {
   Dialog,
   DialogDescription,
@@ -56,7 +54,6 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
-import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
@@ -68,6 +65,20 @@ const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "build", label: "Build" },
   { id: "debug", label: "Debug" },
 ];
+
+const HOOK_EVENT_OPTIONS: Array<{ id: ProjectScriptHookEvent; label: string; badge: string }> = [
+  { id: "worktree.created", label: "Worktree created", badge: "worktree" },
+  { id: "thread.archived", label: "Chat archived", badge: "archive" },
+  { id: "thread.turn.started", label: "Turn started", badge: "start" },
+  { id: "thread.turn.completed", label: "Turn completed", badge: "complete" },
+];
+
+function hookBadges(script: ProjectScript): string[] {
+  const events = projectScriptHookEvents(script);
+  return HOOK_EVENT_OPTIONS.filter((option) => events.includes(option.id)).map(
+    (option) => option.badge,
+  );
+}
 
 function ScriptIcon({
   icon,
@@ -89,26 +100,18 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
+  runOnEvents: ProjectScriptHookEvent[];
   keybinding: string | null;
-  /** Optional URL to open in the in-app preview when this script runs. */
-  previewUrl: string | null;
-  /** When true, automatically open the preview panel pointed at `previewUrl`. */
-  autoOpenPreview: boolean;
 }
 
-export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
-
 interface ProjectScriptsControlProps {
-  scripts: ReadonlyArray<ProjectScript>;
+  scripts: ProjectScript[];
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
   onRunScript: (script: ProjectScript) => void;
-  onAddScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  onAddScript: (input: NewProjectScriptInput) => Promise<void> | void;
+  onUpdateScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void> | void;
+  onDeleteScript: (scriptId: string) => Promise<void> | void;
 }
 
 export default function ProjectScriptsControl({
@@ -127,10 +130,8 @@ export default function ProjectScriptsControl({
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
+  const [runOnEvents, setRunOnEvents] = useState<ProjectScriptHookEvent[]>([]);
   const [keybinding, setKeybinding] = useState("");
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [autoOpenPreview, setAutoOpenPreview] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -157,6 +158,15 @@ export default function ProjectScriptsControl({
     setKeybinding(next);
   };
 
+  const toggleHookEvent = (hookEvent: ProjectScriptHookEvent, checked: boolean) => {
+    setRunOnEvents((current) => {
+      if (checked) {
+        return current.includes(hookEvent) ? current : [...current, hookEvent];
+      }
+      return current.filter((event) => event !== hookEvent);
+    });
+  };
+
   const submitAddScript = async (event: FormEvent) => {
     event.preventDefault();
     const trimmedName = name.trim();
@@ -171,7 +181,6 @@ export default function ProjectScriptsControl({
     }
 
     setValidationError(null);
-    let payload: NewProjectScriptInput;
     try {
       const scriptIdForValidation =
         editingScriptId ??
@@ -183,33 +192,24 @@ export default function ProjectScriptsControl({
         keybinding,
         command: commandForProjectScript(scriptIdForValidation),
       });
-      const trimmedPreviewUrl = previewUrl.trim();
-      payload = {
+      const payload = {
         name: trimmedName,
         command: trimmedCommand,
         icon,
-        runOnWorktreeCreate,
+        runOnWorktreeCreate: runOnEvents.includes("worktree.created"),
+        runOnEvents,
         keybinding: keybindingRule?.key ?? null,
-        previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
-        autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
       } satisfies NewProjectScriptInput;
+      if (editingScriptId) {
+        await onUpdateScript(editingScriptId, payload);
+      } else {
+        await onAddScript(payload);
+      }
+      setDialogOpen(false);
+      setIconPickerOpen(false);
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
-      return;
     }
-
-    const result = editingScriptId
-      ? await onUpdateScript(editingScriptId, payload)
-      : await onAddScript(payload);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setValidationError(error instanceof Error ? error.message : "Failed to save action.");
-      }
-      return;
-    }
-    setDialogOpen(false);
-    setIconPickerOpen(false);
   };
 
   const openAddDialog = () => {
@@ -218,10 +218,8 @@ export default function ProjectScriptsControl({
     setCommand("");
     setIcon("play");
     setIconPickerOpen(false);
-    setRunOnWorktreeCreate(false);
+    setRunOnEvents([]);
     setKeybinding("");
-    setPreviewUrl("");
-    setAutoOpenPreview(false);
     setValidationError(null);
     setDialogOpen(true);
   };
@@ -232,10 +230,8 @@ export default function ProjectScriptsControl({
     setCommand(script.command);
     setIcon(script.icon);
     setIconPickerOpen(false);
-    setRunOnWorktreeCreate(script.runOnWorktreeCreate);
+    setRunOnEvents([...projectScriptHookEvents(script)]);
     setKeybinding(keybindingValueForCommand(keybindings, commandForProjectScript(script.id)) ?? "");
-    setPreviewUrl(script.previewUrl ?? "");
-    setAutoOpenPreview(script.autoOpenPreview ?? false);
     setValidationError(null);
     setDialogOpen(true);
   };
@@ -289,9 +285,15 @@ export default function ProjectScriptsControl({
                     onClick={() => onRunScript(script)}
                   >
                     <ScriptIcon icon={script.icon} className="size-4" />
-                    <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate">{script.name}</span>
+                    {hookBadges(script).map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded border border-border/70 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground"
+                      >
+                        {badge}
+                      </span>
+                    ))}
                     <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
                       {shortcutLabel && (
                         <MenuShortcut className="ms-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
@@ -356,10 +358,8 @@ export default function ProjectScriptsControl({
           setName("");
           setCommand("");
           setIcon("play");
-          setRunOnWorktreeCreate(false);
+          setRunOnEvents([]);
           setKeybinding("");
-          setPreviewUrl("");
-          setAutoOpenPreview(false);
           setValidationError(null);
         }}
         open={dialogOpen}
@@ -446,37 +446,23 @@ export default function ProjectScriptsControl({
                   onChange={(event) => setCommand(event.target.value)}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="script-preview-url">Preview URL (optional)</Label>
-                <Input
-                  id="script-preview-url"
-                  placeholder="http://localhost:5173"
-                  value={previewUrl}
-                  onChange={(event) => setPreviewUrl(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Open this URL in the in-app preview when this action runs.
-                </p>
+              <div className="space-y-2">
+                <Label>Run on events</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {HOOK_EVENT_OPTIONS.map((option) => (
+                    <label
+                      key={option.id}
+                      className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={runOnEvents.includes(option.id)}
+                        onCheckedChange={(checked) => toggleHookEvent(option.id, checked === true)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
-                <span>Run automatically on worktree creation</span>
-                <Switch
-                  checked={runOnWorktreeCreate}
-                  onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-                />
-              </label>
-              <label
-                className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm ${
-                  previewUrl.trim().length === 0 ? "opacity-60" : ""
-                }`}
-              >
-                <span>Open preview automatically when this action runs</span>
-                <Switch
-                  checked={autoOpenPreview}
-                  disabled={previewUrl.trim().length === 0}
-                  onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
-                />
-              </label>
               {validationError && <p className="text-sm text-destructive">{validationError}</p>}
             </form>
           </DialogPanel>

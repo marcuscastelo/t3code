@@ -13,7 +13,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
 
 import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as RelayConfiguration from "../Config.ts";
@@ -52,9 +51,6 @@ const state: RelayAgentActivityState = {
   updatedAt: "2026-05-25T00:00:00.000Z",
   deepLink: "/threads/env/thread",
 };
-const isEnvironmentPublishSignatureInvalid = Schema.is(
-  EnvironmentPublishSignatures.EnvironmentPublishSignatureInvalid,
-);
 
 function signTestJwt(payload: object, privateKey: string): string {
   const header = Buffer.from(
@@ -84,11 +80,11 @@ const freshRequest = Effect.gen(function* () {
   } satisfies RelayAgentActivityPublishRequest;
 });
 
-function layer(replay?: Partial<DpopProofs.DpopProofReplay["Service"]>) {
+function layer(replay?: Partial<DpopProofs.DpopProofReplayShape>) {
   return EnvironmentPublishSignatures.layer.pipe(
     Layer.provide(
       Layer.merge(
-        RelayConfiguration.layer(config),
+        Layer.succeed(RelayConfiguration.RelayConfiguration, config),
         Layer.succeed(DpopProofs.DpopProofReplay, {
           verifyAndConsume:
             replay?.verifyAndConsume ?? (() => Effect.die("unexpected DPoP proof verification")),
@@ -149,49 +145,6 @@ describe("EnvironmentPublishSignatures", () => {
         }),
       );
       expect(Result.isFailure(result)).toBe(true);
-      if (Result.isFailure(result)) {
-        expect(isEnvironmentPublishSignatureInvalid(result.failure)).toBe(true);
-        if (isEnvironmentPublishSignatureInvalid(result.failure)) {
-          expect(result.failure).toMatchObject({
-            environmentId: state.environmentId,
-            threadId: state.threadId,
-            reason: "invalid_signature_or_payload",
-            stage: "validate_claims",
-          });
-        }
-      }
-    }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect("preserves the JWT verification failure", () =>
-    Effect.gen(function* () {
-      const request = yield* freshRequest;
-      const segments = request.proof.split(".");
-      const signature = segments[2]!;
-      segments[2] = `${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
-      const signatures = yield* EnvironmentPublishSignatures.EnvironmentPublishSignatures;
-      const result = yield* Effect.result(
-        signatures.verify({
-          environmentId: state.environmentId,
-          environmentPublicKey: keyPair.publicKey,
-          threadId: state.threadId,
-          request: { ...request, proof: segments.join(".") },
-        }),
-      );
-
-      expect(Result.isFailure(result)).toBe(true);
-      if (Result.isFailure(result)) {
-        expect(isEnvironmentPublishSignatureInvalid(result.failure)).toBe(true);
-        if (isEnvironmentPublishSignatureInvalid(result.failure)) {
-          expect(result.failure).toMatchObject({
-            environmentId: state.environmentId,
-            threadId: state.threadId,
-            reason: "invalid_signature_or_payload",
-            stage: "verify_proof",
-            cause: { _tag: "RelayJwtError" },
-          });
-        }
-      }
     }).pipe(Effect.provide(layer())),
   );
 
@@ -208,17 +161,6 @@ describe("EnvironmentPublishSignatures", () => {
         }),
       );
       expect(Result.isFailure(result)).toBe(true);
-      if (Result.isFailure(result)) {
-        expect(isEnvironmentPublishSignatureInvalid(result.failure)).toBe(true);
-        if (isEnvironmentPublishSignatureInvalid(result.failure)) {
-          expect(result.failure).toMatchObject({
-            environmentId: state.environmentId,
-            threadId: state.threadId,
-            reason: "replayed_nonce",
-            stage: "consume_nonce",
-          });
-        }
-      }
     }).pipe(Effect.provide(layer({ consume: () => Effect.succeed(false) }))),
   );
 });

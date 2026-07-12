@@ -1,3 +1,4 @@
+// @effect-diagnostics anyUnknownInErrorContext:off - CLI Command handlers expose broad Effect types at the library boundary.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";

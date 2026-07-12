@@ -2,7 +2,7 @@ import { type CursorSettings, type ProviderOptionSelection } from "@t3tools/cont
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import type * as EffectAcpErrors from "effect-acp/errors";
 
 import {
@@ -10,12 +10,17 @@ import {
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
 } from "../Layers/CursorProvider.ts";
-import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
+import {
+  AcpSessionRuntime,
+  type AcpSessionRuntimeOptions,
+  type AcpSessionRuntimeShape,
+  type AcpSpawnInput,
+} from "./AcpSessionRuntime.ts";
 
 type CursorAcpRuntimeCursorSettings = Pick<CursorSettings, "apiEndpoint" | "binaryPath">;
 
 export interface CursorAcpRuntimeInput extends Omit<
-  AcpSessionRuntime.AcpSessionRuntimeOptions,
+  AcpSessionRuntimeOptions,
   "authMethodId" | "clientCapabilities" | "spawn"
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
@@ -33,7 +38,7 @@ export function buildCursorAcpSpawnInput(
   cursorSettings: CursorAcpRuntimeCursorSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
-): AcpSessionRuntime.AcpSpawnInput {
+): AcpSpawnInput {
   return {
     command: cursorSettings?.binaryPath || "agent",
     args: [
@@ -47,11 +52,7 @@ export function buildCursorAcpSpawnInput(
 
 export const makeCursorAcpRuntime = (
   input: CursorAcpRuntimeInput,
-): Effect.Effect<
-  AcpSessionRuntime.AcpSessionRuntime["Service"],
-  EffectAcpErrors.AcpError,
-  Scope.Scope
-> =>
+): Effect.Effect<AcpSessionRuntimeShape, EffectAcpErrors.AcpError, Scope.Scope> =>
   Effect.gen(function* () {
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
@@ -65,13 +66,11 @@ export const makeCursorAcpRuntime = (
         ),
       ),
     );
-    return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
-      Effect.provide(acpContext),
-    );
+    return yield* Effect.service(AcpSessionRuntime).pipe(Effect.provide(acpContext));
   });
 
 interface CursorAcpModelSelectionRuntime {
-  readonly getConfigOptions: AcpSessionRuntime.AcpSessionRuntime["Service"]["getConfigOptions"];
+  readonly getConfigOptions: AcpSessionRuntimeShape["getConfigOptions"];
   readonly setConfigOption: (
     configId: string,
     value: string | boolean,

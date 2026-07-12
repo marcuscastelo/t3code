@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
-import * as Schema from "effect/Schema";
+import fs from "node:fs";
+import path from "node:path";
 
 export interface RotatingFileSinkOptions {
   readonly filePath: string;
@@ -9,37 +8,6 @@ export interface RotatingFileSinkOptions {
   readonly maxFiles: number;
   readonly throwOnError?: boolean;
 }
-
-export class RotatingFileSinkConfigurationError extends Schema.TaggedErrorClass<RotatingFileSinkConfigurationError>()(
-  "RotatingFileSinkConfigurationError",
-  {
-    option: Schema.Literals(["maxBytes", "maxFiles"]),
-    received: Schema.Number,
-    minimum: Schema.Number,
-  },
-) {
-  override get message(): string {
-    return `${this.option} must be >= ${this.minimum} (received ${this.received})`;
-  }
-}
-
-export class RotatingFileSinkError extends Schema.TaggedErrorClass<RotatingFileSinkError>()(
-  "RotatingFileSinkError",
-  {
-    operation: Schema.Literals(["initialize", "read", "write", "rotate", "prune"]),
-    filePath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to ${this.operation} rotating log file ${this.filePath}`;
-  }
-}
-
-const isRotatingFileSinkError = Schema.is(RotatingFileSinkError);
-
-const isFileNotFoundError = (cause: unknown): cause is NodeJS.ErrnoException =>
-  cause instanceof Error && "code" in cause && cause.code === "ENOENT";
 
 export class RotatingFileSink {
   private readonly filePath: string;
@@ -50,18 +18,10 @@ export class RotatingFileSink {
 
   constructor(options: RotatingFileSinkOptions) {
     if (options.maxBytes < 1) {
-      throw new RotatingFileSinkConfigurationError({
-        option: "maxBytes",
-        received: options.maxBytes,
-        minimum: 1,
-      });
+      throw new Error(`maxBytes must be >= 1 (received ${options.maxBytes})`);
     }
     if (options.maxFiles < 1) {
-      throw new RotatingFileSinkConfigurationError({
-        option: "maxFiles",
-        received: options.maxFiles,
-        minimum: 1,
-      });
+      throw new Error(`maxFiles must be >= 1 (received ${options.maxFiles})`);
     }
 
     this.filePath = options.filePath;
@@ -69,15 +29,7 @@ export class RotatingFileSink {
     this.maxFiles = options.maxFiles;
     this.throwOnError = options.throwOnError ?? false;
 
-    try {
-      NodeFS.mkdirSync(NodePath.dirname(this.filePath), { recursive: true });
-    } catch (cause) {
-      throw new RotatingFileSinkError({
-        operation: "initialize",
-        filePath: this.filePath,
-        cause,
-      });
-    }
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     this.pruneOverflowBackups();
     this.currentSize = this.readCurrentSize();
   }
@@ -91,92 +43,70 @@ export class RotatingFileSink {
         this.rotate();
       }
 
-      NodeFS.appendFileSync(this.filePath, buffer);
+      fs.appendFileSync(this.filePath, buffer);
       this.currentSize += buffer.length;
 
       if (this.currentSize > this.maxBytes) {
         this.rotate();
       }
-    } catch (cause) {
-      if (isRotatingFileSinkError(cause)) {
-        throw cause;
-      }
-      if (this.throwOnError) {
-        throw new RotatingFileSinkError({
-          operation: "write",
-          filePath: this.filePath,
-          cause,
-        });
-      }
+    } catch {
       this.currentSize = this.readCurrentSize();
+      if (this.throwOnError) {
+        throw new Error(`Failed to write log chunk to ${this.filePath}`);
+      }
     }
   }
 
   private rotate(): void {
     try {
       const oldest = this.withSuffix(this.maxFiles);
-      if (NodeFS.existsSync(oldest)) {
-        NodeFS.rmSync(oldest, { force: true });
+      if (fs.existsSync(oldest)) {
+        fs.rmSync(oldest, { force: true });
       }
 
       for (let index = this.maxFiles - 1; index >= 1; index -= 1) {
         const source = this.withSuffix(index);
         const target = this.withSuffix(index + 1);
-        if (NodeFS.existsSync(source)) {
-          NodeFS.renameSync(source, target);
+        if (fs.existsSync(source)) {
+          fs.renameSync(source, target);
         }
       }
 
-      if (NodeFS.existsSync(this.filePath)) {
-        NodeFS.renameSync(this.filePath, this.withSuffix(1));
+      if (fs.existsSync(this.filePath)) {
+        fs.renameSync(this.filePath, this.withSuffix(1));
       }
 
       this.currentSize = 0;
-    } catch (cause) {
-      if (this.throwOnError) {
-        throw new RotatingFileSinkError({
-          operation: "rotate",
-          filePath: this.filePath,
-          cause,
-        });
-      }
+    } catch {
       this.currentSize = this.readCurrentSize();
+      if (this.throwOnError) {
+        throw new Error(`Failed to rotate log file ${this.filePath}`);
+      }
     }
   }
 
   private pruneOverflowBackups(): void {
     try {
-      const dir = NodePath.dirname(this.filePath);
-      const baseName = NodePath.basename(this.filePath);
-      for (const entry of NodeFS.readdirSync(dir)) {
+      const dir = path.dirname(this.filePath);
+      const baseName = path.basename(this.filePath);
+      for (const entry of fs.readdirSync(dir)) {
         if (!entry.startsWith(`${baseName}.`)) continue;
         const suffix = Number(entry.slice(baseName.length + 1));
         if (!Number.isInteger(suffix) || suffix <= this.maxFiles) continue;
-        NodeFS.rmSync(NodePath.join(dir, entry), { force: true });
+        fs.rmSync(path.join(dir, entry), { force: true });
       }
-    } catch (cause) {
+    } catch {
       if (this.throwOnError) {
-        throw new RotatingFileSinkError({
-          operation: "prune",
-          filePath: this.filePath,
-          cause,
-        });
+        throw new Error(`Failed to prune log backups for ${this.filePath}`);
       }
     }
   }
 
   private readCurrentSize(): number {
     try {
-      return NodeFS.statSync(this.filePath).size;
-    } catch (cause) {
-      if (isFileNotFoundError(cause)) {
-        return 0;
-      }
-      throw new RotatingFileSinkError({
-        operation: "read",
-        filePath: this.filePath,
-        cause,
-      });
+      return fs.statSync(this.filePath).size;
+    } catch {
+      return 0;
     }
   }
 

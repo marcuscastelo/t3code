@@ -1,12 +1,4 @@
-import type {
-  ModelCapabilities,
-  ModelSelection,
-  ServerConfig as T3ServerConfig,
-} from "@t3tools/contracts";
-import {
-  buildProviderOptionSelectionsFromDescriptors,
-  getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+import type { ModelSelection, ServerConfig as T3ServerConfig } from "@t3tools/contracts";
 
 export type ModelOption = {
   readonly key: string;
@@ -15,7 +7,6 @@ export type ModelOption = {
   readonly providerKey: string;
   readonly providerLabel: string;
   readonly providerDriver: string;
-  readonly capabilities: ModelCapabilities | null;
   readonly selection: ModelSelection;
 };
 
@@ -34,27 +25,6 @@ function providerDisplayLabel(provider: {
   if (provider.driver === "codex") return "Codex";
   if (provider.driver === "claudeAgent") return "Claude";
   return provider.instanceId;
-}
-
-function normalizeSelectionOptions(
-  selection: ModelSelection,
-  capabilities: ModelCapabilities | null,
-): ModelSelection {
-  if (!capabilities) {
-    return selection;
-  }
-  const options = buildProviderOptionSelectionsFromDescriptors(
-    getProviderOptionDescriptors({
-      caps: capabilities,
-      selections: selection.options,
-    }),
-  );
-  return options
-    ? { ...selection, options }
-    : {
-        instanceId: selection.instanceId,
-        model: selection.model,
-      };
 }
 
 export function buildModelOptions(
@@ -78,27 +48,17 @@ export function buildModelOptions(
         providerKey: provider.instanceId,
         providerLabel,
         providerDriver: provider.driver,
-        capabilities: model.capabilities,
-        selection: normalizeSelectionOptions(
-          {
-            instanceId: provider.instanceId,
-            model: model.slug,
-          },
-          model.capabilities,
-        ),
+        selection: {
+          instanceId: provider.instanceId,
+          model: model.slug,
+        },
       });
     }
   }
 
   if (fallbackModelSelection) {
     const key = `${fallbackModelSelection.instanceId}:${fallbackModelSelection.model}`;
-    const existing = options.get(key);
-    if (existing) {
-      options.set(key, {
-        ...existing,
-        selection: normalizeSelectionOptions(fallbackModelSelection, existing.capabilities),
-      });
-    } else {
+    if (!options.has(key)) {
       const providerLabel = fallbackModelSelection.instanceId;
       options.set(key, {
         key,
@@ -107,7 +67,6 @@ export function buildModelOptions(
         providerKey: fallbackModelSelection.instanceId,
         providerLabel,
         providerDriver: fallbackModelSelection.instanceId,
-        capabilities: null,
         selection: fallbackModelSelection,
       });
     }

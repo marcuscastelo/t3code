@@ -7,10 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import {
-  RelayDeliveryKind as RelayDeliveryKindSchema,
-  type RelayDeliveryResult,
-} from "@t3tools/contracts/relay";
+import type { RelayDeliveryResult } from "@t3tools/contracts/relay";
 
 import {
   sanitizeAgentActivityAggregateState,
@@ -27,54 +24,45 @@ import * as RelayConfiguration from "../Config.ts";
 
 export class ApnsDeliveryQueueSendError extends Schema.TaggedErrorClass<ApnsDeliveryQueueSendError>()(
   "ApnsDeliveryQueueSendError",
-  {
-    operation: Schema.Literals(["generate-job-id", "send"]),
-    jobId: Schema.NullOr(Schema.String),
-    kind: RelayDeliveryKindSchema,
-    userId: Schema.String,
-    deviceId: Schema.String,
-    cause: Schema.Defect(),
-  },
+  { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `Failed to enqueue APNs ${this.kind.replaceAll("_", " ")} delivery during ${this.operation} for device ${this.deviceId}.`;
+    return "Failed to enqueue APNs delivery";
   }
 }
 
 export type ApnsDeliveryQueueError = ApnsDeliveryQueueSendError;
 
+export interface ApnsDeliveryQueueSenderShape {
+  readonly send: (body: SignedApnsDeliveryJob) => Effect.Effect<void, ApnsDeliveryQueueSendError>;
+}
+
 export class ApnsDeliveryQueueSender extends Context.Service<
   ApnsDeliveryQueueSender,
-  {
-    readonly send: (body: SignedApnsDeliveryJob) => Effect.Effect<void, Cloudflare.QueueSendError>;
-  }
+  ApnsDeliveryQueueSenderShape
 >()("t3code-relay/agentActivity/ApnsDeliveryQueue/ApnsDeliveryQueueSender") {}
 
-export class ApnsDeliveryQueue extends Context.Service<
-  ApnsDeliveryQueue,
-  {
-    readonly enqueueLiveActivity: (input: {
-      readonly kind: ApnsDeliveryJobPayload["kind"];
-      readonly userId: string;
-      readonly deviceId: string;
-      readonly token: string;
-      readonly bundleId?: string | null;
-      readonly apsEnvironment?: "sandbox" | "production" | null;
-      readonly aggregate: ApnsDeliveryJobPayload["aggregate"];
-      readonly alert?: ApnsDeliveryJobPayload["alert"];
-    }) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryQueueError>;
-    readonly enqueuePushNotification: (input: {
-      readonly userId: string;
-      readonly deviceId: string;
-      readonly token: string;
-      readonly bundleId?: string | null;
-      readonly apsEnvironment?: "sandbox" | "production" | null;
-      readonly notification: NonNullable<ApnsDeliveryJobPayload["notification"]>;
-    }) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryQueueError>;
-  }
->()("t3code-relay/agentActivity/ApnsDeliveryQueue") {}
+export interface ApnsDeliveryQueueShape {
+  readonly enqueueLiveActivity: (input: {
+    readonly kind: ApnsDeliveryJobPayload["kind"];
+    readonly userId: string;
+    readonly deviceId: string;
+    readonly token: string;
+    readonly aggregate: ApnsDeliveryJobPayload["aggregate"];
+  }) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryQueueError>;
+  readonly enqueuePushNotification: (input: {
+    readonly userId: string;
+    readonly deviceId: string;
+    readonly token: string;
+    readonly notification: NonNullable<ApnsDeliveryJobPayload["notification"]>;
+  }) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryQueueError>;
+}
 
-export const make = Effect.gen(function* () {
+export class ApnsDeliveryQueue extends Context.Service<ApnsDeliveryQueue, ApnsDeliveryQueueShape>()(
+  "t3code-relay/agentActivity/ApnsDeliveryQueue",
+) {}
+
+const make = Effect.gen(function* () {
   const sender = yield* ApnsDeliveryQueueSender;
   const crypto = yield* Crypto.Crypto;
   const config = yield* RelayConfiguration.RelayConfiguration;
@@ -88,17 +76,7 @@ export const make = Effect.gen(function* () {
         });
         const now = yield* DateTime.now;
         const jobId = yield* crypto.randomUUIDv4.pipe(
-          Effect.mapError(
-            (cause) =>
-              new ApnsDeliveryQueueSendError({
-                operation: "generate-job-id",
-                jobId: null,
-                kind: input.kind,
-                userId: input.userId,
-                deviceId: input.deviceId,
-                cause,
-              }),
-          ),
+          Effect.mapError((cause) => new ApnsDeliveryQueueSendError({ cause })),
         );
         yield* Effect.annotateCurrentSpan({ "relay.delivery.job_id": jobId });
         const payload = makeApnsDeliveryJobPayload({
@@ -113,19 +91,7 @@ export const make = Effect.gen(function* () {
           secret: config.apnsDeliveryJobSigningSecret,
           payload,
         });
-        yield* sender.send(signed).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ApnsDeliveryQueueSendError({
-                operation: "send",
-                jobId,
-                kind: input.kind,
-                userId: input.userId,
-                deviceId: input.deviceId,
-                cause,
-              }),
-          ),
-        );
+        yield* sender.send(signed);
         return {
           deviceId: input.deviceId,
           kind: input.kind,
@@ -147,17 +113,7 @@ export const make = Effect.gen(function* () {
         });
         const now = yield* DateTime.now;
         const jobId = yield* crypto.randomUUIDv4.pipe(
-          Effect.mapError(
-            (cause) =>
-              new ApnsDeliveryQueueSendError({
-                operation: "generate-job-id",
-                jobId: null,
-                kind: "push_notification",
-                userId: input.userId,
-                deviceId: input.deviceId,
-                cause,
-              }),
-          ),
+          Effect.mapError((cause) => new ApnsDeliveryQueueSendError({ cause })),
         );
         yield* Effect.annotateCurrentSpan({ "relay.delivery.job_id": jobId });
         const payload = makeApnsDeliveryJobPayload({
@@ -165,8 +121,6 @@ export const make = Effect.gen(function* () {
           userId: input.userId,
           deviceId: input.deviceId,
           token: input.token,
-          bundleId: input.bundleId,
-          apsEnvironment: input.apsEnvironment,
           aggregate: null,
           notification: sanitizeApnsNotificationPayload(input.notification),
           jobId,
@@ -177,19 +131,7 @@ export const make = Effect.gen(function* () {
           secret: config.apnsDeliveryJobSigningSecret,
           payload,
         });
-        yield* sender.send(signed).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ApnsDeliveryQueueSendError({
-                operation: "send",
-                jobId,
-                kind: "push_notification",
-                userId: input.userId,
-                deviceId: input.deviceId,
-                cause,
-              }),
-          ),
-        );
+        yield* sender.send(signed);
         return {
           deviceId: input.deviceId,
           kind: "push_notification" as const,
@@ -216,9 +158,10 @@ export const layerCloudflareQueues = (
         ApnsDeliveryQueueSender,
         ApnsDeliveryQueueSender.of({
           send: (body) =>
-            sender
-              .send(body)
-              .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+            sender.send(body).pipe(
+              Effect.mapError((cause) => new ApnsDeliveryQueueSendError({ cause })),
+              Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
+            ),
         }),
       ),
     ),

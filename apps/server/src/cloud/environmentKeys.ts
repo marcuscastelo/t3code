@@ -1,6 +1,5 @@
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -27,47 +26,45 @@ function stringToBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);
 }
 
-const KEY_PAIR_RESOURCE = "environment signing key pair";
-
-const keyPairDecodeError = (cause: unknown): ServerSecretStore.SecretStoreDecodeError =>
-  new ServerSecretStore.SecretStoreDecodeError({ resource: KEY_PAIR_RESOURCE, cause });
-
-const keyPairEncodeError = (cause: unknown): ServerSecretStore.SecretStoreEncodeError =>
-  new ServerSecretStore.SecretStoreEncodeError({ resource: KEY_PAIR_RESOURCE, cause });
-
-const keyPairConcurrentReadError = (): ServerSecretStore.SecretStoreConcurrentReadError =>
-  new ServerSecretStore.SecretStoreConcurrentReadError({ resource: KEY_PAIR_RESOURCE });
+const keyPairPersistenceError = (message: string, cause?: unknown) =>
+  new ServerSecretStore.SecretStoreError({ message, cause });
 
 const readEnvironmentKeyPair = Effect.fn("readEnvironmentKeyPair")(function* (
-  secrets: ServerSecretStore.ServerSecretStore["Service"],
+  secrets: ServerSecretStore.ServerSecretStoreShape,
 ) {
   const encoded = yield* secrets.get(CLOUD_LINK_KEY_PAIR);
-  if (Option.isNone(encoded)) {
-    return Option.none<EnvironmentKeyPair>();
+  if (encoded === null) {
+    return null;
   }
-  const decoded = yield* decodeEnvironmentKeyPair(bytesToString(encoded.value)).pipe(
-    Effect.mapError(keyPairDecodeError),
+  return yield* decodeEnvironmentKeyPair(bytesToString(encoded)).pipe(
+    Effect.mapError((cause) =>
+      keyPairPersistenceError("Failed to decode environment signing key pair.", cause),
+    ),
   );
-  return Option.some(decoded);
 });
 
 const persistEnvironmentKeyPair = Effect.fn("persistEnvironmentKeyPair")(function* (
-  secrets: ServerSecretStore.ServerSecretStore["Service"],
+  secrets: ServerSecretStore.ServerSecretStoreShape,
   keyPair: EnvironmentKeyPair,
 ) {
   const encoded = yield* encodeEnvironmentKeyPair(keyPair).pipe(
-    Effect.mapError(keyPairEncodeError),
+    Effect.mapError((cause) =>
+      keyPairPersistenceError("Failed to encode environment signing key pair.", cause),
+    ),
   );
   return yield* secrets.create(CLOUD_LINK_KEY_PAIR, stringToBytes(encoded)).pipe(
     Effect.as(keyPair),
-    Effect.catchIf(ServerSecretStore.isSecretStoreError, (error) =>
+    Effect.catchTag("SecretStoreError", (error) =>
       ServerSecretStore.isSecretAlreadyExistsError(error)
         ? readEnvironmentKeyPair(secrets).pipe(
-            Effect.flatMap(
-              Option.match({
-                onSome: Effect.succeed,
-                onNone: () => Effect.fail(keyPairConcurrentReadError()),
-              }),
+            Effect.flatMap((existing) =>
+              existing !== null
+                ? Effect.succeed(existing)
+                : Effect.fail(
+                    keyPairPersistenceError(
+                      "Failed to read environment signing key pair after concurrent creation.",
+                    ),
+                  ),
             ),
           )
         : Effect.fail(error),
@@ -76,19 +73,19 @@ const persistEnvironmentKeyPair = Effect.fn("persistEnvironmentKeyPair")(functio
 });
 
 export const getOrCreateEnvironmentKeyPairFromSecretStore = Effect.fn(function* (
-  secrets: ServerSecretStore.ServerSecretStore["Service"],
+  secrets: ServerSecretStore.ServerSecretStoreShape,
 ) {
   const existing = yield* readEnvironmentKeyPair(secrets);
-  if (Option.isSome(existing)) {
-    return existing.value;
+  if (existing !== null) {
+    return existing;
   }
 
   const existingPrivate = yield* secrets.get(CLOUD_LINK_PRIVATE_KEY);
   const existingPublic = yield* secrets.get(CLOUD_LINK_PUBLIC_KEY);
-  if (Option.isSome(existingPrivate) && Option.isSome(existingPublic)) {
+  if (existingPrivate && existingPublic) {
     return yield* persistEnvironmentKeyPair(secrets, {
-      privateKey: bytesToString(existingPrivate.value),
-      publicKey: bytesToString(existingPublic.value),
+      privateKey: bytesToString(existingPrivate),
+      publicKey: bytesToString(existingPublic),
     });
   }
 

@@ -1,15 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as PlatformError from "effect/PlatformError";
 
-import * as ServerConfig from "../config.ts";
+import { ServerConfig } from "../config.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
 const makeServerConfigLayer = () =>
@@ -146,13 +145,13 @@ const makeConcurrentCreateSecretStoreLayer = () =>
   );
 
 it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
-  it.effect("returns Option.none when a secret file does not exist", () =>
+  it.effect("returns null when a secret file does not exist", () =>
     Effect.gen(function* () {
       const secretStore = yield* ServerSecretStore.ServerSecretStore;
 
       const secret = yield* secretStore.get("missing-secret");
 
-      assert.isTrue(Option.isNone(secret));
+      expect(secret).toBeNull();
     }).pipe(Effect.provide(makeServerSecretStoreLayer())),
   );
 
@@ -163,7 +162,7 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
       const first = yield* secretStore.getOrCreateRandom("session-signing-key", 32);
       const second = yield* secretStore.getOrCreateRandom("session-signing-key", 32);
 
-      assert.deepEqual(Array.from(second), Array.from(first));
+      expect(Array.from(second)).toEqual(Array.from(first));
     }).pipe(Effect.provide(makeServerSecretStoreLayer())),
   );
 
@@ -179,10 +178,10 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
         { concurrency: "unbounded" },
       );
       const persisted = yield* secretStore.get("session-signing-key");
-      const persistedBytes = Option.getOrThrow(persisted);
 
-      assert.deepEqual(Array.from(first), Array.from(persistedBytes));
-      assert.deepEqual(Array.from(second), Array.from(persistedBytes));
+      expect(persisted).not.toBeNull();
+      expect(Array.from(first)).toEqual(Array.from(persisted ?? new Uint8Array()));
+      expect(Array.from(second)).toEqual(Array.from(persisted ?? new Uint8Array()));
     }).pipe(Effect.provide(makeConcurrentCreateSecretStoreLayer())),
   );
 
@@ -218,10 +217,10 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
 
       yield* secretStore.set("session-signing-key", Uint8Array.from([1, 2, 3]));
 
-      assert.isTrue(
-        chmodCalls.some((call) => call.mode === 0o700 && call.path.endsWith("/secrets")),
+      expect(chmodCalls.some((call) => call.mode === 0o700 && call.path.endsWith("/secrets"))).toBe(
+        true,
       );
-      assert.isAtLeast(chmodCalls.filter((call) => call.mode === 0o600).length, 2);
+      expect(chmodCalls.filter((call) => call.mode === 0o600).length).toBeGreaterThanOrEqual(2);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -231,10 +230,10 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
 
       const error = yield* Effect.flip(secretStore.getOrCreateRandom("session-signing-key", 32));
 
-      assert.instanceOf(error, ServerSecretStore.SecretStoreReadError);
-      assert.include(error.message, "Failed to read secret session-signing-key.");
-      assert.instanceOf(error.cause, PlatformError.PlatformError);
-      assert.equal((error.cause as PlatformError.PlatformError).reason._tag, "PermissionDenied");
+      expect(error).toBeInstanceOf(ServerSecretStore.SecretStoreError);
+      expect(error.message).toContain("Failed to read secret session-signing-key.");
+      expect(error.cause).toBeInstanceOf(PlatformError.PlatformError);
+      expect((error.cause as PlatformError.PlatformError).reason._tag).toBe("PermissionDenied");
     }).pipe(Effect.provide(makePermissionDeniedSecretStoreLayer())),
   );
 
@@ -246,10 +245,10 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
         secretStore.set("session-signing-key", Uint8Array.from([1, 2, 3])),
       );
 
-      assert.instanceOf(error, ServerSecretStore.SecretStorePersistError);
-      assert.include(error.message, "Failed to persist secret session-signing-key.");
-      assert.instanceOf(error.cause, PlatformError.PlatformError);
-      assert.equal((error.cause as PlatformError.PlatformError).reason._tag, "PermissionDenied");
+      expect(error).toBeInstanceOf(ServerSecretStore.SecretStoreError);
+      expect(error.message).toContain("Failed to persist secret session-signing-key.");
+      expect(error.cause).toBeInstanceOf(PlatformError.PlatformError);
+      expect((error.cause as PlatformError.PlatformError).reason._tag).toBe("PermissionDenied");
     }).pipe(Effect.provide(makeRenameFailureSecretStoreLayer())),
   );
 
@@ -259,10 +258,10 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
 
       const error = yield* Effect.flip(secretStore.remove("session-signing-key"));
 
-      assert.instanceOf(error, ServerSecretStore.SecretStoreRemoveError);
-      assert.include(error.message, "Failed to remove secret session-signing-key.");
-      assert.instanceOf(error.cause, PlatformError.PlatformError);
-      assert.equal((error.cause as PlatformError.PlatformError).reason._tag, "PermissionDenied");
+      expect(error).toBeInstanceOf(ServerSecretStore.SecretStoreError);
+      expect(error.message).toContain("Failed to remove secret session-signing-key.");
+      expect(error.cause).toBeInstanceOf(PlatformError.PlatformError);
+      expect((error.cause as PlatformError.PlatformError).reason._tag).toBe("PermissionDenied");
     }).pipe(Effect.provide(makeRemoveFailureSecretStoreLayer())),
   );
 });

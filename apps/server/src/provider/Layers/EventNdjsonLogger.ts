@@ -6,12 +6,11 @@
  * single effect-style text line in a thread-scoped file. Failures are
  * downgraded to warnings so provider runtime behavior is unaffected.
  */
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
+import fs from "node:fs";
+import path from "node:path";
 
 import type { ThreadId } from "@t3tools/contracts";
 import { RotatingFileSink } from "@t3tools/shared/logging";
-import { errorTag } from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Logger from "effect/Logger";
@@ -32,8 +31,8 @@ export type EventNdjsonStream = "native" | "canonical" | "orchestration";
 
 export interface EventNdjsonLogger {
   readonly filePath: string;
-  write: (event: unknown, threadId: ThreadId | null) => Effect.Effect<void, never, never>;
-  close: () => Effect.Effect<void, never, never>;
+  write: (event: unknown, threadId: ThreadId | null) => Effect.Effect<void>;
+  close: () => Effect.Effect<void>;
 }
 
 export interface EventNdjsonLoggerOptions {
@@ -92,9 +91,9 @@ const toLogMessage = Effect.fn("toLogMessage")(function* (
 ): Effect.fn.Return<string | undefined> {
   return yield* encodeUnknownJsonString(event).pipe(
     Effect.catch((error) =>
-      logWarning("failed to serialize provider event log record", {
-        errorTag: errorTag(error),
-      }).pipe(Effect.as(undefined)),
+      logWarning("failed to serialize provider event log record", { error }).pipe(
+        Effect.as(undefined),
+      ),
     ),
   );
 });
@@ -125,7 +124,7 @@ const makeThreadWriter = Effect.fn("makeThreadWriter")(function* (input: {
   if (!sinkResult.ok) {
     yield* logWarning("failed to initialize provider thread log file", {
       filePath: input.filePath,
-      errorTag: errorTag(sinkResult.error),
+      error: sinkResult.error,
     });
     return undefined;
   }
@@ -150,7 +149,7 @@ const makeThreadWriter = Effect.fn("makeThreadWriter")(function* (input: {
       if (!flushResult.ok) {
         yield* logWarning("provider event log batch flush failed", {
           filePath: input.filePath,
-          errorTag: errorTag(flushResult.error),
+          error: flushResult.error,
         });
       }
     }),
@@ -179,7 +178,7 @@ export const makeEventNdjsonLogger = Effect.fn("makeEventNdjsonLogger")(function
 
   const directoryReady = yield* Effect.sync(() => {
     try {
-      NodeFS.mkdirSync(NodePath.dirname(filePath), { recursive: true });
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
       return true;
     } catch (error) {
       return { ok: false as const, error };
@@ -188,7 +187,7 @@ export const makeEventNdjsonLogger = Effect.fn("makeEventNdjsonLogger")(function
   if (directoryReady !== true) {
     yield* logWarning("failed to create provider event log directory", {
       filePath,
-      errorTag: errorTag(directoryReady.error),
+      error: directoryReady.error,
     });
     return undefined;
   }
@@ -212,7 +211,7 @@ export const makeEventNdjsonLogger = Effect.fn("makeEventNdjsonLogger")(function
       }
 
       return makeThreadWriter({
-        filePath: NodePath.join(NodePath.dirname(filePath), `${threadSegment}.log`),
+        filePath: path.join(path.dirname(filePath), `${threadSegment}.log`),
         maxBytes,
         maxFiles,
         batchWindowMs,

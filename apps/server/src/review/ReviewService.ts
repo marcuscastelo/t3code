@@ -13,44 +13,29 @@ import {
   type ReviewDiffPreviewResult,
 } from "@t3tools/contracts";
 
-import * as ServerConfig from "../config.ts";
+import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
-export class ReviewService extends Context.Service<
-  ReviewService,
-  {
-    readonly getDiffPreview: (
-      input: ReviewDiffPreviewInput,
-    ) => Effect.Effect<ReviewDiffPreviewResult, ReviewDiffPreviewError>;
-  }
->()("t3/review/ReviewService") {}
+export interface ReviewServiceShape {
+  readonly getDiffPreview: (
+    input: ReviewDiffPreviewInput,
+  ) => Effect.Effect<ReviewDiffPreviewResult, ReviewDiffPreviewError>;
+}
 
-export const make = Effect.gen(function* () {
-  const config = yield* ServerConfig.ServerConfig;
+export class ReviewService extends Context.Service<ReviewService, ReviewServiceShape>()(
+  "t3/review/ReviewService",
+) {}
+
+export const make = Effect.fn("makeReviewService")(function* () {
+  const config = yield* ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
 
-  const canonicalizePath = (value: string) => {
-    const resolvedPath = path.resolve(value);
-    return fileSystem.realPath(resolvedPath).pipe(
-      Effect.catchTags({
-        PlatformError: (cause) =>
-          cause.reason._tag === "NotFound"
-            ? Effect.succeed(resolvedPath)
-            : Effect.fail(
-                new VcsRepositoryDetectionError({
-                  operation: "ReviewService.assertWorkspaceBoundCwd.canonicalizePath",
-                  cwd: resolvedPath,
-                  detail: "Failed to resolve a path while validating the review workspace.",
-                  cause,
-                }),
-              ),
-      }),
-    );
-  };
+  const canonicalizePath = (value: string) =>
+    fileSystem.realPath(path.resolve(value)).pipe(Effect.orElseSucceed(() => path.resolve(value)));
 
   const isWithinRoot = (candidate: string, root: string) => {
     const relative = path.relative(root, candidate);
@@ -77,7 +62,7 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const getDiffPreview: ReviewService["Service"]["getDiffPreview"] = Effect.fn(
+  const getDiffPreview: ReviewServiceShape["getDiffPreview"] = Effect.fn(
     "ReviewService.getDiffPreview",
   )(function* (input) {
     yield* assertWorkspaceBoundCwd(input.cwd);
@@ -111,4 +96,4 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(ReviewService, make);
+export const layer = Layer.effect(ReviewService, make());

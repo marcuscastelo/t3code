@@ -1,4 +1,4 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@t3tools/client-runtime";
 import type { EnvironmentId, ProjectId, ScopedProjectRef } from "@t3tools/contracts";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
@@ -11,7 +11,6 @@ interface ThreadContextLike {
 
 interface DraftThreadContextLike extends ThreadContextLike {
   envMode: DraftThreadEnvMode;
-  startFromOrigin: boolean;
 }
 
 interface NewThreadHandler {
@@ -21,7 +20,6 @@ interface NewThreadHandler {
       branch?: string | null;
       worktreePath?: string | null;
       envMode?: DraftThreadEnvMode;
-      startFromOrigin?: boolean;
     },
   ): Promise<void>;
 }
@@ -32,14 +30,8 @@ export interface ChatThreadActionContext {
   readonly activeDraftThread: DraftThreadContextLike | null;
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
+  readonly defaultThreadEnvMode: DraftThreadEnvMode;
   readonly handleNewThread: NewThreadHandler;
-}
-
-export function resolveNewDraftStartFromOrigin(input: {
-  envMode: DraftThreadEnvMode;
-  newWorktreesStartFromOrigin: boolean;
-}): boolean {
-  return input.envMode === "worktree" && input.newWorktreesStartFromOrigin;
 }
 
 export function resolveThreadActionProjectRef(
@@ -65,9 +57,12 @@ function buildContextualThreadOptions(context: ChatThreadActionContext): NewThre
     envMode:
       context.activeDraftThread?.envMode ??
       (context.activeThread?.worktreePath ? "worktree" : "local"),
-    ...(context.activeDraftThread
-      ? { startFromOrigin: context.activeDraftThread.startFromOrigin }
-      : {}),
+  };
+}
+
+function buildDefaultThreadOptions(context: ChatThreadActionContext): NewThreadOptions {
+  return {
+    envMode: context.defaultThreadEnvMode,
   };
 }
 
@@ -98,6 +93,6 @@ export async function startNewLocalThreadFromContext(
     return false;
   }
 
-  await context.handleNewThread(projectRef);
+  await context.handleNewThread(projectRef, buildDefaultThreadOptions(context));
   return true;
 }

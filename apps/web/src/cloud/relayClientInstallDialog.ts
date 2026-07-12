@@ -1,23 +1,7 @@
-import {
-  RelayClientInstallProgressStageSchema,
-  type RelayClientInstallProgressEvent,
-  type RelayClientInstallProgressStage,
+import type {
+  RelayClientInstallProgressEvent,
+  RelayClientInstallProgressStage,
 } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
-
-export class RelayClientInstallConfirmationConflictError extends Schema.TaggedErrorClass<RelayClientInstallConfirmationConflictError>()(
-  "RelayClientInstallConfirmationConflictError",
-  {
-    requestedVersion: Schema.String,
-    activeVersion: Schema.String,
-    activeDialogStatus: Schema.Literals(["confirming", "installing", "closing"]),
-    activeInstallStage: Schema.optional(RelayClientInstallProgressStageSchema),
-  },
-) {
-  override get message(): string {
-    return `Cannot confirm relay client installation ${this.requestedVersion}; installation ${this.activeVersion} has dialog status ${this.activeDialogStatus}.`;
-  }
-}
 
 export type RelayClientInstallDialogState =
   | { readonly status: "idle" }
@@ -63,17 +47,7 @@ export function subscribeRelayClientInstallDialog(listener: () => void): () => v
 
 export function requestRelayClientInstallConfirmation(version: string): Promise<boolean> {
   if (state.status !== "idle") {
-    const activeInstall = state.status === "closing" ? state.view : state;
-    return Promise.reject(
-      new RelayClientInstallConfirmationConflictError({
-        requestedVersion: version,
-        activeVersion: activeInstall.version,
-        activeDialogStatus: state.status,
-        ...(activeInstall.status === "installing"
-          ? { activeInstallStage: activeInstall.stage }
-          : {}),
-      }),
-    );
+    return Promise.reject(new Error("A relay client installation is already in progress."));
   }
 
   publish({ status: "confirming", version });

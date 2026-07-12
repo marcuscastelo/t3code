@@ -2,50 +2,45 @@ import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
+  appendBrowsePathSegment,
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
-  findExistingAddProject,
-  getAddProjectInitialQuery,
-  resolveAddProjectPath,
-  sortAddProjectProviderSources,
-  type AddProjectRemoteSource,
-} from "@t3tools/client-runtime/operations/projects";
-import {
-  appendBrowsePathSegment,
   canNavigateUp,
   ensureBrowseDirectoryPath,
+  findExistingAddProject,
+  getAddProjectInitialQuery,
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
   getBrowseParentPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isFilesystemBrowseQuery,
-} from "@t3tools/client-runtime/state/projects";
+  resolveAddProjectPath,
+  sortAddProjectProviderSources,
+  type AddProjectRemoteSource,
+} from "@t3tools/client-runtime";
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { StackActions, useNavigation } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
-import * as Cause from "effect/Cause";
 import * as Order from "effect/Order";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { cn } from "../../lib/cn";
 
-import { useProjects, useServerConfigs } from "../../state/entities";
-import { filesystemEnvironment } from "../../state/filesystem";
-import { projectEnvironment } from "../../state/projects";
-import { useEnvironmentQuery } from "../../state/query";
-import { sourceControlEnvironment } from "../../state/sourceControl";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { SourceControlIcon } from "../../components/SourceControlIcon";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
-import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { getEnvironmentClient } from "../../state/environment-session-registry";
+import { useFilesystemBrowse } from "../../state/use-filesystem-browse";
+import { useRemoteCatalog } from "../../state/use-remote-catalog";
+import { useRemoteEnvironmentState } from "../../state/use-remote-environment-registry";
+import {
+  refreshSourceControlDiscoveryForEnvironment,
+  useSourceControlDiscovery,
+} from "../../state/use-source-control-discovery";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -100,7 +95,10 @@ function sourceFromParam(value: string | string[] | undefined): AddProjectRemote
 
 function SectionTitle(props: { readonly children: string }) {
   return (
-    <Text className="px-1 text-2xs font-t3-bold tracking-[0.7px] uppercase text-foreground-muted">
+    <Text
+      className="px-1 text-[11px] font-t3-bold uppercase text-foreground-muted"
+      style={{ letterSpacing: 0.7 }}
+    >
       {props.children}
     </Text>
   );
@@ -110,12 +108,7 @@ function AddProjectShell(props: { readonly children: ReactNode }) {
   const insets = useSafeAreaInsets();
 
   return (
-    // collapsable={false} is load-bearing: if this wrapper is flattened, the
-    // ScrollView lands directly under RNSSafeAreaView and RNS's formSheet
-    // scroll-view frame correction mistakes this full-height wrapper for a
-    // "header" sibling, coercing the ScrollView to zero height (blank sheet
-    // as soon as the sheet re-lays-out, e.g. when the keyboard opens).
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View className="flex-1 bg-sheet">
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
@@ -146,17 +139,19 @@ function ListRow(props: {
   readonly right?: ReactNode;
   readonly onPress?: () => void;
 }) {
+  const borderColor = useThemeColor("--color-border-subtle");
   const chevronColor = useThemeColor("--color-chevron");
 
   return (
     <Pressable
       disabled={props.disabled}
       onPress={props.onPress}
-      className={cn(
-        "bg-card px-3.5 py-2.5 active:opacity-70",
-        !props.isFirst && "border-t border-border-subtle",
-        props.disabled && "opacity-[0.45]",
-      )}
+      className="bg-card px-3.5 py-2.5 active:opacity-70"
+      style={{
+        opacity: props.disabled ? 0.45 : 1,
+        borderTopWidth: props.isFirst ? 0 : 1,
+        borderTopColor: borderColor,
+      }}
     >
       <View className="flex-row items-center gap-3">
         <View
@@ -169,9 +164,9 @@ function ListRow(props: {
           {props.icon}
         </View>
         <View className="flex-1 gap-0.5">
-          <Text className="text-base leading-snug font-t3-bold">{props.title}</Text>
+          <Text className="text-[16px] leading-[21px] font-t3-bold">{props.title}</Text>
           {props.subtitle ? (
-            <Text className="text-sm leading-snug text-foreground-muted" numberOfLines={2}>
+            <Text className="text-[13px] leading-[17px] text-foreground-muted" numberOfLines={2}>
               {props.subtitle}
             </Text>
           ) : null}
@@ -203,7 +198,7 @@ function PrimaryActionButton(props: {
       {props.loading ? (
         <ActivityIndicator color={String(primaryForeground)} />
       ) : (
-        <Text className="text-base font-t3-bold text-primary-foreground">{props.label}</Text>
+        <Text className="text-[14px] font-t3-bold text-primary-foreground">{props.label}</Text>
       )}
     </Pressable>
   );
@@ -216,7 +211,7 @@ function ProjectPathInput(props: {
 }) {
   return (
     <TextInput
-      className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+      className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-[15px] leading-[20px]"
       value={props.value}
       onChangeText={props.onChangeText}
       autoCapitalize="none"
@@ -229,12 +224,12 @@ function ProjectPathInput(props: {
 }
 
 function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
-  const serverConfigByEnvironmentId = useServerConfigs();
-  const { savedConnectionsById } = useSavedRemoteConnections();
+  const { serverConfigByEnvironmentId } = useRemoteCatalog();
+  const { savedConnectionsById } = useRemoteEnvironmentState();
 
   return useMemo<ReadonlyArray<EnvironmentOption>>(() => {
     const options = Object.values(savedConnectionsById).map((connection) => {
-      const config = serverConfigByEnvironmentId.get(connection.environmentId);
+      const config = serverConfigByEnvironmentId[connection.environmentId];
       return {
         environmentId: connection.environmentId,
         label: connection.environmentLabel,
@@ -251,34 +246,38 @@ function useSelectedEnvironment(): {
   readonly selectedEnvironment: EnvironmentOption | null;
   readonly setSelectedEnvironmentId: (environmentId: EnvironmentId) => void;
 } {
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ environmentId?: string }>();
   const environmentOptions = useEnvironmentOptions();
+  const requestedEnvironmentId = stringParam(params.environmentId) as EnvironmentId | null;
   const selectedEnvironment =
-    environmentOptions.find((environment) => environment.environmentId === selectedEnvironmentId) ??
+    environmentOptions.find(
+      (environment) => environment.environmentId === requestedEnvironmentId,
+    ) ??
     environmentOptions[0] ??
     null;
 
   return {
     environmentOptions,
     selectedEnvironment,
-    setSelectedEnvironmentId,
+    setSelectedEnvironmentId: (environmentId) => router.setParams({ environmentId }),
   };
 }
 
 function EmptyEnvironmentState() {
-  const navigation = useNavigation();
+  const router = useRouter();
 
   return (
     <View className="items-center gap-3 rounded-2xl bg-card px-5 py-8">
-      <Text className="text-center text-lg font-t3-bold">No environments connected</Text>
-      <Text className="text-center text-sm leading-normal text-foreground-muted">
+      <Text className="text-center text-[17px] font-t3-bold">No environments connected</Text>
+      <Text className="text-center text-[14px] leading-[20px] text-foreground-muted">
         Add an environment before adding a project.
       </Text>
       <Pressable
-        onPress={() => navigation.dispatch(StackActions.replace("ConnectionsNew"))}
+        onPress={() => router.replace("/connections/new")}
         className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
       >
-        <Text className="text-sm font-t3-bold text-primary-foreground">Add environment</Text>
+        <Text className="text-[13px] font-t3-bold text-primary-foreground">Add environment</Text>
       </Pressable>
     </View>
   );
@@ -291,7 +290,7 @@ function SourceControlRow(props: {
   readonly hint: string;
   readonly isFirst: boolean;
 }) {
-  const navigation = useNavigation();
+  const router = useRouter();
   const iconColor = useThemeColor("--color-icon");
   const title =
     props.source === "url" ? "Git URL" : `${addProjectRemoteSourceLabel(props.source)} repository`;
@@ -319,8 +318,8 @@ function SourceControlRow(props: {
       icon={icon}
       isFirst={props.isFirst}
       onPress={() =>
-        navigation.navigate("NewTaskSheet", {
-          screen: "AddProjectRepository",
+        router.push({
+          pathname: "/new/add-project/repository",
           params: {
             environmentId: props.selectedEnvironmentId,
             source: props.source,
@@ -332,23 +331,21 @@ function SourceControlRow(props: {
 }
 
 export function AddProjectSourceScreen() {
-  const navigation = useNavigation();
+  const router = useRouter();
   const accentColor = useThemeColor("--color-icon-muted");
   const iconColor = useThemeColor("--color-icon");
   const { environmentOptions, selectedEnvironment, setSelectedEnvironmentId } =
     useSelectedEnvironment();
-  const discoveryState = useEnvironmentQuery(
-    selectedEnvironment === null
-      ? null
-      : sourceControlEnvironment.discovery({
-          environmentId: selectedEnvironment.environmentId,
-          input: {},
-        }),
-  );
+  const discoveryState = useSourceControlDiscovery(selectedEnvironment?.environmentId ?? null);
   const readiness = useMemo(
     () => buildAddProjectRemoteSourceReadiness(discoveryState.data),
     [discoveryState.data],
   );
+
+  useEffect(() => {
+    if (!selectedEnvironment) return;
+    void refreshSourceControlDiscoveryForEnvironment(selectedEnvironment.environmentId);
+  }, [selectedEnvironment]);
 
   return (
     <AddProjectShell>
@@ -406,11 +403,9 @@ export function AddProjectSourceScreen() {
               }
               isFirst
               onPress={() =>
-                navigation.navigate("NewTaskSheet", {
-                  screen: "AddProjectLocal",
-                  params: {
-                    environmentId: selectedEnvironment.environmentId,
-                  },
+                router.push({
+                  pathname: "/new/add-project/local",
+                  params: { environmentId: selectedEnvironment.environmentId },
                 })
               }
             />
@@ -439,13 +434,14 @@ export function AddProjectSourceScreen() {
 }
 
 function useCreateProject(environment: EnvironmentOption | null) {
-  const navigation = useNavigation();
-  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
-  const projects = useProjects();
+  const router = useRouter();
+  const { projects } = useRemoteCatalog();
 
   return useCallback(
     async (workspaceRoot: string) => {
       if (!environment) return;
+      const client = getEnvironmentClient(environment.environmentId);
+      if (!client) throw new Error("Environment API is not available.");
 
       const existing = findExistingAddProject({
         projects,
@@ -454,48 +450,43 @@ function useCreateProject(environment: EnvironmentOption | null) {
       });
       if (existing) {
         Alert.alert("Project already exists", existing.title);
-        navigation.dispatch(
-          StackActions.replace("NewTaskDraft", {
+        router.replace({
+          pathname: "/new/draft",
+          params: {
             environmentId: existing.environmentId,
             projectId: existing.id,
             title: existing.title,
-          }),
-        );
+          },
+        });
         return;
       }
 
       const projectId = ProjectId.make(uuidv4());
-      const command = buildProjectCreateCommand({
-        commandId: CommandId.make(uuidv4()),
-        projectId,
-        workspaceRoot,
-        createdAt: new Date().toISOString(),
-      });
-      const result = await createProject({
-        environmentId: environment.environmentId,
-        input: command,
-      });
-      if (AsyncResult.isFailure(result)) {
-        return result;
-      }
-      navigation.dispatch(
-        StackActions.replace("NewTaskDraft", {
+      await client.orchestration.dispatchCommand(
+        buildProjectCreateCommand({
+          commandId: CommandId.make(uuidv4()),
+          projectId,
+          workspaceRoot,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      router.replace({
+        pathname: "/new/draft",
+        params: {
           environmentId: environment.environmentId,
           projectId,
           title: inferProjectTitleFromPath(workspaceRoot),
-        }),
-      );
-      return result;
+        },
+      });
     },
-    [createProject, environment, projects, navigation],
+    [environment, projects, router],
   );
 }
 
-function useEnvironmentFromParam(
-  environmentIdParam: string | string[] | undefined,
-): EnvironmentOption | null {
+function useEnvironmentFromParam(): EnvironmentOption | null {
+  const params = useLocalSearchParams<{ environmentId?: string }>();
   const environmentOptions = useEnvironmentOptions();
-  const environmentId = stringParam(environmentIdParam) as EnvironmentId | null;
+  const environmentId = stringParam(params.environmentId) as EnvironmentId | null;
   return (
     environmentOptions.find((environment) => environment.environmentId === environmentId) ??
     environmentOptions[0] ??
@@ -503,16 +494,11 @@ function useEnvironmentFromParam(
   );
 }
 
-export function AddProjectRepositoryScreen(props: {
-  readonly environmentId?: string | string[];
-  readonly source?: string | string[];
-}) {
-  const lookupRepositoryQuery = useAtomQueryRunner(sourceControlEnvironment.repository, {
-    reportFailure: false,
-  });
-  const navigation = useNavigation();
-  const environment = useEnvironmentFromParam(props.environmentId);
-  const source = sourceFromParam(props.source);
+export function AddProjectRepositoryScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ environmentId?: string; source?: string }>();
+  const environment = useEnvironmentFromParam();
+  const source = sourceFromParam(params.source);
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -521,35 +507,30 @@ export function AddProjectRepositoryScreen(props: {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
-    const provider = addProjectRemoteSourceProvider(source);
-    if (!provider) {
-      const remoteUrl = repositoryInput.trim();
-      navigation.navigate("NewTaskSheet", {
-        screen: "AddProjectDestination",
-        params: {
-          environmentId: environment.environmentId,
-          source,
-          remoteUrl,
-          repositoryTitle: remoteUrl,
-        },
-      });
-      setIsSubmitting(false);
-      return;
-    }
+    try {
+      const provider = addProjectRemoteSourceProvider(source);
+      if (!provider) {
+        const remoteUrl = repositoryInput.trim();
+        router.push({
+          pathname: "/new/add-project/destination",
+          params: {
+            environmentId: environment.environmentId,
+            source,
+            remoteUrl,
+            repositoryTitle: remoteUrl,
+          },
+        });
+        return;
+      }
 
-    const result = await lookupRepositoryQuery({
-      environmentId: environment.environmentId,
-      input: {
+      const client = getEnvironmentClient(environment.environmentId);
+      if (!client) throw new Error("Environment API is not available.");
+      const repository = await client.sourceControl.lookupRepository({
         provider,
         repository: repositoryInput.trim(),
-      },
-    });
-    if (AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
-    } else {
-      const repository = result.value;
-      navigation.navigate("NewTaskSheet", {
-        screen: "AddProjectDestination",
+      });
+      router.push({
+        pathname: "/new/add-project/destination",
         params: {
           environmentId: environment.environmentId,
           source,
@@ -557,15 +538,18 @@ export function AddProjectRepositoryScreen(props: {
           repositoryTitle: repository.nameWithOwner,
         },
       });
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
-  }, [environment, isSubmitting, lookupRepositoryQuery, repositoryInput, navigation, source]);
+  }, [environment, isSubmitting, repositoryInput, router, source]);
 
   return (
     <AddProjectShell>
       {error ? <ErrorBanner message={error} /> : null}
       <TextInput
-        className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+        className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-[15px] leading-[20px]"
         value={repositoryInput}
         onChangeText={setRepositoryInput}
         autoCapitalize="none"
@@ -609,14 +593,7 @@ function FolderBrowser(props: {
     () => (browseDirectoryPath.length > 0 ? { partialPath: browseDirectoryPath } : null),
     [browseDirectoryPath],
   );
-  const browseState = useEnvironmentQuery(
-    browseInput === null
-      ? null
-      : filesystemEnvironment.browse({
-          environmentId: props.environment.environmentId,
-          input: browseInput,
-        }),
-  );
+  const browseState = useFilesystemBrowse(props.environment.environmentId, browseInput);
   const visibleBrowseEntries = useMemo(
     () =>
       Arr.sort(
@@ -681,8 +658,8 @@ function FolderBrowser(props: {
   );
 }
 
-export function AddProjectLocalFolderScreen(props: { readonly environmentId?: string | string[] }) {
-  const environment = useEnvironmentFromParam(props.environmentId);
+export function AddProjectLocalFolderScreen() {
+  const environment = useEnvironmentFromParam();
   const createProject = useCreateProject(environment);
   const [pathInput, setPathInput] = useState(() =>
     getAddProjectInitialQuery(environment?.baseDirectory),
@@ -709,11 +686,13 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     }
 
     setIsSubmitting(true);
-    const result = await createProject(resolved.path);
-    if (result && AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
+    try {
+      await createProject(resolved.path);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   }, [createProject, environment, isSubmitting, pathInput]);
 
   return (
@@ -745,18 +724,16 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   );
 }
 
-export function AddProjectDestinationScreen(props: {
-  readonly environmentId?: string | string[];
-  readonly remoteUrl?: string | string[];
-  readonly repositoryTitle?: string | string[];
-}) {
-  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
-    reportFailure: false,
-  });
-  const environment = useEnvironmentFromParam(props.environmentId);
+export function AddProjectDestinationScreen() {
+  const params = useLocalSearchParams<{
+    environmentId?: string;
+    remoteUrl?: string;
+    repositoryTitle?: string;
+  }>();
+  const environment = useEnvironmentFromParam();
   const createProject = useCreateProject(environment);
-  const remoteUrl = stringParam(props.remoteUrl);
-  const repositoryTitle = stringParam(props.repositoryTitle);
+  const remoteUrl = stringParam(params.remoteUrl);
+  const repositoryTitle = stringParam(params.repositoryTitle);
   const [pathInput, setPathInput] = useState(() =>
     getAddProjectInitialQuery(environment?.baseDirectory),
   );
@@ -782,31 +759,28 @@ export function AddProjectDestinationScreen(props: {
     }
 
     setIsSubmitting(true);
-    const cloneResult = await cloneRepository({
-      environmentId: environment.environmentId,
-      input: {
+    try {
+      const client = getEnvironmentClient(environment.environmentId);
+      if (!client) throw new Error("Environment API is not available.");
+      const result = await client.sourceControl.cloneRepository({
         remoteUrl,
         destinationPath: resolved.path,
-      },
-    });
-    if (AsyncResult.isFailure(cloneResult)) {
-      setError(errorMessage(Cause.squash(cloneResult.cause)));
-    } else {
-      const createResult = await createProject(cloneResult.value.cwd);
-      if (createResult && AsyncResult.isFailure(createResult)) {
-        setError(errorMessage(Cause.squash(createResult.cause)));
-      }
+      });
+      await createProject(result.cwd);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
-  }, [cloneRepository, createProject, environment, isSubmitting, pathInput, remoteUrl]);
+  }, [createProject, environment, isSubmitting, pathInput, remoteUrl]);
 
   return (
     <AddProjectShell>
       {error ? <ErrorBanner message={error} /> : null}
       {repositoryTitle ? (
         <View className="rounded-[24px] bg-card px-4 py-3">
-          <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
-          <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={2}>
+          <Text className="text-[14px] font-t3-bold">{repositoryTitle}</Text>
+          <Text className="mt-0.5 text-[12px] text-foreground-muted" numberOfLines={2}>
             {remoteUrl}
           </Text>
         </View>

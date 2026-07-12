@@ -17,7 +17,6 @@ import type {
   RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
 import { CommandId, ProviderInstanceId } from "@t3tools/contracts";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { RELAY_ACTIVITY_PUBLISH_TYP, verifyRelayJwt } from "@t3tools/shared/relayJwt";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -26,10 +25,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
-import * as Tracer from "effect/Tracer";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { ServerEnvironment } from "../environment/Services/ServerEnvironment.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -64,18 +62,17 @@ function makeMemorySecretStore() {
   const values = new Map<string, Uint8Array>();
   const store = {
     get: ((name) =>
-      Effect.sync(() => {
-        const value = values.get(name);
-        return value === undefined ? Option.none() : Option.some(Uint8Array.from(value));
-      })) satisfies ServerSecretStore.ServerSecretStore["Service"]["get"],
+      Effect.sync(
+        () => values.get(name) ?? null,
+      )) satisfies ServerSecretStore.ServerSecretStoreShape["get"],
     set: ((name, value) =>
       Effect.sync(() => {
         values.set(name, Uint8Array.from(value));
-      })) satisfies ServerSecretStore.ServerSecretStore["Service"]["set"],
+      })) satisfies ServerSecretStore.ServerSecretStoreShape["set"],
     create: ((name, value) =>
       Effect.sync(() => {
         values.set(name, Uint8Array.from(value));
-      })) satisfies ServerSecretStore.ServerSecretStore["Service"]["create"],
+      })) satisfies ServerSecretStore.ServerSecretStoreShape["create"],
     getOrCreateRandom: ((name, bytes) =>
       Effect.sync(() => {
         const existing = values.get(name);
@@ -85,12 +82,12 @@ function makeMemorySecretStore() {
         const generated = new Uint8Array(bytes);
         values.set(name, generated);
         return generated;
-      })) satisfies ServerSecretStore.ServerSecretStore["Service"]["getOrCreateRandom"],
+      })) satisfies ServerSecretStore.ServerSecretStoreShape["getOrCreateRandom"],
     remove: ((name) =>
       Effect.sync(() => {
         values.delete(name);
-      })) satisfies ServerSecretStore.ServerSecretStore["Service"]["remove"],
-  } satisfies ServerSecretStore.ServerSecretStore["Service"];
+      })) satisfies ServerSecretStore.ServerSecretStoreShape["remove"],
+  } satisfies ServerSecretStore.ServerSecretStoreShape;
   return {
     store,
     setString: (name: string, value: string) => store.set(name, encodeSecret(value)),
@@ -98,27 +95,6 @@ function makeMemorySecretStore() {
 }
 
 describe.sequential("signRelayAgentActivityPublishProof", () => {
-  it("distinguishes pending link credentials from disabled publication", () => {
-    expect(
-      AgentAwarenessRelay.resolveAgentActivityPublishingStartupState({
-        relayConfigured: false,
-        publishEnabled: false,
-      }),
-    ).toBe("waiting-for-link");
-    expect(
-      AgentAwarenessRelay.resolveAgentActivityPublishingStartupState({
-        relayConfigured: true,
-        publishEnabled: false,
-      }),
-    ).toBe("disabled");
-    expect(
-      AgentAwarenessRelay.resolveAgentActivityPublishingStartupState({
-        relayConfigured: true,
-        publishEnabled: true,
-      }),
-    ).toBe("enabled");
-  });
-
   it("derives the thread id from the aggregate id for thread events without payload thread ids", () => {
     const threadId = "thread-aggregate-1" as ThreadId;
     const now = "2026-05-25T00:00:00.000Z";
@@ -494,7 +470,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
 
         const layer = Layer.mergeAll(
           Layer.succeed(ServerSecretStore.ServerSecretStore, secrets.store),
-          Layer.succeed(ServerEnvironment.ServerEnvironment, {
+          Layer.succeed(ServerEnvironment, {
             getEnvironmentId: Effect.succeed(environmentId),
             getDescriptor: Effect.succeed(descriptor),
           }),
@@ -546,20 +522,6 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         const runFork = Effect.runForkWith(context);
         const events = yield* Queue.unbounded<OrchestrationEvent>();
         const fetchSeen = yield* Deferred.make<URL>();
-        const userSpans: Array<string> = [];
-        const productSpans: Array<string> = [];
-        const collectingTracer = (spans: Array<string>) =>
-          Tracer.make({
-            span: (options) => {
-              const span = new Tracer.NativeSpan(options);
-              const end = span.end.bind(span);
-              span.end = (endTime, exit) => {
-                end(endTime, exit);
-                spans.push(span.name);
-              };
-              return span;
-            },
-          });
         const secrets = makeMemorySecretStore();
         const now = "2026-05-25T00:00:00.000Z";
         const projectId = "project-1" as ProjectId;
@@ -626,11 +588,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         } satisfies ExecutionEnvironmentDescriptor;
 
         globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
-          const url = new URL(
-            typeof input === "string" || input instanceof URL
-              ? input
-              : (input as unknown as { readonly url: string }).url,
-          );
+          const url = new URL(input instanceof Request ? input.url : input.toString());
           runFork(Deferred.succeed(fetchSeen, url));
           return Promise.resolve(Response.json({ ok: true, deliveries: [] }));
         }) as unknown as typeof fetch;
@@ -642,7 +600,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
 
         const layer = Layer.mergeAll(
           Layer.succeed(ServerSecretStore.ServerSecretStore, secrets.store),
-          Layer.succeed(ServerEnvironment.ServerEnvironment, {
+          Layer.succeed(ServerEnvironment, {
             getEnvironmentId: Effect.succeed(environmentId),
             getDescriptor: Effect.succeed(descriptor),
           }),
@@ -690,8 +648,6 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
 
           const url = yield* Deferred.await(fetchSeen).pipe(Effect.timeout("2 seconds"));
           expect(url.origin).toBe("https://transport.example.test");
-          expect(productSpans).toContain("makePublishProof");
-          expect(userSpans).not.toContain("makePublishProof");
         }).pipe(
           Effect.provide(
             AgentAwarenessRelay.layer.pipe(
@@ -699,8 +655,6 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
               Layer.provideMerge(NodeServices.layer),
             ),
           ),
-          Effect.provideService(RelayClientTracer, Option.some(collectingTracer(productSpans))),
-          Effect.withTracer(collectingTracer(userSpans)),
         );
       }),
     ),

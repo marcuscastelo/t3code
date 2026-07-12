@@ -9,24 +9,25 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
-import * as TextGeneration from "./TextGeneration.ts";
+import type { ProviderInstanceRegistryShape } from "../provider/Services/ProviderInstanceRegistry.ts";
+import type { TextGenerationShape } from "./TextGeneration.ts";
 
-const makeStubTextGeneration = (
-  overrides: Partial<TextGeneration.TextGeneration["Service"]>,
-): TextGeneration.TextGeneration["Service"] =>
-  TextGeneration.TextGeneration.of({
-    generateCommitMessage: () =>
-      Effect.die("generateCommitMessage stub not configured for this test"),
-    generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
-    generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
-    generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
-    ...overrides,
-  });
+import { makeTextGenerationFromRegistry } from "./TextGeneration.ts";
+
+const makeStubTextGeneration = (overrides: Partial<TextGenerationShape>): TextGenerationShape => ({
+  generateCommitMessage: () =>
+    Effect.die("generateCommitMessage stub not configured for this test"),
+  generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
+  generatePrUpdateContent: () =>
+    Effect.die("generatePrUpdateContent stub not configured for this test"),
+  generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
+  generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
+  ...overrides,
+});
 
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
-  textGeneration: TextGeneration.TextGeneration["Service"],
+  textGeneration: TextGenerationShape,
 ): ProviderInstance =>
   ({
     instanceId,
@@ -44,7 +45,7 @@ const makeStubInstance = (
 
 const makeStubRegistry = (
   instances: ReadonlyArray<ProviderInstance>,
-): ProviderInstanceRegistry.ProviderInstanceRegistry["Service"] => {
+): ProviderInstanceRegistryShape => {
   const byId = new Map(instances.map((instance) => [instance.instanceId, instance] as const));
   return {
     getInstance: (id) => Effect.succeed(byId.get(id)),
@@ -82,7 +83,7 @@ describe("makeTextGenerationFromRegistry", () => {
         }),
       );
 
-      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([personal, work]));
+      const tg = makeTextGenerationFromRegistry(makeStubRegistry([personal, work]));
 
       const result = yield* tg.generateBranchName({
         cwd: process.cwd(),
@@ -97,7 +98,7 @@ describe("makeTextGenerationFromRegistry", () => {
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>
     Effect.gen(function* () {
-      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([]));
+      const tg = makeTextGenerationFromRegistry(makeStubRegistry([]));
 
       const result = yield* tg
         .generateBranchName({

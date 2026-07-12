@@ -7,50 +7,48 @@ import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
 import { lt } from "drizzle-orm";
 
 import { verifyDpopProof } from "@t3tools/shared/dpop";
-import * as RelayDb from "../db.ts";
+import { RelayDb } from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 
 export class DpopProofReplayPersistenceError extends Schema.TaggedErrorClass<DpopProofReplayPersistenceError>()(
   "DpopProofReplayPersistenceError",
   {
-    operation: Schema.Literals(["consume", "prune-expired"]),
-    thumbprint: Schema.optionalKey(Schema.String),
-    jti: Schema.optionalKey(Schema.String),
-    iat: Schema.optionalKey(Schema.Number),
-    expiresBefore: Schema.optionalKey(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Failed to persist DPoP proof replay state during '${this.operation}'`;
+    return "Failed to persist DPoP proof replay state";
   }
 }
 
-export class DpopProofReplay extends Context.Service<
-  DpopProofReplay,
-  {
-    readonly verifyAndConsume: (input: {
-      readonly proof: string | undefined;
-      readonly method: string;
-      readonly url: string;
-      readonly expectedThumbprint?: string;
-      readonly expectedAccessToken?: string;
-      readonly now: DateTime.DateTime;
-    }) => Effect.Effect<string, HttpApiError.Unauthorized | DpopProofReplayPersistenceError>;
-    readonly consume: (input: {
-      readonly thumbprint: string;
-      readonly jti: string;
-      readonly iat: number;
-      readonly expiresAt: DateTime.DateTime;
-    }) => Effect.Effect<boolean, DpopProofReplayPersistenceError>;
-    readonly pruneExpired: Effect.Effect<void, DpopProofReplayPersistenceError>;
-  }
->()("t3code-relay/auth/DpopProofs/DpopProofReplay") {}
+export interface DpopProofReplayShape {
+  readonly verifyAndConsume: (input: {
+    readonly proof: string | undefined;
+    readonly method: string;
+    readonly url: string;
+    readonly expectedThumbprint?: string;
+    readonly expectedAccessToken?: string;
+    readonly now: DateTime.DateTime;
+  }) => Effect.Effect<string, HttpApiError.Unauthorized | DpopProofReplayPersistenceError>;
+
+  readonly consume: (input: {
+    readonly thumbprint: string;
+    readonly jti: string;
+    readonly iat: number;
+    readonly expiresAt: DateTime.DateTime;
+  }) => Effect.Effect<boolean, DpopProofReplayPersistenceError>;
+
+  readonly pruneExpired: Effect.Effect<void, DpopProofReplayPersistenceError>;
+}
+
+export class DpopProofReplay extends Context.Service<DpopProofReplay, DpopProofReplayShape>()(
+  "t3code-relay/auth/DpopProofs/DpopProofReplay",
+) {}
 
 const make = Effect.gen(function* () {
-  const db = yield* RelayDb.RelayDb;
+  const db = yield* RelayDb;
 
-  const consume: DpopProofReplay["Service"]["consume"] = Effect.fn("relay.dpop_proofs.consume")(
+  const consume: DpopProofReplayShape["consume"] = Effect.fn("relay.dpop_proofs.consume")(
     function* (input) {
       const createdAt = DateTime.formatIso(yield* DateTime.now);
       const inserted = yield* db
@@ -63,24 +61,13 @@ const make = Effect.gen(function* () {
           createdAt,
         })
         .onConflictDoNothing()
-        .returning({ jti: relayDpopProofs.jti })
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new DpopProofReplayPersistenceError({
-                operation: "consume",
-                thumbprint: input.thumbprint,
-                jti: input.jti,
-                iat: input.iat,
-                cause,
-              }),
-          ),
-        );
+        .returning({ jti: relayDpopProofs.jti });
       return inserted.length > 0;
     },
+    Effect.mapError((cause) => new DpopProofReplayPersistenceError({ cause })),
   );
 
-  const verifyAndConsume: DpopProofReplay["Service"]["verifyAndConsume"] = Effect.fn(
+  const verifyAndConsume: DpopProofReplayShape["verifyAndConsume"] = Effect.fn(
     "relay.dpop_proofs.verify_and_consume",
   )(function* (input) {
     yield* Effect.annotateCurrentSpan({
@@ -127,23 +114,14 @@ const make = Effect.gen(function* () {
     return result.thumbprint;
   });
 
-  const pruneExpired: DpopProofReplay["Service"]["pruneExpired"] = Effect.gen(function* () {
+  const pruneExpired: DpopProofReplayShape["pruneExpired"] = Effect.gen(function* () {
     const now = DateTime.formatIso(yield* DateTime.now);
     yield* Effect.annotateCurrentSpan({ "relay.dpop_prune.before": now });
-    yield* db
-      .delete(relayDpopProofs)
-      .where(lt(relayDpopProofs.expiresAt, now))
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new DpopProofReplayPersistenceError({
-              operation: "prune-expired",
-              expiresBefore: now,
-              cause,
-            }),
-        ),
-      );
-  }).pipe(Effect.withSpan("relay.dpop_proofs.prune_expired"));
+    yield* db.delete(relayDpopProofs).where(lt(relayDpopProofs.expiresAt, now));
+  }).pipe(
+    Effect.withSpan("relay.dpop_proofs.prune_expired"),
+    Effect.mapError((cause) => new DpopProofReplayPersistenceError({ cause })),
+  );
 
   return DpopProofReplay.of({
     verifyAndConsume,

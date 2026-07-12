@@ -114,7 +114,11 @@ export const deriveProviderInstanceConfigMap = (
  * configs, so the only way the watcher could fail is a settings stream
  * tear-down, which logs and exits cleanly.
  */
-const SettingsWatcherLive = Layer.effectDiscard(
+const SettingsWatcherLive: Layer.Layer<
+  never,
+  never,
+  ProviderInstanceRegistryMutator | ServerSettingsService
+> = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
     const serverSettings = yield* ServerSettingsService;

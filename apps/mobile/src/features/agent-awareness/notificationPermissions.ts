@@ -1,6 +1,5 @@
 import * as Notifications from "expo-notifications";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 
 export type NotificationPermissionResult =
@@ -8,31 +7,9 @@ export type NotificationPermissionResult =
   | { readonly type: "granted" }
   | { readonly type: "denied"; readonly canAskAgain: boolean };
 
-export class NotificationPermissionReadError extends Schema.TaggedErrorClass<NotificationPermissionReadError>()(
-  "NotificationPermissionReadError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return "Failed to read notification permissions on iOS.";
-  }
-}
-
-export class NotificationPermissionRequestError extends Schema.TaggedErrorClass<NotificationPermissionRequestError>()(
-  "NotificationPermissionRequestError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return "Failed to request notification permissions on iOS.";
-  }
-}
-
 export const requestAgentNotificationPermission: Effect.Effect<
   NotificationPermissionResult,
-  NotificationPermissionReadError | NotificationPermissionRequestError
+  unknown
 > = Effect.gen(function* () {
   if (Platform.OS !== "ios") {
     return { type: "unsupported" };
@@ -40,7 +17,7 @@ export const requestAgentNotificationPermission: Effect.Effect<
 
   const existing = yield* Effect.tryPromise({
     try: () => Notifications.getPermissionsAsync(),
-    catch: (cause) => new NotificationPermissionReadError({ cause }),
+    catch: (error) => error,
   });
   if (existing.granted) {
     return { type: "granted" };
@@ -59,7 +36,7 @@ export const requestAgentNotificationPermission: Effect.Effect<
           allowSound: true,
         },
       }),
-    catch: (cause) => new NotificationPermissionRequestError({ cause }),
+    catch: (error) => error,
   });
   return requested.granted
     ? { type: "granted" }

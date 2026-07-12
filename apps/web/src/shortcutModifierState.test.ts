@@ -2,16 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   areShortcutModifierStatesEqual,
-  shortcutModifierStateAfterKeyboardEvent,
-  type ShortcutModifierState,
+  clearShortcutModifierState,
+  readShortcutModifierState,
+  setShortcutModifierState,
+  syncShortcutModifierStateFromKeyboardEvent,
 } from "./shortcutModifierState";
-
-const emptyState = (): ShortcutModifierState => ({
-  metaKey: false,
-  ctrlKey: false,
-  altKey: false,
-  shiftKey: false,
-});
 
 function keyboardEventLike(type: "keydown" | "keyup", init: Partial<KeyboardEvent>): KeyboardEvent {
   return {
@@ -41,69 +36,107 @@ describe("shortcutModifierState", () => {
     ).toBe(false);
   });
 
-  it("preserves the current object when modifier values do not change", () => {
-    const initialState = emptyState();
-    const nextState = shortcutModifierStateAfterKeyboardEvent(
-      initialState,
-      keyboardEventLike("keyup", { key: "Shift" }),
-    );
-    expect(nextState).toBe(initialState);
+  it("preserves the current store object when modifier values do not change", () => {
+    clearShortcutModifierState();
+
+    const initialState = readShortcutModifierState();
+    setShortcutModifierState({
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    });
+
+    expect(readShortcutModifierState()).toBe(initialState);
+
+    setShortcutModifierState({
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+    });
+    const updatedState = readShortcutModifierState();
+    expect(updatedState).not.toBe(initialState);
+    expect(updatedState).toEqual({
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+    });
+
+    setShortcutModifierState({
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+    });
+    expect(readShortcutModifierState()).toBe(updatedState);
+
+    clearShortcutModifierState();
+    const clearedState = readShortcutModifierState();
+    expect(clearedState).toEqual({
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    });
+    expect(clearedState).not.toBe(updatedState);
+
+    clearShortcutModifierState();
+    expect(readShortcutModifierState()).toBe(clearedState);
   });
 
   it("tracks bare modifier keydown and keyup events explicitly", () => {
-    let state = emptyState();
-    state = shortcutModifierStateAfterKeyboardEvent(
-      state,
+    clearShortcutModifierState();
+
+    syncShortcutModifierStateFromKeyboardEvent(
       keyboardEventLike("keydown", {
         key: "Meta",
         metaKey: false,
       }),
     );
-    expect(state).toEqual({
+    expect(readShortcutModifierState()).toEqual({
       metaKey: true,
       ctrlKey: false,
       altKey: false,
       shiftKey: false,
     });
 
-    state = shortcutModifierStateAfterKeyboardEvent(
-      state,
+    syncShortcutModifierStateFromKeyboardEvent(
       keyboardEventLike("keydown", {
         key: "Shift",
         metaKey: true,
         shiftKey: false,
       }),
     );
-    expect(state).toEqual({
+    expect(readShortcutModifierState()).toEqual({
       metaKey: true,
       ctrlKey: false,
       altKey: false,
       shiftKey: true,
     });
 
-    state = shortcutModifierStateAfterKeyboardEvent(
-      state,
+    syncShortcutModifierStateFromKeyboardEvent(
       keyboardEventLike("keyup", {
         key: "Meta",
         metaKey: true,
         shiftKey: true,
       }),
     );
-    expect(state).toEqual({
+    expect(readShortcutModifierState()).toEqual({
       metaKey: false,
       ctrlKey: false,
       altKey: false,
       shiftKey: true,
     });
 
-    state = shortcutModifierStateAfterKeyboardEvent(
-      state,
+    syncShortcutModifierStateFromKeyboardEvent(
       keyboardEventLike("keyup", {
         key: "Shift",
         shiftKey: true,
       }),
     );
-    expect(state).toEqual({
+    expect(readShortcutModifierState()).toEqual({
       metaKey: false,
       ctrlKey: false,
       altKey: false,

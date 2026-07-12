@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { EnvironmentId, OrchestrationCheckpointSummary, ThreadId } from "@t3tools/contracts";
 
-import { useCheckpointDiff } from "../../state/queries";
-import { useEnvironmentQuery } from "../../state/query";
-import { reviewEnvironment } from "../../state/review";
-import { useSelectedThreadDetail } from "../../state/use-thread-detail";
+import { getEnvironmentClient } from "../../state/environment-session-registry";
+import { checkpointDiffManager, loadCheckpointDiff } from "../../state/use-checkpoint-diff";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
+import { useSelectedThreadDetail } from "../../state/use-thread-detail";
+import { useReviewDiffPreview } from "./reviewDiffPreviewState";
 import {
   buildReviewSectionItems,
   getDefaultReviewSectionId,
@@ -17,30 +17,29 @@ import {
   setReviewAsyncError,
   setReviewGitSections,
   setReviewSelectedSectionId,
-  setReviewTurnDiff,
   setReviewTurnDiffLoading,
+  setReviewTurnDiff,
   type ReviewCacheForThread,
 } from "./reviewState";
 
 export function useReviewSections(input: {
-  readonly enabled?: boolean;
   readonly environmentId?: EnvironmentId;
   readonly threadId?: ThreadId;
   readonly reviewCache: ReviewCacheForThread;
 }) {
   const { environmentId, reviewCache, threadId } = input;
-  const enabled = input.enabled ?? true;
   const selectedThread = useSelectedThreadDetail();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const diffPreview = useEnvironmentQuery(
-    enabled && environmentId !== undefined && selectedThreadCwd !== null
-      ? reviewEnvironment.diffPreview({
-          environmentId,
-          input: { cwd: selectedThreadCwd },
-        })
-      : null,
-  );
+  const diffPreview = useReviewDiffPreview({ environmentId, cwd: selectedThreadCwd });
+  const refreshDiffPreview = diffPreview.refresh;
   const { loadingTurnIds } = reviewCache.asyncState;
+  const error = diffPreview.error ?? reviewCache.asyncState.error;
+  const loadingGitDiffs = diffPreview.isPending;
+  const turnDiffByIdRef = useRef(reviewCache.turnDiffById);
+
+  useEffect(() => {
+    turnDiffByIdRef.current = reviewCache.turnDiffById;
+  }, [reviewCache.turnDiffById]);
 
   useEffect(() => {
     if (reviewCache.threadKey && diffPreview.data) {
@@ -52,16 +51,14 @@ export function useReviewSections(input: {
     () => getReadyReviewCheckpoints(selectedThread?.checkpoints ?? []),
     [selectedThread?.checkpoints],
   );
-  const checkpointBySectionId = useMemo(
-    () =>
-      Object.fromEntries(
-        readyCheckpoints.map((checkpoint) => [
-          getReviewSectionIdForCheckpoint(checkpoint),
-          checkpoint,
-        ]),
-      ) as Record<string, OrchestrationCheckpointSummary>,
-    [readyCheckpoints],
-  );
+  const checkpointBySectionId = useMemo(() => {
+    return Object.fromEntries(
+      readyCheckpoints.map((checkpoint) => [
+        getReviewSectionIdForCheckpoint(checkpoint),
+        checkpoint,
+      ]),
+    ) as Record<string, OrchestrationCheckpointSummary>;
+  }, [readyCheckpoints]);
   const reviewSections = useMemo(
     () =>
       buildReviewSectionItems({
@@ -90,6 +87,7 @@ export function useReviewSections(input: {
     () => getDefaultReviewSectionId(reviewSections),
     [reviewSections],
   );
+  const hasReviewSections = reviewSections.length > 0;
   const selectedSectionIdExists = useMemo(
     () =>
       reviewCache.selectedSectionId
@@ -98,69 +96,140 @@ export function useReviewSections(input: {
     [reviewCache.selectedSectionId, reviewSections],
   );
 
+  const loadTurnDiff = useCallback(
+    async (checkpoint: OrchestrationCheckpointSummary, force = false) => {
+      if (!environmentId || !threadId) {
+        return;
+      }
+
+      const sectionId = getReviewSectionIdForCheckpoint(checkpoint);
+      if (reviewCache.threadKey) {
+        setReviewSelectedSectionId(reviewCache.threadKey, sectionId);
+      }
+
+      if (!force && turnDiffByIdRef.current[sectionId] !== undefined) {
+        return;
+      }
+
+      const target = {
+        environmentId,
+        threadId,
+        fromTurnCount: Math.max(0, checkpoint.checkpointTurnCount - 1),
+        toTurnCount: checkpoint.checkpointTurnCount,
+        ignoreWhitespace: false,
+        cacheScope: sectionId,
+      };
+      const cached = checkpointDiffManager.getSnapshot(target).data;
+      if (!force && cached) {
+        if (reviewCache.threadKey) {
+          setReviewTurnDiff(reviewCache.threadKey, sectionId, cached.diff);
+        }
+        return;
+      }
+
+      if (!getEnvironmentClient(environmentId)) {
+        if (reviewCache.threadKey) {
+          setReviewAsyncError(reviewCache.threadKey, "Remote connection is not ready.");
+        }
+        return;
+      }
+
+      if (reviewCache.threadKey) {
+        setReviewTurnDiffLoading(reviewCache.threadKey, sectionId, true);
+        setReviewAsyncError(reviewCache.threadKey, null);
+      }
+      try {
+        const result = await loadCheckpointDiff(target, { force });
+        if (reviewCache.threadKey) {
+          if (result) {
+            setReviewTurnDiff(reviewCache.threadKey, sectionId, result.diff);
+          }
+        }
+      } catch (cause) {
+        if (reviewCache.threadKey) {
+          setReviewAsyncError(
+            reviewCache.threadKey,
+            cause instanceof Error ? cause.message : "Failed to load turn diff.",
+          );
+        }
+      } finally {
+        if (reviewCache.threadKey) {
+          setReviewTurnDiffLoading(reviewCache.threadKey, sectionId, false);
+        }
+      }
+    },
+    [environmentId, reviewCache.threadKey, threadId],
+  );
+
   useEffect(() => {
-    if (
-      reviewSections.length > 0 &&
-      reviewCache.threadKey &&
-      (!reviewCache.selectedSectionId || !selectedSectionIdExists)
-    ) {
+    if (!hasReviewSections) {
+      return;
+    }
+
+    if (reviewCache.threadKey && (!reviewCache.selectedSectionId || !selectedSectionIdExists)) {
       setReviewSelectedSectionId(reviewCache.threadKey, fallbackSectionId);
     }
   }, [
     fallbackSectionId,
+    hasReviewSections,
     reviewCache.selectedSectionId,
     reviewCache.threadKey,
-    reviewSections.length,
     selectedSectionIdExists,
   ]);
 
-  let activeCheckpoint = readyCheckpoints[0] ?? null;
-  if (selectedSection?.kind === "turn") {
-    activeCheckpoint = checkpointBySectionId[selectedSection.id] ?? activeCheckpoint;
-  }
-  const activeSectionId = activeCheckpoint
-    ? getReviewSectionIdForCheckpoint(activeCheckpoint)
+  const latestCheckpoint = readyCheckpoints[0] ?? null;
+  const latestSectionId = latestCheckpoint
+    ? getReviewSectionIdForCheckpoint(latestCheckpoint)
     : null;
-  const activeTurnDiff = useCheckpointDiff({
-    environmentId: enabled ? (environmentId ?? null) : null,
-    threadId: enabled ? (threadId ?? null) : null,
-    fromTurnCount:
-      enabled && activeCheckpoint ? Math.max(0, activeCheckpoint.checkpointTurnCount - 1) : null,
-    toTurnCount: enabled ? (activeCheckpoint?.checkpointTurnCount ?? null) : null,
-    ignoreWhitespace: false,
-  });
+  const latestTurnDiffLoaded = latestSectionId
+    ? reviewCache.turnDiffById[latestSectionId] !== undefined
+    : true;
+  const latestTurnDiffLoading = latestSectionId ? loadingTurnIds[latestSectionId] === true : false;
 
   useEffect(() => {
-    if (!reviewCache.threadKey || !activeSectionId) {
+    if (!latestCheckpoint || !latestSectionId || latestTurnDiffLoaded || latestTurnDiffLoading) {
       return;
     }
-    setReviewTurnDiffLoading(reviewCache.threadKey, activeSectionId, activeTurnDiff.isPending);
-  }, [activeSectionId, activeTurnDiff.isPending, reviewCache.threadKey]);
+
+    void loadTurnDiff(latestCheckpoint);
+  }, [
+    latestCheckpoint,
+    latestSectionId,
+    latestTurnDiffLoaded,
+    latestTurnDiffLoading,
+    loadTurnDiff,
+  ]);
+
+  const selectedTurnCheckpoint =
+    selectedSection?.kind === "turn" ? (checkpointBySectionId[selectedSection.id] ?? null) : null;
+  const selectedTurnDiffMissing =
+    selectedSection?.kind === "turn" && selectedSection.diff === null && selectedTurnCheckpoint;
+  const selectedTurnDiffLoading =
+    selectedSection?.kind === "turn" ? loadingTurnIds[selectedSection.id] === true : false;
 
   useEffect(() => {
-    if (!reviewCache.threadKey || !activeSectionId || !activeTurnDiff.data) {
+    if (!selectedTurnDiffMissing || selectedTurnDiffLoading) {
       return;
     }
-    setReviewTurnDiff(reviewCache.threadKey, activeSectionId, activeTurnDiff.data.diff);
-    setReviewAsyncError(reviewCache.threadKey, null);
-  }, [activeSectionId, activeTurnDiff.data, reviewCache.threadKey]);
 
-  useEffect(() => {
-    if (reviewCache.threadKey && activeTurnDiff.error) {
-      setReviewAsyncError(reviewCache.threadKey, activeTurnDiff.error);
-    }
-  }, [activeTurnDiff.error, reviewCache.threadKey]);
+    void loadTurnDiff(selectedTurnDiffMissing);
+  }, [loadTurnDiff, selectedTurnDiffLoading, selectedTurnDiffMissing]);
 
   const refreshSelectedSection = useCallback(async () => {
-    if (!enabled) {
+    if (!selectedSection) {
       return;
     }
-    if (selectedSection?.kind === "turn") {
-      activeTurnDiff.refresh();
+
+    if (selectedSection.kind === "turn") {
+      const checkpoint = checkpointBySectionId[selectedSection.id];
+      if (checkpoint) {
+        await loadTurnDiff(checkpoint, true);
+      }
       return;
     }
-    diffPreview.refresh();
-  }, [activeTurnDiff, diffPreview, enabled, selectedSection?.kind]);
+
+    refreshDiffPreview();
+  }, [checkpointBySectionId, loadTurnDiff, refreshDiffPreview, selectedSection]);
 
   const selectSection = useCallback(
     (sectionId: string) => {
@@ -172,8 +241,8 @@ export function useReviewSections(input: {
   );
 
   return {
-    error: diffPreview.error ?? activeTurnDiff.error ?? reviewCache.asyncState.error,
-    loadingGitDiffs: diffPreview.isPending,
+    error,
+    loadingGitDiffs,
     loadingTurnIds,
     reviewSections,
     selectedSection,

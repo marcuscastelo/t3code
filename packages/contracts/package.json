@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/contracts",
-  "version": "0.0.28",
+  "version": "0.0.27",
   "private": true,
   "files": [
     "dist"
@@ -10,6 +10,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./appearanceTheme": {
+      "types": "./src/appearanceTheme.ts",
+      "import": "./src/appearanceTheme.ts"
     },
     "./settings": {
       "types": "./src/settings.ts",

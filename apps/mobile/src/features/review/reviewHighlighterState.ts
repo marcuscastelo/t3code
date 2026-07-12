@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import * as Schema from "effect/Schema";
 import { Atom, type AtomRegistry } from "effect/unstable/reactivity";
 import { useEffect } from "react";
 
@@ -13,22 +12,9 @@ import {
 
 export type ReviewHighlighterStatus = "idle" | "initializing" | "ready" | "error";
 
-export class ReviewHighlighterManagerError extends Schema.TaggedErrorClass<ReviewHighlighterManagerError>()(
-  "ReviewHighlighterManagerError",
-  {
-    operation: Schema.Literals(["prepare", "prepare-languages", "resolve-engine"]),
-    languages: Schema.Array(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Review highlighter operation ${this.operation} failed for languages ${this.languages.join(", ")}.`;
-  }
-}
-
 export interface ReviewHighlighterState {
   readonly engine: ReviewHighlighterEngine | null;
-  readonly error: ReviewHighlighterManagerError | null;
+  readonly error: string | null;
   readonly status: ReviewHighlighterStatus;
 }
 
@@ -115,35 +101,24 @@ export function createReviewHighlighterManager(config: {
 
     inFlight = (async () => {
       const startedAt = performance.now();
-      const languages = config.languages ?? REVIEW_INITIAL_LANGUAGES;
-      let operation: ReviewHighlighterManagerError["operation"] = "prepare";
-      let engine: ReviewHighlighterEngine;
       try {
         await config.loader.prepare();
-        operation = "prepare-languages";
-        await config.loader.prepareLanguages(languages);
-        operation = "resolve-engine";
-        engine = await config.loader.getEngine();
-      } catch (cause) {
-        const error = new ReviewHighlighterManagerError({
-          operation,
-          languages,
-          cause,
+        await config.loader.prepareLanguages(config.languages ?? REVIEW_INITIAL_LANGUAGES);
+        const engine = await config.loader.getEngine();
+        const durationMs = Math.round(performance.now() - startedAt);
+        logReviewHighlighterProviderDiagnostic("initialized", {
+          durationMs,
+          engine,
         });
-        logReviewHighlighterProviderDiagnostic("initialization failed", { error });
-        setState({ engine: null, error, status: "error" });
-        return;
+        setState({ engine, error: null, status: "ready" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logReviewHighlighterProviderDiagnostic("initialization failed", { error: message });
+        setState({ engine: null, error: message, status: "error" });
+      } finally {
+        inFlight = null;
       }
-
-      const durationMs = Math.round(performance.now() - startedAt);
-      logReviewHighlighterProviderDiagnostic("initialized", {
-        durationMs,
-        engine,
-      });
-      setState({ engine, error: null, status: "ready" });
-    })().finally(() => {
-      inFlight = null;
-    });
+    })();
 
     return inFlight;
   }

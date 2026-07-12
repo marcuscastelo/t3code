@@ -1,4 +1,4 @@
-import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { TextInputWrapper } from "expo-paste-input";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -25,10 +25,10 @@ import {
   getSelectedReviewCommentLines,
   useReviewCommentTarget,
 } from "./reviewCommentSelection";
-import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
 import {
   changeTone,
   DiffTokenText,
+  REVIEW_DIFF_LINE_HEIGHT,
   REVIEW_MONO_FONT_FAMILY,
   ReviewChangeBar,
 } from "./reviewDiffRendering";
@@ -40,20 +40,17 @@ import {
 
 const REVIEW_COMMENT_PREVIEW_MAX_LINES = 5;
 
-type ReviewCommentComposerSheetProps = StaticScreenProps<{
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-}>;
-
-export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProps) {
-  const navigation = useNavigation();
+export function ReviewCommentComposerSheet() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const iconTint = String(useThemeColor("--color-icon"));
   const target = useReviewCommentTarget();
-  const { codeSurface } = useAppearanceCodeSurface();
-  const { environmentId, threadId } = props.route.params;
+  const { environmentId, threadId } = useLocalSearchParams<{
+    environmentId: EnvironmentId;
+    threadId: ThreadId;
+  }>();
   const [commentText, setCommentText] = useState("");
   const [highlightedLinesById, setHighlightedLinesById] = useState<
     Record<string, ReadonlyArray<ReviewHighlightedToken>>
@@ -81,14 +78,14 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
         ? `Lines ${firstNumber}-${lastNumber}`
         : `${selectedLines.length} lines selected`;
   const previewHeight = Math.max(
-    Math.min(selectedLines.length, REVIEW_COMMENT_PREVIEW_MAX_LINES) * codeSurface.rowHeight,
-    codeSurface.rowHeight,
+    Math.min(selectedLines.length, REVIEW_COMMENT_PREVIEW_MAX_LINES) * REVIEW_DIFF_LINE_HEIGHT,
+    REVIEW_DIFF_LINE_HEIGHT,
   );
   const previewViewportWidth = Math.max(width - 40, 280);
   const dismissComposer = useCallback(() => {
     clearReviewCommentTarget();
-    navigation.goBack();
-  }, [navigation]);
+    router.dismiss();
+  }, [router]);
   const handleNativePaste = useNativePaste((uris) => {
     void (async () => {
       try {
@@ -144,11 +141,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   }
 
   return (
-    <View className="flex-1">
-      <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
+    <View style={{ flex: 1 }}>
+      <KeyboardAvoidingView automaticOffset behavior="padding" style={{ flex: 1 }}>
         <View
-          className="flex-1 px-5 pt-2"
-          style={{ paddingBottom: target ? 0 : Math.max(insets.bottom, 18) }}
+          style={{
+            flex: 1,
+            paddingHorizontal: 20,
+            paddingTop: 8,
+            paddingBottom: target ? 0 : Math.max(insets.bottom, 18),
+          }}
         >
           <View className="flex-row items-center justify-between py-2">
             <Pressable
@@ -158,26 +159,26 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               <SymbolView name="xmark" size={18} tintColor={iconTint} type="monochrome" />
             </Pressable>
 
-            <Text className="text-lg font-t3-bold text-foreground">Add Comment</Text>
+            <Text className="text-[18px] font-t3-bold text-foreground">Add Comment</Text>
 
             <View className="h-12 w-12" />
           </View>
 
           {!target ? (
             <View className="rounded-[22px] border border-border bg-card px-4 py-5">
-              <Text className="text-base font-t3-bold text-foreground">No selection</Text>
-              <Text className="mt-1 text-sm leading-normal text-foreground-muted">
+              <Text className="text-[15px] font-t3-bold text-foreground">No selection</Text>
+              <Text className="mt-1 text-[13px] leading-[19px] text-foreground-muted">
                 Select a diff line or range first.
               </Text>
             </View>
           ) : (
             <View className="min-h-0 flex-1 gap-4">
               <View className="gap-1 px-1">
-                <Text className="text-2xs font-t3-bold uppercase text-foreground-muted">
+                <Text className="text-[11px] font-t3-bold uppercase text-foreground-muted">
                   {selectionLabel}
                 </Text>
                 <Text
-                  className="font-mono text-xs leading-snug text-foreground-muted"
+                  className="font-mono text-[12px] leading-[17px] text-foreground-muted"
                   ellipsizeMode="middle"
                   numberOfLines={2}
                 >
@@ -210,11 +211,11 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                           <View
                             key={line.id}
                             className={cn("flex-row items-start", changeTone(line.change))}
-                            style={{ height: codeSurface.rowHeight }}
+                            style={{ height: REVIEW_DIFF_LINE_HEIGHT }}
                           >
-                            <ReviewChangeBar change={line.change} height={codeSurface.rowHeight} />
+                            <ReviewChangeBar change={line.change} />
                             <Text
-                              className="w-9 py-1 pr-1 text-right text-2xs font-t3-medium text-foreground-muted"
+                              className="w-9 py-1 pr-1 text-right text-[11px] font-t3-medium text-foreground-muted"
                               style={{ fontFamily: REVIEW_MONO_FONT_FAMILY }}
                             >
                               {lineNumber ?? ""}
@@ -224,8 +225,6 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                                 fallback={line.content}
                                 tokens={highlightedLinesById[line.id] ?? null}
                                 change={line.change}
-                                fontSize={codeSurface.fontSize}
-                                lineHeight={codeSurface.rowHeight}
                               />
                             </View>
                           </View>
@@ -237,7 +236,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               </View>
 
               <View className="min-h-0 flex-1 gap-2">
-                <Text className="text-sm font-t3-bold text-foreground">Comment</Text>
+                <Text className="text-[13px] font-t3-bold text-foreground">Comment</Text>
                 <View className="min-h-[132px] flex-1 overflow-hidden rounded-[20px] border border-border bg-card">
                   <View className="min-h-0 flex-1 px-4 pt-3.5">
                     <TextInputWrapper onPaste={handleNativePaste} style={{ flex: 1, minHeight: 0 }}>
@@ -249,7 +248,8 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                         textAlignVertical="top"
                         value={commentText}
                         onChangeText={setCommentText}
-                        className="h-full min-h-0 flex-1 border-0 bg-transparent px-0 py-0 font-sans text-base"
+                        className="h-full flex-1 border-0 bg-transparent px-0 py-0 font-sans text-[15px]"
+                        style={{ flex: 1, minHeight: 0 }}
                       />
                     </TextInputWrapper>
                   </View>

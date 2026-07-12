@@ -5,7 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import type { ProviderSessionRuntime } from "../../persistence/Services/ProviderSessionRuntime.ts";
+import { ProviderSessionRuntimeRepository } from "../../persistence/Services/ProviderSessionRuntime.ts";
 import { ProviderSessionDirectoryPersistenceError, ProviderValidationError } from "../Errors.ts";
 import {
   ProviderSessionDirectory,
@@ -58,7 +59,7 @@ function mergeRuntimePayload(
 }
 
 function toRuntimeBinding(
-  runtime: ProviderSessionRuntime.ProviderSessionRuntime,
+  runtime: ProviderSessionRuntime,
   operation: string,
 ): Effect.Effect<ProviderRuntimeBindingWithMetadata, ProviderSessionDirectoryPersistenceError> {
   return decodeProviderDriverKind(runtime.providerName, operation).pipe(
@@ -84,7 +85,7 @@ function toRuntimeBinding(
 }
 
 const makeProviderSessionDirectory = Effect.gen(function* () {
-  const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+  const repository = yield* ProviderSessionRuntimeRepository;
 
   const getBinding = (threadId: ThreadId) =>
     repository.getByThreadId({ threadId }).pipe(

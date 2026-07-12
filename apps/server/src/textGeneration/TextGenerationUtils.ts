@@ -99,7 +99,7 @@ export function normalizeCliError(
     }
     return new TextGenerationError({
       operation,
-      detail: fallback,
+      detail: `${fallback}: ${error.message}`,
       cause: error,
     });
   }

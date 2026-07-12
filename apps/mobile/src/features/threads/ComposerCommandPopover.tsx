@@ -6,7 +6,7 @@ import { memo } from "react";
 import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { PierreEntryIcon } from "../../components/PierreEntryIcon";
+
 export type ComposerCommandItem =
   | {
       readonly id: string;
@@ -88,13 +88,13 @@ function PopoverSurface(props: {
 
 function itemIcon(item: ComposerCommandItem) {
   switch (item.type) {
+    case "path":
+      return item.kind === "directory" ? ("folder" as const) : ("doc" as const);
     case "slash-command":
     case "provider-slash-command":
       return "terminal" as const;
     case "skill":
       return "cube" as const;
-    case "path":
-      return null;
   }
 }
 
@@ -149,16 +149,16 @@ const CommandRow = memo(function CommandRow(props: {
         borderBottomColor: "rgba(255,255,255,0.1)",
       })}
     >
-      {props.item.type === "path" ? (
-        <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
-      ) : iconName ? (
-        <SymbolView name={iconName} size={14} tintColor={iconColor} type="monochrome" />
-      ) : null}
-      <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
+      <SymbolView name={iconName} size={14} tintColor={iconColor} type="monochrome" />
+      <Text
+        className="text-[14px] font-t3-medium text-foreground"
+        numberOfLines={1}
+        style={{ flexShrink: 0 }}
+      >
         {props.item.label}
       </Text>
       {props.item.description ? (
-        <Text className="min-w-0 flex-1 text-xs text-zinc-400" numberOfLines={1}>
+        <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#a1a1aa" }}>
           {props.item.description}
         </Text>
       ) : null}
@@ -175,15 +175,18 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
   return (
     <PopoverSurface isDarkMode={isDarkMode}>
       {label ? (
-        <View className="px-3.5 pt-2.5 pb-1">
-          <Text className="text-3xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+        <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
+          <Text
+            className="text-[10px] font-t3-bold text-foreground-muted"
+            style={{ letterSpacing: 0.8, textTransform: "uppercase" }}
+          >
             {label}
           </Text>
         </View>
       ) : null}
       {props.items.length > 0 ? (
         <ScrollView
-          className="max-h-[180px]"
+          style={{ maxHeight: 180 }}
           keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
         >
@@ -197,8 +200,8 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
           ))}
         </ScrollView>
       ) : (
-        <View className="px-3.5 py-2.5">
-          <Text className="text-xs text-foreground-tertiary">
+        <View style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
+          <Text className="text-[12px] text-foreground-tertiary">
             {emptyText(props.triggerKind, props.isLoading)}
           </Text>
         </View>

@@ -3,13 +3,13 @@ import { EnvironmentId } from "@t3tools/contracts";
 
 import {
   isRelayManagedConnection,
-  authClientMetadata,
+  mobileAuthClientMetadata,
   redactPairingCredential,
   toStableSavedRemoteConnection,
 } from "./connection";
 
 vi.mock("./runtime", () => ({
-  runtime: {
+  mobileRuntime: {
     runPromise: vi.fn(),
   },
 }));
@@ -22,7 +22,7 @@ vi.mock("react-native", () => ({
 
 describe("mobile remote connection records", () => {
   it("identifies mobile token exchanges for authorized-client presentation", () => {
-    expect(authClientMetadata()).toEqual({
+    expect(mobileAuthClientMetadata()).toEqual({
       label: "T3 Code Mobile",
       deviceType: "mobile",
       os: "iOS",

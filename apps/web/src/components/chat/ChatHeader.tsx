@@ -3,20 +3,34 @@ import {
   type EditorId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { memo } from "react";
+import { scopeThreadRef } from "@t3tools/client-runtime";
+import { useNavigate } from "@tanstack/react-router";
+import { memo, useState } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
+import {
+  ArrowLeftIcon,
+  DiffIcon,
+  EllipsisVerticalIcon,
+  FolderCogIcon,
+  TerminalSquareIcon,
+} from "lucide-react";
+import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
+import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
+import { Toggle } from "../ui/toggle";
+import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
-import { usePrimaryEnvironmentId } from "../../state/environments";
-import { cn } from "~/lib/utils";
+import { MobileChatActionsSheet } from "../mobile/MobileChatActionsSheet";
+import { usePrimaryEnvironmentId } from "../../environments/primary";
+import type {
+  ProviderRateLimitDetectionStatus,
+  ProviderRateLimitSnapshot,
+} from "~/lib/providerRateLimits";
+import { ProviderRateLimitMeter } from "./ProviderRateLimitMeter";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -24,20 +38,28 @@ interface ChatHeaderProps {
   draftId?: DraftId;
   activeThreadTitle: string;
   activeProjectName: string | undefined;
+  isGitRepo: boolean;
   openInCwd: string | null;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
+  activeProjectScripts: ProjectScript[] | undefined;
+  activeProviderStatus: ServerProvider | null;
+  activeProviderRateLimits: ProviderRateLimitSnapshot | null;
+  activeProviderRateLimitDetectionStatus: ProviderRateLimitDetectionStatus;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
-  rightPanelOpen: boolean;
+  terminalAvailable: boolean;
+  terminalOpen: boolean;
+  terminalToggleShortcutLabel: string | null;
+  diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
+  diffOpen: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
+  onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
+  onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  onToggleTerminal: () => void;
+  onToggleDiff: () => void;
+  onConfigureProjectWorktreeBase?: () => void;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -58,75 +80,274 @@ export const ChatHeader = memo(function ChatHeader({
   draftId,
   activeThreadTitle,
   activeProjectName,
+  isGitRepo,
   openInCwd,
   activeProjectScripts,
+  activeProviderStatus,
+  activeProviderRateLimits,
+  activeProviderRateLimitDetectionStatus,
   preferredScriptId,
   keybindings,
   availableEditors,
-  rightPanelOpen,
+  terminalAvailable,
+  terminalOpen,
+  terminalToggleShortcutLabel,
+  diffToggleShortcutLabel,
   gitCwd,
+  diffOpen,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onToggleTerminal,
+  onToggleDiff,
+  onConfigureProjectWorktreeBase,
 }: ChatHeaderProps) {
+  const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
     activeThreadEnvironmentId,
     primaryEnvironmentId,
   });
-  return (
-    <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
+  const mobileThreadStateLabel = draftId ? "Draft" : terminalOpen ? "Running" : "Ready";
+
+  // The git / open-in-editor / project-script controls are hidden on the
+  // desktop header below `sm`; surface them on mobile through the actions sheet.
+  const hasRepoTools =
+    Boolean(activeProjectScripts) || showOpenInPicker || Boolean(activeProjectName);
+  const repoTools = hasRepoTools ? (
+    <>
+      {activeProjectScripts && (
+        <ProjectScriptsControl
+          scripts={activeProjectScripts}
+          keybindings={keybindings}
+          preferredScriptId={preferredScriptId}
+          onRunScript={onRunProjectScript}
+          onAddScript={onAddProjectScript}
+          onUpdateScript={onUpdateProjectScript}
+          onDeleteScript={onDeleteProjectScript}
+        />
+      )}
+      {showOpenInPicker && (
+        <OpenInPicker
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          openInCwd={openInCwd}
+        />
+      )}
+      {activeProjectName && (
+        <GitActionsControl
+          gitCwd={gitCwd}
+          activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+          {...(draftId ? { draftId } : {})}
+        />
+      )}
+      {onConfigureProjectWorktreeBase && (
         <Tooltip>
           <TooltipTrigger
             render={
-              <h2
-                aria-label={activeThreadTitle}
-                className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+              <button
+                type="button"
+                className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="Configure project worktree base"
+                onClick={onConfigureProjectWorktreeBase}
               >
-                {activeThreadTitle}
-              </h2>
+                <FolderCogIcon className="size-4" />
+              </button>
             }
           />
-          <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+          <TooltipPopup>Project worktree base</TooltipPopup>
         </Tooltip>
+      )}
+    </>
+  ) : undefined;
+
+  return (
+    <>
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:hidden">
+        <button
+          type="button"
+          className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/70 bg-card/70 text-muted-foreground active:bg-accent active:text-foreground"
+          aria-label="Back to mobile home"
+          onClick={() => void navigate({ to: "/" })}
+        >
+          <ArrowLeftIcon className="size-4" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold leading-5" title={activeThreadTitle}>
+            {activeThreadTitle}
+          </h2>
+          <div className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            <span className="truncate">{activeProjectName ?? "No project"}</span>
+            {activeProjectName && !isGitRepo ? <span className="shrink-0">· no git</span> : null}
+          </div>
+        </div>
+        <span className="shrink-0 rounded-md border border-primary/30 bg-primary/12 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+          {mobileThreadStateLabel}
+        </span>
+        <button
+          type="button"
+          aria-label="Thread actions"
+          className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/70 bg-card/70 text-muted-foreground active:bg-accent active:text-foreground"
+          onClick={() => setMobileActionsOpen(true)}
+        >
+          <EllipsisVerticalIcon className="size-4" />
+        </button>
+        <MobileChatActionsSheet
+          open={mobileActionsOpen}
+          onClose={() => setMobileActionsOpen(false)}
+          title={activeThreadTitle}
+          subtitle={
+            activeProjectName ? `${activeProjectName}${isGitRepo ? "" : " · no git"}` : undefined
+          }
+          onReviewDiff={() => {
+            if (!diffOpen) {
+              onToggleDiff();
+            }
+          }}
+          reviewDisabled={!isGitRepo && !diffOpen}
+          onCommandLogs={() => {
+            if (!terminalOpen) {
+              onToggleTerminal();
+            }
+          }}
+          commandLogsDisabled={!terminalAvailable}
+          tools={repoTools}
+        />
       </div>
-      <div
-        data-chat-header-actions
-        className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
-        )}
-      >
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            {...(draftId ? { draftId } : {})}
-          />
-        )}
+
+      <div className="@container/header-actions hidden min-w-0 flex-1 flex-col gap-2 sm:flex sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-hidden sm:flex-1 sm:flex-nowrap sm:gap-3">
+          <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <h2
+                  aria-label={activeThreadTitle}
+                  className="min-w-0 flex-1 basis-40 truncate text-sm font-medium text-foreground"
+                >
+                  {activeThreadTitle}
+                </h2>
+              }
+            />
+            <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+          </Tooltip>
+          {activeProjectName && (
+            <Badge
+              variant="outline"
+              className="min-w-0 max-w-full shrink overflow-hidden sm:max-w-56"
+            >
+              <span className="min-w-0 truncate">{activeProjectName}</span>
+            </Badge>
+          )}
+          {activeProjectName && !isGitRepo && (
+            <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700">
+              No Git
+            </Badge>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:shrink-0 sm:justify-end @3xl/header-actions:gap-3">
+          {activeProviderStatus ? (
+            <ProviderRateLimitMeter
+              provider={activeProviderStatus}
+              limits={activeProviderRateLimits}
+              detectionStatus={activeProviderRateLimitDetectionStatus}
+            />
+          ) : null}
+          {activeProjectScripts && (
+            <ProjectScriptsControl
+              scripts={activeProjectScripts}
+              keybindings={keybindings}
+              preferredScriptId={preferredScriptId}
+              onRunScript={onRunProjectScript}
+              onAddScript={onAddProjectScript}
+              onUpdateScript={onUpdateProjectScript}
+              onDeleteScript={onDeleteProjectScript}
+            />
+          )}
+          {showOpenInPicker && (
+            <OpenInPicker
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              openInCwd={openInCwd}
+            />
+          )}
+          {activeProjectName && (
+            <GitActionsControl
+              gitCwd={gitCwd}
+              activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
+              {...(draftId ? { draftId } : {})}
+            />
+          )}
+          {onConfigureProjectWorktreeBase && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Configure project worktree base"
+                    onClick={onConfigureProjectWorktreeBase}
+                  >
+                    <FolderCogIcon className="size-4" />
+                  </button>
+                }
+              />
+              <TooltipPopup>Project worktree base</TooltipPopup>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0"
+                  pressed={terminalOpen}
+                  onPressedChange={onToggleTerminal}
+                  aria-label="Toggle terminal drawer"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!terminalAvailable}
+                >
+                  <TerminalSquareIcon className="size-3" />
+                </Toggle>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {!terminalAvailable
+                ? "Terminal is unavailable until this thread has an active project."
+                : terminalToggleShortcutLabel
+                  ? `Toggle terminal drawer (${terminalToggleShortcutLabel})`
+                  : "Toggle terminal drawer"}
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0"
+                  pressed={diffOpen}
+                  onPressedChange={onToggleDiff}
+                  aria-label="Toggle diff panel"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!isGitRepo && !diffOpen}
+                >
+                  <DiffIcon className="size-3" />
+                </Toggle>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {!isGitRepo && !diffOpen
+                ? "Diff panel is unavailable because this project is not a git repository."
+                : diffToggleShortcutLabel
+                  ? `Toggle diff panel (${diffToggleShortcutLabel})`
+                  : "Toggle diff panel"}
+            </TooltipPopup>
+          </Tooltip>
+        </div>
       </div>
-    </div>
+    </>
   );
 });

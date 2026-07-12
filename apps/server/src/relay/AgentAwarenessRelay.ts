@@ -1,3 +1,8 @@
+import {
+  RelayApi,
+  type RelayAgentActivityPublishProofPayload,
+  type RelayAgentActivityState,
+} from "@t3tools/contracts/relay";
 import type {
   EnvironmentId,
   OrchestrationEvent,
@@ -5,18 +10,12 @@ import type {
   OrchestrationThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
-import {
-  RelayApi,
-  type RelayAgentActivityPublishProofPayload,
-  type RelayAgentActivityState,
-} from "@t3tools/contracts/relay";
 import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
-  normalizeRelayIssuer,
   RELAY_ACTIVITY_PUBLISH_TYP,
   signRelayJwt,
+  normalizeRelayIssuer,
 } from "@t3tools/shared/relayJwt";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -28,29 +27,31 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import { FetchHttpClient } from "effect/unstable/http";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environmentKeys.ts";
 import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_ISSUER_SECRET,
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environmentKeys.ts";
-import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ServerEnvironment } from "../environment/Services/ServerEnvironment.ts";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+
+export interface AgentAwarenessRelayShape {
+  readonly publishThread: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly start: () => Effect.Effect<void, never, Scope.Scope>;
+}
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
-  {
-    readonly publishThread: (threadId: ThreadId) => Effect.Effect<void>;
-    readonly start: () => Effect.Effect<void, never, Scope.Scope>;
-  }
+  AgentAwarenessRelayShape
 >()("t3/relay/AgentAwarenessRelay") {}
 
 export function eventThreadId(event: OrchestrationEvent): ThreadId | null {
@@ -96,16 +97,6 @@ export function agentAwarenessPublishIdentity(state: RelayAgentActivityState | n
 
 export function isAgentActivityPublishingEnabled(value: string | null): boolean {
   return value === "true";
-}
-
-export function resolveAgentActivityPublishingStartupState(input: {
-  readonly relayConfigured: boolean;
-  readonly publishEnabled: boolean;
-}): "waiting-for-link" | "disabled" | "enabled" {
-  if (!input.relayConfigured) {
-    return "waiting-for-link";
-  }
-  return input.publishEnabled ? "enabled" : "disabled";
 }
 
 const RELAY_AGENT_ACTIVITY_DETAIL_MAX_LENGTH = 160;
@@ -203,26 +194,6 @@ const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
   return yield* signRelayAgentActivityPublishProof({ privateKey: input.privateKey, payload });
 });
 
-// Compact, log-safe view of the fields the awareness phase ladder reads.
-export function describeThreadShellForAwareness(
-  thread: Option.Option<OrchestrationThreadShell>,
-): Record<string, unknown> {
-  if (Option.isNone(thread)) {
-    return { found: false };
-  }
-  const shell = thread.value;
-  return {
-    found: true,
-    sessionStatus: shell.session?.status ?? null,
-    sessionActiveTurnId: shell.session?.activeTurnId ?? null,
-    latestTurnId: shell.latestTurn?.turnId ?? null,
-    latestTurnState: shell.latestTurn?.state ?? null,
-    latestTurnCompletedAt: shell.latestTurn?.completedAt ?? null,
-    hasPendingApprovals: shell.hasPendingApprovals,
-    hasPendingUserInput: shell.hasPendingUserInput,
-  };
-}
-
 export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -283,24 +254,18 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
     .map((thread) => thread.id);
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
-  const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const serverEnvironment = yield* ServerEnvironment;
+  const snapshotQuery = yield* ProjectionSnapshotQuery;
+  const orchestrationEngine = yield* OrchestrationEngineService;
   const crypto = yield* Crypto.Crypto;
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
   const activeSnapshotPublishedRef = yield* Ref.make(false);
   const publishedStateByThreadRef = yield* Ref.make(new Map<ThreadId, string>());
 
   const readSecretString = (name: string) =>
-    secrets
-      .get(name)
-      .pipe(
-        Effect.map((bytes) =>
-          Option.isSome(bytes) ? new TextDecoder().decode(bytes.value) : null,
-        ),
-      );
+    secrets.get(name).pipe(Effect.map((bytes) => (bytes ? new TextDecoder().decode(bytes) : null)));
 
   const readRelayConfig = Effect.gen(function* () {
     const [url, issuer, environmentCredential] = yield* Effect.all([
@@ -326,14 +291,6 @@ export const make = Effect.gen(function* () {
       transformClient: relayEnvironmentClient(relayConfig.environmentCredential),
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
-  // Deadlines for publishes that need confirmation (tombstones and
-  // first-state completions). The confirming publish is re-enqueued through
-  // the same drainable worker as every other publish, so a confirmed
-  // tombstone can never race an in-flight live update; a recovered state
-  // clears the deadline. Assigned after the worker exists.
-  const publishConfirmDeadlines = new Map<ThreadId, number>();
-  let schedulePublishConfirm: (threadId: ThreadId) => Effect.Effect<void> = () => Effect.void;
-
   const publishThreadUnsafe = Effect.fn("publishThreadUnsafe")(function* (threadId: ThreadId) {
     const publishAgentActivity = yield* readPublishAgentActivityEnabled.pipe(
       Effect.orElseSucceed(() => false),
@@ -346,7 +303,7 @@ export const make = Effect.gen(function* () {
     }
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
     if (!relayConfig) {
-      yield* Effect.logDebug("agent activity publish skipped; relay link credentials unavailable", {
+      yield* Effect.logDebug("agent activity publish skipped; T3 Connect config missing", {
         threadId,
       });
       return;
@@ -410,61 +367,12 @@ export const make = Effect.gen(function* () {
     const publishIdentity = agentAwarenessPublishIdentity(snapshot.state);
     const publishedStateByThread = yield* Ref.get(publishedStateByThreadRef);
     if (publishedStateByThread.get(threadId) === publishIdentity) {
-      // The projection is back at (or never left) the last published state, so
-      // any pending deferred confirmation is moot. Leaving the deadline in
-      // place would let a much later transient null find it already expired
-      // and publish a tombstone immediately, skipping the deferral window.
-      publishConfirmDeadlines.delete(threadId);
       yield* Effect.logDebug("agent activity publish skipped; projected state unchanged", {
         environmentId,
         threadId,
         reason: snapshot.reason,
       });
       return;
-    }
-
-    // Two projections need confirmation before publishing, because both can
-    // appear transiently while the projector is mid-write and publishing them
-    // immediately is destructive or noisy:
-    // - null (tombstone) while the previous published state was live: deletes
-    //   the thread from every armed card mid-conversation.
-    // - completed as the thread's FIRST published state: sessions boot at
-    //   "ready" before their first turn, which projects as completed for an
-    //   instant and sends a spurious Done notification at thread birth.
-    // Defer, schedule a re-publish through the ordinary worker queue, and
-    // only publish if the projection still holds when it drains.
-    const requiresConfirmation =
-      (snapshot.state === null &&
-        publishedStateByThread.get(threadId) !== agentAwarenessPublishIdentity(null)) ||
-      (snapshot.state?.phase === "completed" && !publishedStateByThread.has(threadId));
-    if (requiresConfirmation) {
-      const nowMs = (yield* DateTime.now).epochMilliseconds;
-      const deadline = publishConfirmDeadlines.get(threadId);
-      if (deadline === undefined) {
-        publishConfirmDeadlines.set(threadId, nowMs + 5_000);
-        yield* Effect.logInfo("agent activity publish deferred pending confirmation", {
-          environmentId,
-          threadId,
-          reason: snapshot.reason,
-          statePhase: snapshot.state?.phase ?? null,
-          shell: describeThreadShellForAwareness(thread),
-        });
-        yield* schedulePublishConfirm(threadId);
-        return;
-      }
-      if (nowMs < deadline) {
-        return;
-      }
-      publishConfirmDeadlines.delete(threadId);
-      yield* Effect.logInfo("agent activity deferred publish confirmed", {
-        environmentId,
-        threadId,
-        reason: snapshot.reason,
-        statePhase: snapshot.state?.phase ?? null,
-        shell: describeThreadShellForAwareness(thread),
-      });
-    } else {
-      publishConfirmDeadlines.delete(threadId);
     }
 
     if (snapshot.reason === "thread-not-found") {
@@ -492,7 +400,7 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const publishThread: AgentAwarenessRelay["Service"]["publishThread"] = (threadId) =>
+  const publishThread: AgentAwarenessRelayShape["publishThread"] = (threadId) =>
     publishThreadUnsafe(threadId).pipe(
       Effect.catchCause((cause) => {
         return Effect.logWarning("agent activity publish failed", {
@@ -501,7 +409,6 @@ export const make = Effect.gen(function* () {
         });
       }),
       Effect.withSpan("AgentAwarenessRelay.publishThread"),
-      withRelayClientTracing,
     );
 
   const publishActiveThreadsUnsafe = Effect.gen(function* () {
@@ -514,7 +421,7 @@ export const make = Effect.gen(function* () {
     }
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
     if (!relayConfig) {
-      yield* Effect.logDebug("agent activity snapshot skipped; relay link credentials unavailable");
+      yield* Effect.logDebug("agent activity snapshot skipped; T3 Connect config missing");
       return false;
     }
     const environmentId = yield* serverEnvironment.getEnvironmentId;
@@ -535,68 +442,31 @@ export const make = Effect.gen(function* () {
     return true;
   });
 
-  const publishActiveThreadsOnceWhenConfigured = (logEnabledWhenReady: boolean) =>
-    Effect.gen(function* () {
-      while (!(yield* Ref.get(activeSnapshotPublishedRef))) {
-        const published = yield* publishActiveThreadsUnsafe.pipe(Effect.orElseSucceed(() => false));
-        if (published) {
-          yield* Ref.set(activeSnapshotPublishedRef, true);
-          if (logEnabledWhenReady) {
-            const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
-            yield* Effect.logInfo("agent activity publishing enabled after link reconciliation", {
-              relayUrl: relayConfig?.url,
-            });
-          }
-          return;
-        }
-        yield* Effect.sleep("5 seconds");
+  const publishActiveThreadsOnceWhenConfigured = Effect.gen(function* () {
+    while (!(yield* Ref.get(activeSnapshotPublishedRef))) {
+      const published = yield* publishActiveThreadsUnsafe.pipe(Effect.orElseSucceed(() => false));
+      if (published) {
+        yield* Ref.set(activeSnapshotPublishedRef, true);
+        return;
       }
-    });
+      yield* Effect.sleep("5 seconds");
+    }
+  });
 
   const worker = yield* makeDrainableWorker(publishThread);
 
-  schedulePublishConfirm = (threadId) =>
-    Effect.forkDetach(
-      Effect.sleep("5 seconds").pipe(
-        Effect.andThen(worker.enqueue(threadId)),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("deferred agent activity confirmation failed", {
-            threadId,
-            cause: Cause.pretty(cause),
-          }),
-        ),
-      ),
-    ).pipe(Effect.asVoid);
-
-  const start: AgentAwarenessRelay["Service"]["start"] = Effect.fn("AgentAwarenessRelay.start")(
+  const start: AgentAwarenessRelayShape["start"] = Effect.fn("AgentAwarenessRelay.start")(
     function* () {
-      const [relayConfig, publishEnabled] = yield* Effect.all([
-        readRelayConfig.pipe(Effect.orElseSucceed(() => null)),
-        readPublishAgentActivityEnabled.pipe(Effect.orElseSucceed(() => false)),
-      ]);
-      const startupState = resolveAgentActivityPublishingStartupState({
-        relayConfigured: relayConfig !== null,
-        publishEnabled,
-      });
-      switch (startupState) {
-        case "waiting-for-link":
-          yield* Effect.logInfo(
-            "agent activity publishing standby; waiting for T3 Connect link reconciliation",
-          );
-          break;
-        case "disabled":
-          yield* Effect.logInfo("agent activity publishing disabled by T3 Connect configuration");
-          break;
-        case "enabled":
-          yield* Effect.logInfo("agent activity publishing enabled", {
-            relayUrl: relayConfig?.url,
-          });
-          break;
+      const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
+      if (!relayConfig) {
+        yield* Effect.logInfo("agent activity publishing standby; T3 Connect config missing");
+      } else {
+        yield* Effect.logInfo("agent activity publishing enabled", {
+          relayUrl: relayConfig.url,
+        });
       }
       yield* Effect.forkScoped(
-        Effect.sleep("1 second").pipe(
-          Effect.andThen(publishActiveThreadsOnceWhenConfigured(startupState !== "enabled")),
-        ),
+        Effect.sleep("1 second").pipe(Effect.andThen(publishActiveThreadsOnceWhenConfigured)),
       );
       yield* Effect.forkScoped(
         Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
@@ -624,10 +494,10 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return AgentAwarenessRelay.of({
+  return {
     publishThread,
     start,
-  });
+  } satisfies AgentAwarenessRelayShape;
 });
 
 export const layer = Layer.effect(AgentAwarenessRelay, make);

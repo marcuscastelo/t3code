@@ -208,17 +208,19 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             </>
           );
           return (
-            <button
+            <div
               key={`${activeQuestion.id}:${option.label}`}
-              type="button"
-              disabled={isResponding}
+              role="button"
+              tabIndex={isResponding ? -1 : 0}
+              aria-disabled={isResponding}
               onClick={() => {
+                if (isResponding) return;
                 handleOptionSelection(activeQuestion.id, option.label);
               }}
               className={className}
             >
               {content}
-            </button>
+            </div>
           );
         })}
       </div>
