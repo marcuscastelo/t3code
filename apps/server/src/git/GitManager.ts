@@ -43,7 +43,7 @@ import {
 
 import { GitManagerError, GitPullRequestMaterializationError } from "@t3tools/contracts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as ProjectHookRunner from "../project/Services/ProjectHookRunner.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
@@ -522,7 +522,16 @@ export const make = Effect.gen(function* () {
   const gitCore = yield* GitVcsDriver.GitVcsDriver;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
-  const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const projectHookRunner = yield* Effect.serviceOption(ProjectHookRunner.ProjectHookRunner);
+  const runProjectHook = (
+    input: ProjectHookRunner.ProjectHookRunnerInput,
+  ): Effect.Effect<
+    ProjectHookRunner.ProjectHookRunnerResult,
+    ProjectHookRunner.ProjectHookRunnerError
+  > =>
+    Option.isSome(projectHookRunner)
+      ? projectHookRunner.value.runForThread(input)
+      : Effect.succeed({ status: "no-script" });
   const crypto = yield* Crypto.Crypto;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
@@ -1465,21 +1474,26 @@ export const make = Effect.gen(function* () {
       if (!input.threadId) {
         return Effect.void;
       }
-      return projectSetupScriptRunner
-        .runForThread({
+      return runProjectHook({
+        event: "worktree.created",
+        hookRunId: `${input.threadId}:worktree.created`,
+        threadId: input.threadId,
+        projectCwd: input.cwd,
+        worktreePath,
+        payload: {
           threadId: input.threadId,
           projectCwd: input.cwd,
           worktreePath,
-        })
-        .pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("GitManager.preparePullRequestThread setup script failed", {
-              threadId: input.threadId,
-              worktreePath,
-              cause: error,
-            }).pipe(Effect.asVoid),
-          ),
-        );
+        },
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("GitManager.preparePullRequestThread setup script failed", {
+            threadId: input.threadId,
+            worktreePath,
+            cause: error,
+          }).pipe(Effect.asVoid),
+        ),
+      );
     };
     return yield* Effect.gen(function* () {
       const normalizedReference = normalizePullRequestReference(input.reference);
