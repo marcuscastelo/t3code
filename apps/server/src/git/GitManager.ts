@@ -1167,25 +1167,18 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.as(candidate));
 
-    return yield* verifyRef(baseRef).pipe(
-      Effect.catch(() =>
-        gitCore.resolvePrimaryRemoteName(cwd).pipe(
-          Effect.flatMap((remoteName) => {
-            const remoteBaseRef = `${remoteName}/${baseRef}`;
-            return verifyRef(remoteBaseRef).pipe(
-              Effect.catch(() =>
-                gitCore
-                  .fetchRemoteTrackingBranch({
-                    cwd,
-                    remoteName,
-                    remoteBranch: baseRef,
-                  })
-                  .pipe(Effect.flatMap(() => verifyRef(remoteBaseRef))),
-              ),
-            );
-          }),
-        ),
-      ),
+    return yield* gitCore.resolvePrimaryRemoteName(cwd).pipe(
+      Effect.flatMap((remoteName) => {
+        const remoteBaseRef = `${remoteName}/${baseRef}`;
+        return verifyRef(remoteBaseRef).pipe(
+          Effect.catch(() =>
+            gitCore
+              .fetchRemoteTrackingBranch({ cwd, remoteName, remoteBranch: baseRef })
+              .pipe(Effect.flatMap(() => verifyRef(remoteBaseRef))),
+          ),
+        );
+      }),
+      Effect.catch(() => verifyRef(baseRef)),
     );
   });
 
