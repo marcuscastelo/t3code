@@ -1,0 +1,50 @@
+version = '0.1'
+devcontainers = []
+
+[repository]
+name = 't3code'
+default_branch = 'marucs-code'
+remote = 'origin'
+
+[worktrees]
+base_path = '.worktrees'
+folder_pattern = '{branch_slug}'
+slug_mode = 'sanitized'
+conflict_policy = 'fail'
+show_archived = false
+detect_orphans = true
+
+[ide]
+default = 'cursor'
+open_mode = 'host'
+
+[setup]
+script = ''
+devcontainer = ''
+env_copy = []
+env_patch = []
+commands = []
+
+[[setup.files]]
+from = '.env.example'
+to = '.env'
+
+[remove]
+script = ''
+devcontainer = ''
+
+[sync]
+
+[branches]
+
+[planned]
+items = [
+  'Per-worktree devcontainer selection',
+  'Open profiles per task type',
+  'VS Code / JetBrains / Neovim / Zed support',
+  'Post-open commands',
+  'Worktree templates & presets',
+  'Stale worktree detection + assisted cleanup',
+  'Team config sync',
+  'Task tracker integration',
+]
