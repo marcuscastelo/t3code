@@ -111,7 +111,6 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
     label: Effect.succeed("Windows"),
     start: Effect.void,
-    restart: Effect.void,
     stop: () => options.stopBackend ?? Effect.void,
     currentConfig: Effect.succeed(Option.none()),
     snapshot: Effect.succeed({

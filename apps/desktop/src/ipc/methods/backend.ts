@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
+import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
 
@@ -11,7 +11,8 @@ export const startLocalServer = makeIpcMethod({
   result: Schema.Void,
   handler: () =>
     Effect.gen(function* () {
-      const manager = yield* DesktopBackendManager.DesktopBackendManager;
-      yield* manager.start;
+      const pool = yield* DesktopBackendPool.DesktopBackendPool;
+      const primary = yield* pool.primary;
+      yield* primary.start;
     }),
 });

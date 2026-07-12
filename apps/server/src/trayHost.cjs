@@ -92,7 +92,18 @@ async function buildPairingUrl() {
       authorization: `Bearer ${traySessionToken}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ label: "Tray web app", role: "owner" }),
+    body: JSON.stringify({
+      label: "Tray web app",
+      scopes: [
+        "orchestration:read",
+        "orchestration:operate",
+        "terminal:operate",
+        "review:write",
+        "access:read",
+        "access:write",
+        "relay:write",
+      ],
+    }),
   });
   if (!response.ok) {
     throw new Error(`Pairing token request failed: ${response.status}`);

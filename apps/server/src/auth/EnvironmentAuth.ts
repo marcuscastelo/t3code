@@ -862,9 +862,7 @@ export const make = Effect.gen(function* () {
 
   const issuePairingCredential: EnvironmentAuth["Service"]["issuePairingCredential"] = (input) =>
     issuePairingCredentialForSubject({
-      scopes:
-        input?.scopes ??
-        (input?.role === "owner" ? AuthAdministrativeScopes : AuthStandardClientScopes),
+      scopes: input?.scopes ?? AuthStandardClientScopes,
       subject: "one-time-token",
       ...(input?.label ? { label: input.label } : {}),
     }).pipe(Effect.withSpan("EnvironmentAuth.issuePairingCredential"));

@@ -5,12 +5,12 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { AuthAdministrativeScopes } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { AuthControlPlaneRuntimeLive } from "../auth/Layers/AuthControlPlane.ts";
-import { AuthControlPlane } from "../auth/Services/AuthControlPlane.ts";
-import { ServerConfig, type ServerConfigShape } from "../config.ts";
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as ServerConfig from "../config.ts";
 
 export interface ServerTrayHandle {
   readonly shutdown: Effect.Effect<void>;
@@ -35,7 +35,7 @@ function resolveTrayHostPath(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-function resolveTrayIconPath(config: ServerConfigShape): string | null {
+function resolveTrayIconPath(config: ServerConfig.ServerConfig["Service"]): string | null {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
     path.join(config.staticDir ?? "", "favicon-32x32.png"),
@@ -75,27 +75,25 @@ function resolveElectronPath(): string | null {
 }
 
 const issueTraySessionToken = Effect.fn("server.tray.issueSessionToken")(function* (
-  config: ServerConfigShape,
+  config: ServerConfig.ServerConfig["Service"],
 ) {
   return yield* Effect.gen(function* () {
-    const authControlPlane = yield* AuthControlPlane;
-    const issued = yield* authControlPlane.issueSession({
-      role: "owner",
+    const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const issued = yield* environmentAuth.issueSession({
+      scopes: AuthAdministrativeScopes,
       subject: "tray-server",
       label: "T3 Code tray",
     });
     return issued.token;
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(AuthControlPlaneRuntimeLive).pipe(
-        Layer.provide(Layer.succeed(ServerConfig, config)),
-      ),
+      Layer.mergeAll(EnvironmentAuth.runtimeLayer).pipe(Layer.provide(ServerConfig.layer(config))),
     ),
   );
 });
 
 export const launchServerTray = Effect.fn("server.tray.launch")(function* (
-  config: ServerConfigShape,
+  config: ServerConfig.ServerConfig["Service"],
 ) {
   if (process.env.T3CODE_TRAY === "0" || process.env.T3CODE_SERVER_TRAY === "0") {
     return { shutdown: Effect.void };
