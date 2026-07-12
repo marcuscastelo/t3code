@@ -64,25 +64,22 @@ There's no public docs site yet, checkout the miscellaneous markdown files in [d
 This fork currently carries these features ahead of `upstream/main`.
 Keep this table current when creating new feature branches, adding features, merging into `marucs-code`, or merging into `main`.
 
-| Feature not in upstream                                                    | Branch holding it                                               | PR note                      |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------- |
-| Appearance settings/theme system                                           | `origin/personal/pr-1550-appearance`                            | Clean, 8 commits             |
-| Clear stale provider prompts                                               | `origin/fix/session-recovery/pr-1-clear-stale-provider-prompts` | Mostly clean, includes docs  |
-| Durable Codex session history import                                       | `origin/feat/codex-session-importer/pr-1-importer-sync`         | Includes stale-prompt + docs |
-| Project delete flow with thread count/force                                | `origin/fix/project-delete-force-retry`                         | Clean, 1 commit              |
-| Tray/server controls, keep backend alive, offline state, pairing links     | `origin/t3code/kde-tray-server-controls`                        | Stacked, 20 commits          |
-| Mobile-first main UI                                                       | `origin/mobile-design-v1`                                       | Clean, 1 commit              |
-| Worklog details dialog + copy                                              | `origin/clickable-worklog`                                      | Clean, 1 commit              |
-| Provider rate limits UI + Claude probing + pacing                          | `origin/provider-limits-ui`                                     | Clean, 3 commits             |
-| Rate-limit pace delta percent/hours                                        | `origin/t3code/pp-hours`                                        | Stacked on provider limits   |
-| Codex multi-bucket/root rate limit handling                                | `origin/fix/codex-limits-pp`                                    | Stacked, 2 new commits       |
-| Multi-device/thread orchestration events via WebSocket + connected devices | `origin/t3code/multi-device-thread-sync`                        | Stacked, 40 commits          |
-| Commit/push/update-PR git action + tests/base-ref fix                      | `origin/update-pr-action`                                       | Stacked, 41 commits          |
-| Background work in sidebar/timeline                                        | `origin/t3code/background-work-indicator`                       | Clean, 1 commit              |
-| Reconnect live stream listeners after socket close                         | `origin/fix/reconnect-ui-stale`                                 | Stacked on marucs-code       |
-| Project hook execution for turn lifecycle events                           | `origin/feature/more-action-hooks`                              | Clean, 1 commit              |
-| Project contexts/workspaces with defaults and classification rules         | `origin/feature/app-project-contexts`                           | Clean, V3                    |
-| Fork workflow docs / MCP tooling notes                                     | `origin/marucs-code`                                            | No dedicated clean PR branch |
+| Feature not in upstream                                                    | Branch holding it                                               | PR note                               |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
+| Appearance settings/theme system                                           | `origin/personal/pr-1550-appearance`                            | Rebased on upstream; clean candidate  |
+| Clear stale provider prompts                                               | `origin/fix/session-recovery/pr-1-clear-stale-provider-prompts` | Rebased on upstream; mostly clean     |
+| Durable Codex session history import                                       | `origin/feat/codex-session-importer/pr-1-importer-sync`         | Rebased; importer foundation          |
+| Tray/server controls, keep backend alive, offline state, pairing links     | `origin/t3code/kde-tray-server-controls`                        | Rebased; fork-specific stack          |
+| Worklog details dialog + copy                                              | `origin/clickable-worklog`                                      | Rebased on upstream; clean candidate  |
+| Provider rate limits UI + Claude probing + pacing                          | `origin/provider-limits-ui`                                     | Rebased; provider-limits foundation   |
+| Rate-limit pace delta percent/hours                                        | `origin/t3code/pp-hours`                                        | Stacked on provider limits            |
+| Codex multi-bucket/root rate limit handling                                | `origin/fix/codex-limits-pp`                                    | Stacked on pp-hours                   |
+| Multi-device/thread orchestration events via WebSocket + connected devices | `origin/t3code/multi-device-thread-sync`                        | Stacked on session importer           |
+| Commit/push/update-PR git action + tests/base-ref fix                      | `origin/update-pr-action`                                       | Rebased; stacked git-action work      |
+| Background work in sidebar/timeline                                        | `origin/t3code/background-work-indicator`                       | Rebased on upstream; clean candidate  |
+| Project hook execution for turn lifecycle events                           | `origin/feature/more-action-hooks`                              | Rebased; hook foundation              |
+| Project contexts/workspaces with defaults and classification rules         | `origin/feature/app-project-contexts`                           | Rebased and ported to current runtime |
+| Integrated fork release line                                               | `origin/marucs-code`                                            | Contains all active rows above        |
 
 ## If you REALLY want to contribute still.... read this first
 
