@@ -25,6 +25,7 @@ export default Effect.gen(function* () {
       model TEXT NOT NULL,
       branch TEXT,
       worktree_path TEXT,
+      worktree_ownership TEXT,
       latest_turn_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,

@@ -731,7 +731,12 @@ describe("web cloud link environment client", () => {
           .fn()
           .mockResolvedValueOnce(Response.json(validChallenge()))
           .mockResolvedValueOnce(Response.json(validProof()))
-          .mockResolvedValueOnce(Response.json({ error: "unavailable" }, { status: 503 })),
+          .mockResolvedValueOnce(
+            new Response('{"error":"unavailable"}', {
+              status: 503,
+              headers: { "content-type": "application/json" },
+            }),
+          ),
       );
 
       const error = yield* withCloudServices(

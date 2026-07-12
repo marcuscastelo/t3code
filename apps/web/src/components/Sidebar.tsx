@@ -57,6 +57,7 @@ import { Link, useLocation, useNavigate, useParams, useRouter } from "@tanstack/
 import {
   MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
   MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
+  type ProjectContextId,
   type SidebarProjectSortOrder,
   type SidebarThreadPreviewCount,
   type SidebarThreadSortOrder,
@@ -194,6 +195,17 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import {
+  assignProjectToContext,
+  buildProjectContextSummaries,
+  createProjectContext,
+  filterProjectsByActiveProjectContext,
+  resolveActiveProjectContextId,
+  resolveProjectContextDefaultThreadEnvMode,
+  resolveProjectContextId,
+  selectProjectContextSettings,
+  type ProjectContextSummary,
+} from "../projectContexts";
+import {
   useSavedEnvironmentRegistryStore,
   useSavedEnvironmentRuntimeStore,
 } from "../environments/runtime";
@@ -205,6 +217,7 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { SidebarProviderUpdatePill } from "./sidebar/SidebarProviderUpdatePill";
+import { ProjectContextSwitcher } from "./ProjectContextSwitcher";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -999,6 +1012,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     (settings) => settings.defaultThreadEnvMode,
   );
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useSettings(selectProjectContextSettings);
   const { updateSettings } = useUpdateSettings();
   const sidebarThreadPreviewCount = useSettings<SidebarThreadPreviewCount>(
     (settings) => settings.sidebarThreadPreviewCount,
@@ -1343,6 +1357,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [projectGroupingSettings.sidebarProjectGroupingOverrides],
   );
 
+  const moveProjectToContext = useCallback(
+    (member: SidebarProjectGroupMember, contextId: ProjectContextId | null) => {
+      updateSettings({
+        projectContextAssignments: assignProjectToContext({
+          project: member,
+          contextId,
+          assignments: projectContextSettings.projectContextAssignments,
+        }),
+      });
+    },
+    [projectContextSettings.projectContextAssignments, updateSettings],
+  );
+
   const removeProject = useCallback(
     async (member: SidebarProjectGroupMember, options: { force?: boolean } = {}): Promise<void> => {
       const memberProjectRef = scopeProjectRef(member.environmentId, member.id);
@@ -1485,6 +1512,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         if (!api) return;
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
+        const sortedProjectContexts = projectContextSettings.projectContexts
+          .slice()
+          .sort(
+            (left, right) =>
+              left.sortOrder - right.sortOrder || left.name.localeCompare(right.name),
+          );
         const makeLeaf = (
           action: "rename" | "grouping" | "copy-path" | "delete",
           member: SidebarProjectGroupMember,
@@ -1551,12 +1584,57 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           };
         };
 
+        const makeContextLeaf = (
+          member: SidebarProjectGroupMember,
+          contextId: ProjectContextId | null,
+          label: string,
+        ): ContextMenuItem<string> => {
+          const id = `context:${member.physicalProjectKey}:${contextId ?? "none"}`;
+          const currentContextId = resolveProjectContextId(member, projectContextSettings);
+          actionHandlers.set(id, () => moveProjectToContext(member, contextId));
+          return {
+            id,
+            label,
+            disabled: currentContextId === contextId,
+          };
+        };
+
+        const buildContextLeaves = (
+          member: SidebarProjectGroupMember,
+        ): ContextMenuItem<string>[] => [
+          makeContextLeaf(member, null, "No context"),
+          ...sortedProjectContexts.map((context) =>
+            makeContextLeaf(member, context.id, context.name),
+          ),
+        ];
+
+        const buildMoveToContextItem = (): ContextMenuItem<string> => {
+          if (project.memberProjects.length === 1) {
+            return {
+              id: "context:submenu",
+              label: "Move to context",
+              children: buildContextLeaves(project.memberProjects[0]!),
+            };
+          }
+
+          return {
+            id: "context:submenu",
+            label: "Move to context",
+            children: project.memberProjects.map((member) => ({
+              id: `context:member:${member.physicalProjectKey}`,
+              label: formatProjectMemberActionLabel(member, project.groupedProjectCount),
+              children: buildContextLeaves(member),
+            })),
+          };
+        };
+
         const clicked = await api.contextMenu.show(
           [
-            buildTargetedItem("rename", "Rename"),
-            buildTargetedItem("grouping", "Group into..."),
-            buildTargetedItem("copy-path", "Copy Path"),
-            buildTargetedItem("delete", "Remove", {
+            buildTargetedItem("rename", "Rename project"),
+            buildTargetedItem("grouping", "Project grouping…"),
+            buildMoveToContextItem(),
+            buildTargetedItem("copy-path", "Copy Project Path"),
+            buildTargetedItem("delete", "Remove project", {
               destructive: true,
             }),
           ],
@@ -1576,10 +1654,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [
       copyPathToClipboard,
       handleRemoveProject,
+      moveProjectToContext,
       openProjectGroupingDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      projectContextSettings,
       suppressProjectClickForContextMenuRef,
     ],
   );
@@ -1723,7 +1803,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const seedContext = resolveSidebarNewThreadSeedContext({
         projectId: member.id,
         defaultEnvMode: resolveSidebarNewThreadEnvMode({
-          defaultEnvMode: defaultThreadEnvMode,
+          defaultEnvMode: resolveProjectContextDefaultThreadEnvMode(
+            projectContextSettings,
+            resolveProjectContextId(member, projectContextSettings),
+            defaultThreadEnvMode,
+          ),
         }),
         activeThread:
           currentActiveThread && currentActiveThread.projectId === member.id
@@ -1754,7 +1838,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         envMode: seedContext.envMode,
       });
     },
-    [defaultThreadEnvMode, handleNewThread, isMobile, router, setOpenMobile],
+    [
+      defaultThreadEnvMode,
+      handleNewThread,
+      isMobile,
+      projectContextSettings,
+      router,
+      setOpenMobile,
+    ],
   );
 
   const handleCreateThreadClick = useCallback(
@@ -2660,6 +2751,12 @@ interface SidebarProjectsContentProps {
   threadPreviewCount: SidebarThreadPreviewCount;
   updateSettings: ReturnType<typeof useUpdateSettings>["updateSettings"];
   openAddProject: () => void;
+  projectContexts: ReturnType<typeof selectProjectContextSettings>["projectContexts"];
+  activeProjectContextId: ProjectContextId | null;
+  projectContextSummaries: readonly ProjectContextSummary[];
+  onProjectContextChange: (contextId: ProjectContextId | null) => void;
+  onCreateProjectContext: (name: string) => void;
+  onManageProjectContexts: () => void;
   isManualProjectSorting: boolean;
   projectDnDSensors: ReturnType<typeof useSensors>;
   projectCollisionDetection: CollisionDetection;
@@ -2684,6 +2781,7 @@ interface SidebarProjectsContentProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   attachProjectListAutoAnimateRef: (node: HTMLElement | null) => void;
   projectsLength: number;
+  visibleProjectsLength: number;
 }
 
 const SidebarProjectsContent = memo(function SidebarProjectsContent(
@@ -2701,6 +2799,12 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     threadPreviewCount,
     updateSettings,
     openAddProject,
+    projectContexts,
+    activeProjectContextId,
+    projectContextSummaries,
+    onProjectContextChange,
+    onCreateProjectContext,
+    onManageProjectContexts,
     isManualProjectSorting,
     projectDnDSensors,
     projectCollisionDetection,
@@ -2725,6 +2829,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     suppressProjectClickForContextMenuRef,
     attachProjectListAutoAnimateRef,
     projectsLength,
+    visibleProjectsLength,
   } = props;
 
   const handleProjectSortOrderChange = useCallback(
@@ -2801,6 +2906,16 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         </SidebarGroup>
       ) : null}
       <SidebarGroup className="px-2 py-2">
+        <div className="mb-2 px-1">
+          <ProjectContextSwitcher
+            contexts={projectContexts}
+            summaries={projectContextSummaries}
+            activeContextId={activeProjectContextId}
+            onSelectContext={onProjectContextChange}
+            onCreateContext={onCreateProjectContext}
+            onManageContexts={onManageProjectContexts}
+          />
+        </div>
         <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
             Projects
@@ -2913,6 +3028,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             No projects yet
           </div>
         )}
+        {projectsLength > 0 && visibleProjectsLength === 0 && (
+          <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
+            No projects in this context
+          </div>
+        )}
       </SidebarGroup>
     </SidebarContent>
   );
@@ -2931,6 +3051,8 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useSettings((s) => s.sidebarProjectSortOrder);
   const sidebarProjectGroupingMode = useSettings((s) => s.sidebarProjectGroupingMode);
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useSettings(selectProjectContextSettings);
+  const activeProjectContextId = resolveActiveProjectContextId(projectContextSettings);
   const sidebarThreadPreviewCount = useSettings((s) => s.sidebarThreadPreviewCount);
   const { updateSettings } = useUpdateSettings();
   const { handleNewThread } = useNewThreadHandler();
@@ -2966,6 +3088,41 @@ export default function Sidebar() {
       getId: getProjectOrderKey,
     });
   }, [projectOrder, projects]);
+  const contextProjects = useMemo(
+    () => filterProjectsByActiveProjectContext(orderedProjects, projectContextSettings),
+    [orderedProjects, projectContextSettings],
+  );
+  const projectContextSummaries = useMemo(
+    () =>
+      buildProjectContextSummaries({
+        projects: orderedProjects,
+        threads: sidebarThreads,
+        settings: projectContextSettings,
+      }),
+    [orderedProjects, projectContextSettings, sidebarThreads],
+  );
+  const handleProjectContextChange = useCallback(
+    (contextId: ProjectContextId | null) => {
+      updateSettings({ activeProjectContextId: contextId });
+    },
+    [updateSettings],
+  );
+  const handleCreateProjectContext = useCallback(
+    (name: string) => {
+      const nextContext = createProjectContext({
+        name,
+        existingContexts: projectContextSettings.projectContexts,
+      });
+      updateSettings({
+        projectContexts: [...projectContextSettings.projectContexts, nextContext],
+        activeProjectContextId: nextContext.id,
+      });
+    },
+    [projectContextSettings.projectContexts, updateSettings],
+  );
+  const handleManageProjectContexts = useCallback(() => {
+    void navigate({ to: "/settings/workspaces" });
+  }, [navigate]);
 
   // Build a mapping from physical project key → logical project key for
   // cross-environment grouping.  Projects that share a repositoryIdentity
@@ -2986,10 +3143,9 @@ export default function Sidebar() {
       ),
     [orderedProjects],
   );
-
   const sidebarProjects = useMemo<SidebarProjectSnapshot[]>(() => {
     return buildSidebarProjectSnapshots({
-      projects: orderedProjects,
+      projects: contextProjects,
       settings: projectGroupingSettings,
       primaryEnvironmentId,
       resolveEnvironmentLabel: (environmentId) => {
@@ -2999,7 +3155,7 @@ export default function Sidebar() {
       },
     });
   }, [
-    orderedProjects,
+    contextProjects,
     projectGroupingSettings,
     primaryEnvironmentId,
     savedEnvironmentRegistry,
@@ -3564,6 +3720,12 @@ export default function Sidebar() {
             threadPreviewCount={sidebarThreadPreviewCount}
             updateSettings={updateSettings}
             openAddProject={openAddProjectCommandPalette}
+            projectContexts={projectContextSettings.projectContexts}
+            activeProjectContextId={activeProjectContextId}
+            projectContextSummaries={projectContextSummaries}
+            onProjectContextChange={handleProjectContextChange}
+            onCreateProjectContext={handleCreateProjectContext}
+            onManageProjectContexts={handleManageProjectContexts}
             isManualProjectSorting={isManualProjectSorting}
             projectDnDSensors={projectDnDSensors}
             projectCollisionDetection={projectCollisionDetection}
@@ -3588,6 +3750,7 @@ export default function Sidebar() {
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
             attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
             projectsLength={projects.length}
+            visibleProjectsLength={contextProjects.length}
           />
 
           <SidebarSeparator />

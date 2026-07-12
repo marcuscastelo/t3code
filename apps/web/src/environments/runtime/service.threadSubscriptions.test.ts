@@ -126,9 +126,13 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
       listRefs: vi.fn(),
       createWorktree: vi.fn(),
       removeWorktree: vi.fn(),
+      validateWorktreeAttach: vi.fn(),
       createRef: vi.fn(),
       switchRef: vi.fn(),
       init: vi.fn(),
+    },
+    worktree: {
+      promoteThread: vi.fn(),
     },
     git: {
       runStackedAction: vi.fn(),
@@ -203,6 +207,7 @@ function makeThreadShellSnapshot(params: {
         interactionMode: "default",
         branch: null,
         worktreePath: null,
+        worktreeOwnership: null,
         latestTurn:
           params.sessionStatus === "running"
             ? {

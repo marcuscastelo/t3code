@@ -30,6 +30,7 @@ import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -49,6 +50,7 @@ interface BranchToolbarProps {
   envLocked: boolean;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
+  onExistingWorktreeAttachRequest?: (() => void) | undefined;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
@@ -63,6 +65,7 @@ interface MobileRunContextSelectorProps {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
+  onExistingWorktreeAttachRequest?: (() => void) | undefined;
 }
 
 const MobileRunContextSelector = memo(function MobileRunContextSelector({
@@ -75,6 +78,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
+  onExistingWorktreeAttachRequest,
 }: MobileRunContextSelectorProps) {
   const activeEnvironment = useMemo(
     () => availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null,
@@ -183,6 +187,15 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
               </span>
             </MenuRadioItem>
           </MenuRadioGroup>
+          {onExistingWorktreeAttachRequest ? (
+            <>
+              <MenuSeparator />
+              <MenuItem onClick={onExistingWorktreeAttachRequest}>
+                <FolderGitIcon className="size-3" />
+                Existing worktree
+              </MenuItem>
+            </>
+          ) : null}
         </MenuGroup>
       </MenuPopup>
     </Menu>
@@ -200,6 +213,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   envLocked,
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
+  onExistingWorktreeAttachRequest,
   availableEnvironments,
   onEnvironmentChange,
 }: BranchToolbarProps) {
@@ -253,6 +267,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           effectiveEnvMode={effectiveEnvMode}
           activeWorktreePath={activeWorktreePath}
           onEnvModeChange={onEnvModeChange}
+          onExistingWorktreeAttachRequest={onExistingWorktreeAttachRequest}
         />
       ) : (
         <div className="flex min-w-0 shrink-0 items-center gap-1">
@@ -272,6 +287,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
             onEnvModeChange={onEnvModeChange}
+            onExistingWorktreeAttachRequest={onExistingWorktreeAttachRequest}
           />
         </div>
       )}

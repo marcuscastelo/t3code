@@ -20,6 +20,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime";
 import type { ProjectId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { ProjectContextId } from "@t3tools/contracts/settings";
 
 import { APP_BASE_NAME, APP_STAGE_LABEL } from "../branding";
 import { useCommandPaletteStore } from "../commandPaletteStore";
@@ -28,7 +29,7 @@ import {
   useSavedEnvironmentRuntimeStore,
 } from "../environments/runtime";
 import { usePrimaryEnvironmentId } from "../environments/primary";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { sortThreads } from "../lib/threadSort";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import {
@@ -36,6 +37,15 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
+import {
+  buildProjectContextSummaries,
+  createProjectContext,
+  filterProjectsByActiveProjectContext,
+  resolveActiveProjectContextId,
+  selectProjectContextSettings,
+  type ProjectContextSettings,
+  type ProjectContextSummary,
+} from "../projectContexts";
 import {
   selectProjectsAcrossEnvironments,
   selectSidebarThreadsAcrossEnvironments,
@@ -55,6 +65,7 @@ import { MobileThreadCard } from "./mobile/MobileThreadCard";
 import { MobileProjectDetail } from "./mobile/MobileProjectDetail";
 import { MobileSettings } from "./mobile/MobileSettings";
 import { MobileNewTaskSheet } from "./mobile/MobileNewTaskSheet";
+import { ProjectContextSwitcher } from "./ProjectContextSwitcher";
 import {
   isReviewableThread,
   MobileStatusDot,
@@ -74,6 +85,13 @@ interface MobileProjectGroup {
   threads: SidebarThreadSummary[];
 }
 
+interface MobileProjectGroupsResult {
+  groups: MobileProjectGroup[];
+  projectContextSettings: ProjectContextSettings;
+  activeProjectContextId: ProjectContextId | null;
+  projectContextSummaries: ProjectContextSummary[];
+}
+
 export function MobileHome() {
   const [activeTab, setActiveTab] = useState<MobileHomeTab>(lastMobileTab);
   const [query, setQuery] = useState("");
@@ -88,7 +106,13 @@ export function MobileHome() {
   });
   const navigate = useNavigate();
   const openCommandPalette = useCommandPaletteStore((store) => store.setOpen);
-  const projectGroups = useMobileProjectGroups();
+  const {
+    groups: projectGroups,
+    projectContextSettings,
+    activeProjectContextId,
+    projectContextSummaries,
+  } = useMobileProjectGroups();
+  const { updateSettings } = useUpdateSettings();
   const filteredProjectGroups = useMemo(
     () => filterProjectGroups(projectGroups, query),
     [projectGroups, query],
@@ -115,6 +139,28 @@ export function MobileHome() {
     setNewTask({ open: true, seed: seed ?? null });
   }, []);
   const closeNewTask = useCallback(() => setNewTask({ open: false, seed: null }), []);
+  const handleProjectContextChange = useCallback(
+    (contextId: ProjectContextId | null) => {
+      updateSettings({ activeProjectContextId: contextId });
+    },
+    [updateSettings],
+  );
+  const handleCreateProjectContext = useCallback(
+    (name: string) => {
+      const nextContext = createProjectContext({
+        name,
+        existingContexts: projectContextSettings.projectContexts,
+      });
+      updateSettings({
+        projectContexts: [...projectContextSettings.projectContexts, nextContext],
+        activeProjectContextId: nextContext.id,
+      });
+    },
+    [projectContextSettings.projectContexts, updateSettings],
+  );
+  const handleManageProjectContexts = useCallback(() => {
+    void navigate({ to: "/settings/workspaces" });
+  }, [navigate]);
 
   const detailGroup = useMemo(
     () =>
@@ -159,6 +205,17 @@ export function MobileHome() {
                 <PlusIcon className="size-4" />
               </Button>
             </div>
+
+            <ProjectContextSwitcher
+              variant="mobile"
+              className="mt-3"
+              contexts={projectContextSettings.projectContexts}
+              summaries={projectContextSummaries}
+              activeContextId={activeProjectContextId}
+              onSelectContext={handleProjectContextChange}
+              onCreateContext={handleCreateProjectContext}
+              onManageContexts={handleManageProjectContexts}
+            />
 
             <label className="mt-3 flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 text-sm text-muted-foreground">
               <SearchIcon className="size-4 shrink-0" />
@@ -221,13 +278,15 @@ export function MobileHome() {
   );
 }
 
-function useMobileProjectGroups(): MobileProjectGroup[] {
+function useMobileProjectGroups(): MobileProjectGroupsResult {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const sidebarThreadSortOrder = useSettings((settings) => settings.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useSettings((settings) => settings.sidebarProjectSortOrder);
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useSettings(selectProjectContextSettings);
+  const activeProjectContextId = resolveActiveProjectContextId(projectContextSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const savedEnvironmentRegistry = useSavedEnvironmentRegistryStore((store) => store.byId);
   const savedEnvironmentRuntimeById = useSavedEnvironmentRuntimeStore((store) => store.byId);
@@ -240,10 +299,23 @@ function useMobileProjectGroups(): MobileProjectGroup[] {
       }),
     [projectOrder, projects],
   );
+  const contextProjects = useMemo(
+    () => filterProjectsByActiveProjectContext(orderedProjects, projectContextSettings),
+    [orderedProjects, projectContextSettings],
+  );
+  const projectContextSummaries = useMemo(
+    () =>
+      buildProjectContextSummaries({
+        projects: orderedProjects,
+        threads: sidebarThreads,
+        settings: projectContextSettings,
+      }),
+    [orderedProjects, projectContextSettings, sidebarThreads],
+  );
   const sidebarProjects = useMemo(
     () =>
       buildSidebarProjectSnapshots({
-        projects: orderedProjects,
+        projects: contextProjects,
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => {
@@ -253,7 +325,7 @@ function useMobileProjectGroups(): MobileProjectGroup[] {
         },
       }),
     [
-      orderedProjects,
+      contextProjects,
       primaryEnvironmentId,
       projectGroupingSettings,
       savedEnvironmentRegistry,
@@ -331,15 +403,26 @@ function useMobileProjectGroups(): MobileProjectGroup[] {
   }, [physicalToLogicalKey, projectPhysicalKeyByScopedRef, visibleThreads]);
 
   return useMemo(
-    () =>
-      sortedProjects.map((project) => ({
+    () => ({
+      groups: sortedProjects.map((project) => ({
         project,
         threads: sortThreads(
           threadsByProjectKey.get(project.projectKey) ?? [],
           sidebarThreadSortOrder,
         ),
       })),
-    [sidebarThreadSortOrder, sortedProjects, threadsByProjectKey],
+      projectContextSettings,
+      activeProjectContextId,
+      projectContextSummaries,
+    }),
+    [
+      activeProjectContextId,
+      projectContextSettings,
+      projectContextSummaries,
+      sidebarThreadSortOrder,
+      sortedProjects,
+      threadsByProjectKey,
+    ],
   );
 }
 

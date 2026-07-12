@@ -3,7 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { ThemeDocumentSchema } from "./appearanceTheme.ts";
-import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { EnvironmentId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -29,6 +29,57 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+
+export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
+export type ThreadEnvMode = typeof ThreadEnvMode.Type;
+
+export const ProjectContextId = TrimmedNonEmptyString.pipe(Schema.brand("ProjectContextId"));
+export type ProjectContextId = typeof ProjectContextId.Type;
+
+export const ProjectContextRuleId = TrimmedNonEmptyString.pipe(
+  Schema.brand("ProjectContextRuleId"),
+);
+export type ProjectContextRuleId = typeof ProjectContextRuleId.Type;
+
+export const ProjectContextRuleKind = Schema.Literals([
+  "path_prefix",
+  "repository_prefix",
+  "remote_url_contains",
+]);
+export type ProjectContextRuleKind = typeof ProjectContextRuleKind.Type;
+
+export const ProjectContext = Schema.Struct({
+  id: ProjectContextId,
+  name: TrimmedNonEmptyString,
+  color: Schema.optionalKey(TrimmedNonEmptyString),
+  icon: Schema.optionalKey(TrimmedNonEmptyString),
+  sortOrder: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+});
+export type ProjectContext = typeof ProjectContext.Type;
+
+export const ProjectContextDefaults = Schema.Struct({
+  defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  defaultEnvironmentId: Schema.optionalKey(EnvironmentId),
+  defaultModelSelection: Schema.optionalKey(ModelSelection),
+  addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
+});
+export type ProjectContextDefaults = typeof ProjectContextDefaults.Type;
+
+export const ProjectContextProjectOverride = Schema.Struct({
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
+});
+export type ProjectContextProjectOverride = typeof ProjectContextProjectOverride.Type;
+
+export const ProjectContextRule = Schema.Struct({
+  id: ProjectContextRuleId,
+  contextId: ProjectContextId,
+  kind: ProjectContextRuleKind,
+  pattern: TrimmedNonEmptyString,
+  sortOrder: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+});
+export type ProjectContextRule = typeof ProjectContextRule.Type;
+
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -80,6 +131,25 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  projectContexts: Schema.Array(ProjectContext).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  activeProjectContextId: Schema.NullOr(ProjectContextId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  projectContextAssignments: Schema.Record(TrimmedNonEmptyString, ProjectContextId).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  projectContextDefaults: Schema.Record(ProjectContextId, ProjectContextDefaults).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  projectContextProjectOverrides: Schema.Record(
+    TrimmedNonEmptyString,
+    ProjectContextProjectOverride,
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  projectContextRules: Schema.Array(ProjectContextRule).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -105,9 +175,6 @@ export type ClientSettings = typeof ClientSettingsSchema.Type;
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
 
 // ── Server Settings (server-authoritative) ────────────────────
-
-export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
-export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 
 const makeBinaryPathSetting = (fallback: string) =>
   TrimmedString.pipe(
@@ -391,6 +458,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  managedWorktreeBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -503,6 +571,7 @@ export const ServerSettingsPatch = Schema.Struct({
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  managedWorktreeBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   observability: Schema.optionalKey(
     Schema.Struct({
@@ -554,6 +623,18 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  projectContexts: Schema.optionalKey(Schema.Array(ProjectContext)),
+  activeProjectContextId: Schema.optionalKey(Schema.NullOr(ProjectContextId)),
+  projectContextAssignments: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, ProjectContextId),
+  ),
+  projectContextDefaults: Schema.optionalKey(
+    Schema.Record(ProjectContextId, ProjectContextDefaults),
+  ),
+  projectContextProjectOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, ProjectContextProjectOverride),
+  ),
+  projectContextRules: Schema.optionalKey(Schema.Array(ProjectContextRule)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

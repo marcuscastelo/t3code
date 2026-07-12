@@ -185,14 +185,12 @@ const makeCodexSessionImporter = Effect.gen(function* () {
       const sessionsDir = path.join(root, "sessions");
       const entries = yield* fileSystem
         .readDirectory(sessionsDir, { recursive: true })
-        .pipe(Effect.catch(() => Effect.succeed([] as Array<string>)));
+        .pipe(Effect.orElseSucceed(() => [] as Array<string>));
       let latest: { path: string; mtimeMs: number } | null = null;
       for (const entry of entries) {
         if (!entry.endsWith(".jsonl") || !entry.includes(providerThreadId)) continue;
         const fullPath = path.join(sessionsDir, entry);
-        const stat = yield* fileSystem
-          .stat(fullPath)
-          .pipe(Effect.catch(() => Effect.succeed(null)));
+        const stat = yield* fileSystem.stat(fullPath).pipe(Effect.orElseSucceed(() => null));
         if (stat === null || stat.type !== "File") continue;
         const mtimeMs = Option.match(stat.mtime, {
           onNone: () => 0,
@@ -655,7 +653,7 @@ const makeCodexSessionImporter = Effect.gen(function* () {
       let resumeCursor: { readonly threadId?: unknown } = {};
       if (row.resumeCursorJson !== null) {
         resumeCursor = yield* decodeResumeCursorJson(row.resumeCursorJson).pipe(
-          Effect.catch(() => Effect.succeed({})),
+          Effect.orElseSucceed(() => ({})),
         );
       }
       const providerThreadId =

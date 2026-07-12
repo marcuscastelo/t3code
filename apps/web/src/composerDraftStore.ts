@@ -14,6 +14,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  WorktreeOwnership,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -44,11 +45,13 @@ import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const isWorktreeOwnership = Schema.is(WorktreeOwnership);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
-const COMPOSER_DRAFT_STORAGE_VERSION = 6;
+const COMPOSER_DRAFT_STORAGE_VERSION = 7;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
+type DraftWorktreeOwnership = WorktreeOwnership;
 
 export const DraftId = Schema.String.pipe(Schema.brand("DraftId"));
 export type DraftId = typeof DraftId.Type;
@@ -178,6 +181,8 @@ const PersistedDraftThreadState = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
+  runSetupScriptOnFirstSend: Schema.optionalKey(Schema.Boolean),
   envMode: DraftThreadEnvModeSchema,
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
@@ -247,6 +252,8 @@ export interface DraftSessionState {
   interactionMode: ProviderInteractionMode;
   branch: string | null;
   worktreePath: string | null;
+  worktreeOwnership?: DraftWorktreeOwnership | null;
+  runSetupScriptOnFirstSend?: boolean;
   envMode: DraftThreadEnvMode;
   promotedTo?: ScopedThreadRef | null;
 }
@@ -307,6 +314,8 @@ interface ComposerDraftStoreState {
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
+      worktreeOwnership?: DraftWorktreeOwnership | null;
+      runSetupScriptOnFirstSend?: boolean;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
       runtimeMode?: RuntimeMode;
@@ -321,6 +330,8 @@ interface ComposerDraftStoreState {
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
+      worktreeOwnership?: DraftWorktreeOwnership | null;
+      runSetupScriptOnFirstSend?: boolean;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
       runtimeMode?: RuntimeMode;
@@ -333,6 +344,8 @@ interface ComposerDraftStoreState {
     options: {
       branch?: string | null;
       worktreePath?: string | null;
+      worktreeOwnership?: DraftWorktreeOwnership | null;
+      runSetupScriptOnFirstSend?: boolean;
       projectRef?: ScopedProjectRef;
       createdAt?: string;
       envMode?: DraftThreadEnvMode;
@@ -1019,6 +1032,16 @@ function normalizeDraftThreadEnvMode(
   return fallbackWorktreePath ? "worktree" : "local";
 }
 
+function normalizeDraftWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: DraftWorktreeOwnership | null | undefined,
+): DraftWorktreeOwnership | null {
+  if (worktreePath === null) {
+    return null;
+  }
+  return worktreeOwnership ?? "managed";
+}
+
 function projectDraftKey(projectRef: ScopedProjectRef): string {
   return scopedProjectKey(projectRef);
 }
@@ -1156,6 +1179,8 @@ function createDraftThreadState(
     threadId?: ThreadId;
     branch?: string | null;
     worktreePath?: string | null;
+    worktreeOwnership?: DraftWorktreeOwnership | null;
+    runSetupScriptOnFirstSend?: boolean;
     createdAt?: string;
     envMode?: DraftThreadEnvMode;
     runtimeMode?: RuntimeMode;
@@ -1178,6 +1203,19 @@ function createDraftThreadState(
         ? null
         : (existingThread?.branch ?? null)
       : (options.branch ?? null);
+  const nextWorktreeOwnership = normalizeDraftWorktreeOwnership(
+    nextWorktreePath,
+    options?.worktreeOwnership === undefined
+      ? projectChanged
+        ? undefined
+        : existingThread?.worktreeOwnership
+      : options.worktreeOwnership,
+  );
+  const nextRunSetupScriptOnFirstSend =
+    nextWorktreeOwnership === "managed"
+      ? (options?.runSetupScriptOnFirstSend ??
+        (projectChanged ? false : (existingThread?.runSetupScriptOnFirstSend ?? false)))
+      : false;
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1189,6 +1227,8 @@ function createDraftThreadState(
       options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
     branch: nextBranch,
     worktreePath: nextWorktreePath,
+    worktreeOwnership: nextWorktreeOwnership,
+    runSetupScriptOnFirstSend: nextRunSetupScriptOnFirstSend,
     envMode:
       options?.envMode ??
       (nextWorktreePath
@@ -1226,6 +1266,8 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.interactionMode === right.interactionMode &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
+    left.worktreeOwnership === right.worktreeOwnership &&
+    left.runSetupScriptOnFirstSend === right.runSetupScriptOnFirstSend &&
     left.envMode === right.envMode &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
@@ -1322,6 +1364,12 @@ function normalizePersistedDraftThreads(
       const branch = candidateDraftThread.branch;
       const worktreePath = candidateDraftThread.worktreePath;
       const normalizedWorktreePath = typeof worktreePath === "string" ? worktreePath : null;
+      const normalizedWorktreeOwnership = normalizeDraftWorktreeOwnership(
+        normalizedWorktreePath,
+        isWorktreeOwnership(candidateDraftThread.worktreeOwnership)
+          ? candidateDraftThread.worktreeOwnership
+          : undefined,
+      );
       const promotedToCandidate = candidateDraftThread.promotedTo;
       const promotedToRecord =
         promotedToCandidate && typeof promotedToCandidate === "object"
@@ -1367,6 +1415,10 @@ function normalizePersistedDraftThreads(
             : DEFAULT_INTERACTION_MODE,
         branch: typeof branch === "string" ? branch : null,
         worktreePath: normalizedWorktreePath,
+        worktreeOwnership: normalizedWorktreeOwnership,
+        runSetupScriptOnFirstSend:
+          normalizedWorktreeOwnership === "managed" &&
+          candidateDraftThread.runSetupScriptOnFirstSend === true,
         envMode: normalizeDraftThreadEnvMode(candidateDraftThread.envMode, normalizedWorktreePath),
         promotedTo,
       };
@@ -1412,6 +1464,8 @@ function normalizePersistedDraftThreads(
           interactionMode: DEFAULT_INTERACTION_MODE,
           branch: null,
           worktreePath: null,
+          worktreeOwnership: null,
+          runSetupScriptOnFirstSend: false,
           envMode: "local",
           promotedTo: null,
         };
@@ -1930,6 +1984,13 @@ function toHydratedDraftThreadState(
     interactionMode: persistedDraftThread.interactionMode,
     branch: persistedDraftThread.branch,
     worktreePath: persistedDraftThread.worktreePath,
+    worktreeOwnership: normalizeDraftWorktreeOwnership(
+      persistedDraftThread.worktreePath,
+      persistedDraftThread.worktreeOwnership,
+    ),
+    runSetupScriptOnFirstSend:
+      persistedDraftThread.worktreeOwnership === "managed" &&
+      persistedDraftThread.runSetupScriptOnFirstSend === true,
     envMode: persistedDraftThread.envMode,
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
@@ -2116,6 +2177,19 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   ? null
                   : existing.branch
                 : (options.branch ?? null);
+            const nextWorktreeOwnership = normalizeDraftWorktreeOwnership(
+              nextWorktreePath,
+              options.worktreeOwnership === undefined
+                ? projectChanged
+                  ? undefined
+                  : existing.worktreeOwnership
+                : options.worktreeOwnership,
+            );
+            const nextRunSetupScriptOnFirstSend =
+              nextWorktreeOwnership === "managed"
+                ? (options.runSetupScriptOnFirstSend ??
+                  (projectChanged ? false : (existing.runSetupScriptOnFirstSend ?? false)))
+                : false;
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -2129,6 +2203,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               interactionMode: options.interactionMode ?? existing.interactionMode,
               branch: nextBranch,
               worktreePath: nextWorktreePath,
+              worktreeOwnership: nextWorktreeOwnership,
+              runSetupScriptOnFirstSend: nextRunSetupScriptOnFirstSend,
               envMode:
                 options.envMode ??
                 (nextWorktreePath
@@ -2147,6 +2223,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.interactionMode === existing.interactionMode &&
               nextDraftThread.branch === existing.branch &&
               nextDraftThread.worktreePath === existing.worktreePath &&
+              nextDraftThread.worktreeOwnership === existing.worktreeOwnership &&
+              nextDraftThread.runSetupScriptOnFirstSend === existing.runSetupScriptOnFirstSend &&
               nextDraftThread.envMode === existing.envMode &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {

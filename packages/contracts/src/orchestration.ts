@@ -124,6 +124,8 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
+export const WorktreeOwnership = Schema.Literals(["managed", "external"]);
+export type WorktreeOwnership = typeof WorktreeOwnership.Type;
 export const ProviderRequestKind = Schema.Literals(["command", "file-read", "file-change"]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const AssistantDeliveryMode = Schema.Literals(["buffered", "streaming"]);
@@ -352,6 +354,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -398,6 +401,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -503,6 +507,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
 });
 
@@ -532,6 +537,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -558,6 +564,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
 });
 
@@ -565,6 +572,7 @@ const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
   projectCwd: TrimmedNonEmptyString,
   baseBranch: TrimmedNonEmptyString,
   branch: Schema.optional(TrimmedNonEmptyString),
+  path: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
 });
 
 const ThreadTurnStartBootstrap = Schema.Struct({
@@ -846,6 +854,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreeOwnership: Schema.optionalKey(Schema.NullOr(WorktreeOwnership)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -872,6 +881,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  worktreeOwnership: Schema.optional(Schema.NullOr(WorktreeOwnership)),
   updatedAt: IsoDateTime,
 });
 
@@ -1186,6 +1196,19 @@ export const DispatchResult = Schema.Struct({
   sequence: NonNegativeInt,
 });
 export type DispatchResult = typeof DispatchResult.Type;
+
+export const WorktreePromoteThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  runSetupScript: Schema.Boolean,
+});
+export type WorktreePromoteThreadInput = typeof WorktreePromoteThreadInput.Type;
+
+export const WorktreePromoteThreadResult = Schema.Struct({
+  threadId: ThreadId,
+  worktreeOwnership: WorktreeOwnership,
+  setupScriptRequested: Schema.Boolean,
+});
+export type WorktreePromoteThreadResult = typeof WorktreePromoteThreadResult.Type;
 
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({

@@ -96,6 +96,11 @@ import { useAppearance } from "../hooks/useAppearance";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import {
+  deriveProjectContextAssignmentKey,
+  resolveManagedWorktreePath,
+  selectProjectContextSettings,
+} from "../projectContexts";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { BranchToolbar } from "./BranchToolbar";
@@ -114,7 +119,7 @@ import {
 } from "~/projectScripts";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -857,6 +862,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -3118,6 +3124,24 @@ export default function ChatView(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
         ? activeThreadBranch
         : null;
+    const worktreeBranchForSend = baseBranchForWorktree
+      ? buildTemporaryWorktreeBranchName(randomHex)
+      : null;
+    const managedWorktreePathForSend = worktreeBranchForSend
+      ? resolveManagedWorktreePath({
+          project: activeProject,
+          settings: selectProjectContextSettings(settings),
+          branch: worktreeBranchForSend,
+        })
+      : null;
+    const shouldRunSetupScript =
+      Boolean(baseBranchForWorktree) ||
+      Boolean(
+        isFirstMessage &&
+        activeThread.worktreePath &&
+        activeThread.worktreeOwnership === "managed" &&
+        draftThread?.runSetupScriptOnFirstSend,
+      );
 
     // In worktree mode, require an explicit base branch so we don't silently
     // fall back to local execution when branch selection is missing.
@@ -3261,20 +3285,24 @@ export default function ChatView(props: ChatViewProps) {
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
+                      worktreeOwnership:
+                        activeThread.worktreeOwnership ??
+                        (activeThread.worktreePath !== null ? "managed" : null),
                       createdAt: activeThread.createdAt,
                     },
                   }
                 : {}),
-              ...(baseBranchForWorktree
+              ...(baseBranchForWorktree && worktreeBranchForSend
                 ? {
                     prepareWorktree: {
                       projectCwd: activeProject.cwd,
                       baseBranch: baseBranchForWorktree,
-                      branch: buildTemporaryWorktreeBranchName(randomHex),
+                      branch: worktreeBranchForSend,
+                      path: managedWorktreePathForSend,
                     },
-                    runSetupScript: true,
                   }
                 : {}),
+              ...(shouldRunSetupScript ? { runSetupScript: true } : {}),
             }
           : undefined;
       beginLocalDispatch({ preparingWorktree: false });
@@ -3716,6 +3744,8 @@ export default function ChatView(props: ChatViewProps) {
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
+        worktreeOwnership:
+          activeThread.worktreeOwnership ?? (activeThread.worktreePath ? "managed" : null),
         createdAt,
       })
       .then(() => {
@@ -3911,6 +3941,162 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
+  const onExistingWorktreeAttachRequest = useCallback(async () => {
+    if (!activeProject || !activeThread || !isLocalDraftThread) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Start from a draft",
+          description: "Attach an existing worktree before the chat is created.",
+        }),
+      );
+      return;
+    }
+    const api = readEnvironmentApi(activeProject.environmentId);
+    if (!api) {
+      return;
+    }
+    const worktreePath = window.prompt("Existing worktree path", activeThread.worktreePath ?? "");
+    const trimmedWorktreePath = worktreePath?.trim() ?? "";
+    if (trimmedWorktreePath.length === 0) {
+      return;
+    }
+
+    try {
+      const validation = await api.vcs.validateWorktreeAttach({
+        projectCwd: activeProject.cwd,
+        worktreePath: trimmedWorktreePath,
+      });
+      if (!validation.canAttachExternal) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Worktree does not match",
+            description: validation.detail ?? "Choose a worktree from the selected project.",
+          }),
+        );
+        return;
+      }
+
+      const worktreeOwnership =
+        validation.canManage &&
+        window.confirm("Make this worktree managed by T3 Code for future cleanup?")
+          ? "managed"
+          : "external";
+      const runSetupScriptOnFirstSend =
+        worktreeOwnership === "managed" && window.confirm("Run setup scripts on first send?");
+
+      setDraftThreadContext(composerDraftTarget, {
+        projectRef: scopeProjectRef(activeProject.environmentId, activeProject.id),
+        envMode: "worktree",
+        branch: validation.branch,
+        worktreePath: trimmedWorktreePath,
+        worktreeOwnership,
+        runSetupScriptOnFirstSend,
+      });
+      scheduleComposerFocus();
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not validate worktree",
+          description: error instanceof Error ? error.message : "Validation failed.",
+        }),
+      );
+    }
+  }, [
+    activeProject,
+    activeThread,
+    composerDraftTarget,
+    isLocalDraftThread,
+    scheduleComposerFocus,
+    setDraftThreadContext,
+  ]);
+
+  const onConfigureProjectWorktreeBase = useCallback(() => {
+    if (!activeProject) {
+      return;
+    }
+    const assignmentKey = deriveProjectContextAssignmentKey(activeProject);
+    const currentOverride = settings.projectContextProjectOverrides[assignmentKey];
+    const nextValue = window.prompt(
+      "Managed worktrees base directory for this project",
+      currentOverride?.managedWorktreeBaseDirectory ?? "",
+    );
+    if (nextValue === null) {
+      return;
+    }
+    const projectContextProjectOverrides = { ...settings.projectContextProjectOverrides };
+    const trimmed = nextValue.trim();
+    if (trimmed.length > 0) {
+      projectContextProjectOverrides[assignmentKey] = {
+        ...currentOverride,
+        managedWorktreeBaseDirectory: trimmed,
+      };
+    } else if (currentOverride) {
+      const { managedWorktreeBaseDirectory: _removed, ...rest } = currentOverride;
+      if (Object.keys(rest).length > 0) {
+        projectContextProjectOverrides[assignmentKey] = rest;
+      } else {
+        delete projectContextProjectOverrides[assignmentKey];
+      }
+    }
+    updateSettings({ projectContextProjectOverrides });
+    toastManager.add(
+      stackedThreadToast({
+        type: "success",
+        title: trimmed.length > 0 ? "Project worktree base saved" : "Project override cleared",
+        description: activeProject.name,
+      }),
+    );
+  }, [activeProject, settings.projectContextProjectOverrides, updateSettings]);
+
+  const onMakeManagedWorktree = useCallback(async () => {
+    if (
+      !activeThread ||
+      activeThread.worktreeOwnership !== "external" ||
+      !activeThread.worktreePath
+    ) {
+      return;
+    }
+    if (!window.confirm("Make this worktree managed by T3 Code for future cleanup?")) {
+      return;
+    }
+    const runSetupScript = window.confirm("Run setup scripts now?");
+    if (isLocalDraftThread) {
+      setDraftThreadContext(composerDraftTarget, {
+        worktreeOwnership: "managed",
+        runSetupScriptOnFirstSend: runSetupScript,
+      });
+      scheduleComposerFocus();
+      return;
+    }
+    const api = readEnvironmentApi(activeThread.environmentId);
+    if (!api) {
+      return;
+    }
+    try {
+      await api.worktree.promoteThread({
+        threadId: activeThread.id,
+        runSetupScript,
+      });
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not make worktree managed",
+          description: error instanceof Error ? error.message : "Promotion failed.",
+        }),
+      );
+    }
+  }, [
+    activeThread,
+    composerDraftTarget,
+    isLocalDraftThread,
+    scheduleComposerFocus,
+    setDraftThreadContext,
+  ]);
+
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
@@ -3999,6 +4185,7 @@ export default function ChatView(props: ChatViewProps) {
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          {...(activeProject ? { onConfigureProjectWorktreeBase } : {})}
         />
       </header>
 
@@ -4008,6 +4195,18 @@ export default function ChatView(props: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
+      {activeThread.worktreeOwnership === "external" && activeThread.worktreePath ? (
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground sm:px-5">
+          <span className="min-w-0 truncate">External worktree: {activeThread.worktreePath}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent"
+            onClick={() => void onMakeManagedWorktree()}
+          >
+            Make managed
+          </button>
+        </div>
+      ) : null}
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Chat column */}
@@ -4155,6 +4354,9 @@ export default function ChatView(props: ChatViewProps) {
                   : {})}
                 envLocked={envLocked}
                 onComposerFocusRequest={scheduleComposerFocus}
+                {...(isLocalDraftThread
+                  ? { onExistingWorktreeAttachRequest: onExistingWorktreeAttachRequest }
+                  : {})}
                 {...(canCheckoutPullRequestIntoThread
                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }
                   : {})}

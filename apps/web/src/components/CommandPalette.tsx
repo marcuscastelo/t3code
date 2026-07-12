@@ -18,6 +18,7 @@ import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowUpIcon,
+  BriefcaseBusinessIcon,
   CornerLeftUpIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -46,7 +47,7 @@ import {
   useSavedEnvironmentRuntimeStore,
 } from "../environments/runtime";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { readLocalApi } from "../localApi";
 import {
   getSourceControlDiscoverySnapshot,
@@ -118,6 +119,15 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  assignProjectToContext,
+  filterProjectsByActiveProjectContext,
+  resolveProjectContextAddProjectBaseDirectory,
+  resolveActiveProjectContextId,
+  resolveProjectContextDefaultThreadEnvMode,
+  resolveProjectContextId,
+  selectProjectContextSettings,
+} from "../projectContexts";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const BROWSE_STALE_TIME_MS = 30_000;
@@ -402,6 +412,15 @@ function OpenCommandPaletteDialog() {
   const queryClient = useQueryClient();
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
+  const projectContextSettings = selectProjectContextSettings(settings);
+  const activeProjectContextId = resolveActiveProjectContextId(projectContextSettings);
+  const defaultThreadEnvMode = resolveProjectContextDefaultThreadEnvMode(
+    projectContextSettings,
+    activeProjectContextId,
+    settings.defaultThreadEnvMode,
+  );
+  const [includeAllContexts, setIncludeAllContexts] = useState(false);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
@@ -499,12 +518,23 @@ function OpenCommandPaletteDialog() {
             ? savedEnvironmentRuntimeById[environmentId]?.serverConfig?.settings
             : null;
       const baseDirectory = environmentSettings?.addProjectBaseDirectory?.trim() ?? "";
-      if (baseDirectory.length === 0) {
+      const workspaceBaseDirectory = resolveProjectContextAddProjectBaseDirectory(
+        projectContextSettings,
+        activeProjectContextId,
+        baseDirectory,
+      );
+      if (workspaceBaseDirectory.length === 0) {
         return "~/";
       }
-      return ensureBrowseDirectoryPath(baseDirectory);
+      return ensureBrowseDirectoryPath(workspaceBaseDirectory);
     },
-    [primaryEnvironmentId, savedEnvironmentRuntimeById, settings],
+    [
+      activeProjectContextId,
+      primaryEnvironmentId,
+      projectContextSettings,
+      savedEnvironmentRuntimeById,
+      settings,
+    ],
   );
 
   const projectCwdById = useMemo(
@@ -514,6 +544,57 @@ function OpenCommandPaletteDialog() {
   const projectTitleById = useMemo(
     () => new Map<ProjectId, string>(projects.map((project) => [project.id, project.name])),
     [projects],
+  );
+  const projectByScopedKey = useMemo(
+    () => new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project])),
+    [projects],
+  );
+  const contextNameById = useMemo(
+    () =>
+      new Map(projectContextSettings.projectContexts.map((context) => [context.id, context.name])),
+    [projectContextSettings.projectContexts],
+  );
+  const projectContextLabel = useCallback(
+    (project: (typeof projects)[number]): string => {
+      const contextId = resolveProjectContextId(project, projectContextSettings);
+      return contextId ? (contextNameById.get(contextId) ?? "Workspace") : "No context";
+    },
+    [contextNameById, projectContextSettings],
+  );
+  const contextProjects = useMemo(
+    () =>
+      includeAllContexts
+        ? projects
+        : filterProjectsByActiveProjectContext(projects, projectContextSettings),
+    [includeAllContexts, projectContextSettings, projects],
+  );
+  const contextThreads = useMemo(() => {
+    if (includeAllContexts || activeProjectContextId === null) {
+      return threads;
+    }
+    return threads.filter((thread) => {
+      const project = projectByScopedKey.get(`${thread.environmentId}:${thread.projectId}`);
+      return (
+        project !== undefined &&
+        resolveProjectContextId(project, projectContextSettings) === activeProjectContextId
+      );
+    });
+  }, [
+    activeProjectContextId,
+    includeAllContexts,
+    projectByScopedKey,
+    projectContextSettings,
+    threads,
+  ]);
+
+  const activateProjectContextForProject = useCallback(
+    (project: (typeof projects)[number]) => {
+      const contextId = resolveProjectContextId(project, projectContextSettings);
+      if (contextId !== activeProjectContextId) {
+        updateSettings({ activeProjectContextId: contextId });
+      }
+    },
+    [activeProjectContextId, projectContextSettings, updateSettings],
   );
 
   const activeThreadId = activeThread?.id;
@@ -597,6 +678,7 @@ function OpenCommandPaletteDialog() {
 
   const openProjectFromSearch = useMemo(
     () => async (project: (typeof projects)[number]) => {
+      activateProjectContextForProject(project);
       const latestThread = getLatestThreadForProject(
         threads.filter((thread) => thread.environmentId === project.environmentId),
         project.id,
@@ -613,13 +695,14 @@ function OpenCommandPaletteDialog() {
       }
 
       await handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-        envMode: settings.defaultThreadEnvMode,
+        envMode: defaultThreadEnvMode,
       });
     },
     [
+      activateProjectContextForProject,
+      defaultThreadEnvMode,
       handleNewThread,
       navigate,
-      settings.defaultThreadEnvMode,
       settings.sidebarThreadSortOrder,
       threads,
     ],
@@ -628,7 +711,7 @@ function OpenCommandPaletteDialog() {
   const projectSearchItems = useMemo(
     () =>
       buildProjectActionItems({
-        projects,
+        projects: contextProjects,
         valuePrefix: "project",
         icon: (project) => (
           <ProjectFavicon
@@ -637,15 +720,17 @@ function OpenCommandPaletteDialog() {
             className={ITEM_ICON_CLASS}
           />
         ),
+        getDescription: (project) => `${project.cwd} · ${projectContextLabel(project)}`,
+        getSearchTerms: (project) => [projectContextLabel(project)],
         runProject: openProjectFromSearch,
       }),
-    [openProjectFromSearch, projects],
+    [contextProjects, openProjectFromSearch, projectContextLabel],
   );
 
   const projectThreadItems = useMemo(
     () =>
       buildProjectActionItems({
-        projects,
+        projects: contextProjects,
         valuePrefix: "new-thread-in",
         shortcutCommand: "chat.new",
         icon: (project) => (
@@ -655,13 +740,16 @@ function OpenCommandPaletteDialog() {
             className={ITEM_ICON_CLASS}
           />
         ),
+        getDescription: (project) => `${project.cwd} · ${projectContextLabel(project)}`,
+        getSearchTerms: (project) => [projectContextLabel(project)],
         runProject: async (project) => {
+          activateProjectContextForProject(project);
           await startNewThreadInProjectFromContext(
             {
               activeDraftThread,
               activeThread,
               defaultProjectRef,
-              defaultThreadEnvMode: settings.defaultThreadEnvMode,
+              defaultThreadEnvMode,
               handleNewThread,
             },
             scopeProjectRef(project.environmentId, project.id),
@@ -671,17 +759,19 @@ function OpenCommandPaletteDialog() {
     [
       activeDraftThread,
       activeThread,
+      activateProjectContextForProject,
+      contextProjects,
       defaultProjectRef,
+      defaultThreadEnvMode,
       handleNewThread,
-      projects,
-      settings.defaultThreadEnvMode,
+      projectContextLabel,
     ],
   );
 
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
-        threads,
+        threads: contextThreads,
         ...(activeThreadId ? { activeThreadId } : {}),
         projectTitleById,
         sortOrder: settings.sidebarThreadSortOrder,
@@ -689,13 +779,25 @@ function OpenCommandPaletteDialog() {
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
         renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
         runThread: async (thread) => {
+          const project = projectByScopedKey.get(`${thread.environmentId}:${thread.projectId}`);
+          if (project) {
+            activateProjectContextForProject(project);
+          }
           await navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
           });
         },
       }),
-    [activeThreadId, navigate, projectTitleById, settings.sidebarThreadSortOrder, threads],
+    [
+      activateProjectContextForProject,
+      activeThreadId,
+      contextThreads,
+      navigate,
+      projectByScopedKey,
+      projectTitleById,
+      settings.sidebarThreadSortOrder,
+    ],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
@@ -968,6 +1070,22 @@ function OpenCommandPaletteDialog() {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
+  if (activeProjectContextId !== null && !includeAllContexts) {
+    actionItems.push({
+      kind: "action",
+      value: "action:search-all-contexts",
+      searchTerms: ["search all workspaces", "search all contexts", "all projects", "all threads"],
+      title: "Search all workspaces",
+      description: "Include projects and threads outside the active workspace",
+      icon: <BriefcaseBusinessIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      run: async () => {
+        setIncludeAllContexts(true);
+        setQuery("");
+      },
+    });
+  }
+
   if (projects.length > 0) {
     const activeProjectTitle = currentProjectId
       ? (projectTitleById.get(currentProjectId) ?? null)
@@ -990,7 +1108,7 @@ function OpenCommandPaletteDialog() {
             activeDraftThread,
             activeThread,
             defaultProjectRef,
-            defaultThreadEnvMode: settings.defaultThreadEnvMode,
+            defaultThreadEnvMode,
             handleNewThread,
           });
         },
@@ -1109,7 +1227,7 @@ function OpenCommandPaletteDialog() {
           });
         } else {
           await handleNewThread(scopeProjectRef(existing.environmentId, existing.id), {
-            envMode: settings.defaultThreadEnvMode,
+            envMode: defaultThreadEnvMode,
           }).catch(() => undefined);
         }
         setOpen(false);
@@ -1131,8 +1249,21 @@ function OpenCommandPaletteDialog() {
           },
           createdAt: new Date().toISOString(),
         });
+        if (activeProjectContextId) {
+          updateSettings({
+            projectContextAssignments: assignProjectToContext({
+              project: {
+                cwd,
+                environmentId: browseEnvironmentId,
+                repositoryIdentity: null,
+              },
+              contextId: activeProjectContextId,
+              assignments: projectContextSettings.projectContextAssignments,
+            }),
+          });
+        }
         await handleNewThread(scopeProjectRef(browseEnvironmentId, projectId), {
-          envMode: settings.defaultThreadEnvMode,
+          envMode: defaultThreadEnvMode,
         }).catch(() => undefined);
         setOpen(false);
       } catch (error) {
@@ -1146,16 +1277,19 @@ function OpenCommandPaletteDialog() {
       }
     },
     [
+      activeProjectContextId,
       browseEnvironmentId,
       browseEnvironmentPlatform,
       currentProjectCwdForBrowse,
+      defaultThreadEnvMode,
       handleNewThread,
       navigate,
+      projectContextSettings.projectContextAssignments,
       projects,
       setOpen,
-      settings.defaultThreadEnvMode,
       settings.sidebarThreadSortOrder,
       threads,
+      updateSettings,
     ],
   );
 

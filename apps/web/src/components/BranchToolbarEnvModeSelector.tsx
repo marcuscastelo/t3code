@@ -22,6 +22,7 @@ interface BranchToolbarEnvModeSelectorProps {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
+  onExistingWorktreeAttachRequest?: (() => void) | undefined;
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
@@ -29,13 +30,17 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
+  onExistingWorktreeAttachRequest,
 }: BranchToolbarEnvModeSelectorProps) {
   const envModeItems = useMemo(
     () => [
       { value: "local", label: resolveCurrentWorkspaceLabel(activeWorktreePath) },
       { value: "worktree", label: resolveEnvModeLabel("worktree") },
+      ...(onExistingWorktreeAttachRequest
+        ? [{ value: "existing-worktree", label: "Existing worktree" }]
+        : []),
     ],
-    [activeWorktreePath],
+    [activeWorktreePath, onExistingWorktreeAttachRequest],
   );
 
   if (envLocked) {
@@ -60,7 +65,16 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
     <Select
       modal={false}
       value={effectiveEnvMode}
-      onValueChange={(value) => onEnvModeChange(value as EnvMode)}
+      onValueChange={(value) => {
+        const selectedValue = value as string | null;
+        if (selectedValue === "existing-worktree") {
+          onExistingWorktreeAttachRequest?.();
+          return;
+        }
+        if (selectedValue === "local" || selectedValue === "worktree") {
+          onEnvModeChange(selectedValue);
+        }
+      }}
       items={envModeItems}
     >
       <SelectTrigger variant="ghost" size="xs" className="font-medium" aria-label="Workspace">
@@ -92,6 +106,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveEnvModeLabel("worktree")}
             </span>
           </SelectItem>
+          {onExistingWorktreeAttachRequest ? (
+            <SelectItem value="existing-worktree">
+              <span className="inline-flex items-center gap-1.5">
+                <FolderGitIcon className="size-3" />
+                Existing worktree
+              </span>
+            </SelectItem>
+          ) : null}
         </SelectGroup>
       </SelectPopup>
     </Select>

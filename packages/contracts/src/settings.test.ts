@@ -2,11 +2,84 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import {
+  ClientSettingsPatch,
+  ClientSettingsSchema,
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
+  ProjectContextId,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "./settings.ts";
 
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+
+describe("ClientSettings.projectContexts", () => {
+  it("defaults context fields to an empty all-context view", () => {
+    expect(DEFAULT_CLIENT_SETTINGS.projectContexts).toEqual([]);
+    expect(DEFAULT_CLIENT_SETTINGS.activeProjectContextId).toBeNull();
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextAssignments).toEqual({});
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextDefaults).toEqual({});
+    expect(DEFAULT_CLIENT_SETTINGS.projectContextRules).toEqual([]);
+
+    const decoded = decodeClientSettings({});
+    expect(decoded.projectContexts).toEqual([]);
+    expect(decoded.activeProjectContextId).toBeNull();
+    expect(decoded.projectContextAssignments).toEqual({});
+    expect(decoded.projectContextDefaults).toEqual({});
+    expect(decoded.projectContextRules).toEqual([]);
+  });
+
+  it("decodes context patches as client-only settings", () => {
+    const patch = decodeClientSettingsPatch({
+      projectContexts: [{ id: " work ", name: " Work ", sortOrder: 2 }],
+      activeProjectContextId: " work ",
+      projectContextAssignments: {
+        "repo:github.com/acme/app": " work ",
+      },
+      projectContextDefaults: {
+        work: {
+          defaultThreadEnvMode: "worktree",
+          addProjectBaseDirectory: " ~/work ",
+        },
+      },
+      projectContextRules: [
+        {
+          id: " work-repos ",
+          contextId: " work ",
+          kind: "repository_prefix",
+          pattern: " github.com/acme/ ",
+          sortOrder: 1,
+        },
+      ],
+    });
+
+    expect(patch.projectContexts?.[0]).toEqual({
+      id: ProjectContextId.make("work"),
+      name: "Work",
+      sortOrder: 2,
+    });
+    expect(patch.activeProjectContextId).toBe(ProjectContextId.make("work"));
+    expect(patch.projectContextAssignments?.["repo:github.com/acme/app"]).toBe(
+      ProjectContextId.make("work"),
+    );
+    expect(patch.projectContextDefaults?.[ProjectContextId.make("work")]).toEqual({
+      defaultThreadEnvMode: "worktree",
+      addProjectBaseDirectory: "~/work",
+    });
+    expect(patch.projectContextRules?.[0]).toEqual({
+      id: "work-repos",
+      contextId: ProjectContextId.make("work"),
+      kind: "repository_prefix",
+      pattern: "github.com/acme/",
+      sortOrder: 1,
+    });
+  });
+});
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {

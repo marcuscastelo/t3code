@@ -1,5 +1,9 @@
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
-import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type ScopedProjectRef,
+  type WorktreeOwnership,
+} from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -15,6 +19,11 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
+import {
+  resolveProjectContextDefaults,
+  resolveProjectContextId,
+  selectProjectContextSettings,
+} from "../projectContexts";
 import { selectProjectsAcrossEnvironments, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -24,6 +33,7 @@ import { useSettings } from "./useSettings";
 function useNewThreadState() {
   const projects = useStore(useShallow((store) => selectProjectsAcrossEnvironments(store)));
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useSettings(selectProjectContextSettings);
   const router = useRouter();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
@@ -36,6 +46,8 @@ function useNewThreadState() {
       options?: {
         branch?: string | null;
         worktreePath?: string | null;
+        worktreeOwnership?: WorktreeOwnership | null;
+        runSetupScriptOnFirstSend?: boolean;
         envMode?: DraftThreadEnvMode;
       },
     ): Promise<void> => {
@@ -44,6 +56,7 @@ function useNewThreadState() {
         getDraftSession,
         getDraftThread,
         applyStickyState,
+        setModelSelection,
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
       } = useComposerDraftStore.getState();
@@ -56,8 +69,16 @@ function useNewThreadState() {
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
         : scopedProjectKey(projectRef);
+      const projectContextDefaults = project
+        ? resolveProjectContextDefaults(
+            projectContextSettings,
+            resolveProjectContextId(project, projectContextSettings),
+          )
+        : {};
       const hasBranchOption = options?.branch !== undefined;
       const hasWorktreePathOption = options?.worktreePath !== undefined;
+      const hasWorktreeOwnershipOption = options?.worktreeOwnership !== undefined;
+      const hasRunSetupScriptOnFirstSendOption = options?.runSetupScriptOnFirstSend !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const latestActiveDraftThread: DraftThreadState | null = currentRouteTarget
@@ -67,10 +88,22 @@ function useNewThreadState() {
         : null;
       if (storedDraftThread) {
         return (async () => {
-          if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
+          if (
+            hasBranchOption ||
+            hasWorktreePathOption ||
+            hasWorktreeOwnershipOption ||
+            hasRunSetupScriptOnFirstSendOption ||
+            hasEnvModeOption
+          ) {
             setDraftThreadContext(storedDraftThread.draftId, {
               ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
               ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
+              ...(hasWorktreeOwnershipOption
+                ? { worktreeOwnership: options?.worktreeOwnership ?? null }
+                : {}),
+              ...(hasRunSetupScriptOnFirstSendOption
+                ? { runSetupScriptOnFirstSend: options?.runSetupScriptOnFirstSend ?? false }
+                : {}),
               ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
             });
           }
@@ -96,10 +129,22 @@ function useNewThreadState() {
         latestActiveDraftThread.logicalProjectKey === logicalProjectKey &&
         latestActiveDraftThread.promotedTo == null
       ) {
-        if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
+        if (
+          hasBranchOption ||
+          hasWorktreePathOption ||
+          hasWorktreeOwnershipOption ||
+          hasRunSetupScriptOnFirstSendOption ||
+          hasEnvModeOption
+        ) {
           setDraftThreadContext(currentRouteTarget.draftId, {
             ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
             ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
+            ...(hasWorktreeOwnershipOption
+              ? { worktreeOwnership: options?.worktreeOwnership ?? null }
+              : {}),
+            ...(hasRunSetupScriptOnFirstSendOption
+              ? { runSetupScriptOnFirstSend: options?.runSetupScriptOnFirstSend ?? false }
+              : {}),
             ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
           });
         }
@@ -110,6 +155,12 @@ function useNewThreadState() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
           ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
+          ...(hasWorktreeOwnershipOption
+            ? { worktreeOwnership: options?.worktreeOwnership ?? null }
+            : {}),
+          ...(hasRunSetupScriptOnFirstSendOption
+            ? { runSetupScriptOnFirstSend: options?.runSetupScriptOnFirstSend ?? false }
+            : {}),
           ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
         });
         return Promise.resolve();
@@ -124,10 +175,15 @@ function useNewThreadState() {
           createdAt,
           branch: options?.branch ?? null,
           worktreePath: options?.worktreePath ?? null,
-          envMode: options?.envMode ?? "local",
+          worktreeOwnership: options?.worktreeOwnership ?? null,
+          runSetupScriptOnFirstSend: options?.runSetupScriptOnFirstSend ?? false,
+          envMode: options?.envMode ?? projectContextDefaults.defaultThreadEnvMode ?? "local",
           runtimeMode: DEFAULT_RUNTIME_MODE,
         });
         applyStickyState(draftId);
+        if (projectContextDefaults.defaultModelSelection) {
+          setModelSelection(draftId, projectContextDefaults.defaultModelSelection);
+        }
 
         await router.navigate({
           to: "/draft/$draftId",
@@ -135,7 +191,7 @@ function useNewThreadState() {
         });
       })();
     },
-    [getCurrentRouteTarget, projectGroupingSettings, router, projects],
+    [getCurrentRouteTarget, projectContextSettings, projectGroupingSettings, router, projects],
   );
 }
 

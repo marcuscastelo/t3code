@@ -11,6 +11,11 @@ import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
+import {
+  resolveProjectContextDefaultThreadEnvMode,
+  resolveProjectContextId,
+  selectProjectContextSettings,
+} from "../../projectContexts";
 import { selectProjectsAcrossEnvironments, useStore } from "../../store";
 import { resolveSidebarNewThreadEnvMode } from "../Sidebar.logic";
 import { Button } from "../ui/button";
@@ -31,6 +36,7 @@ export function MobileNewTaskSheet(props: {
 }) {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useSettings(selectProjectContextSettings);
   const defaultEnvMode = useSettings((settings) => settings.defaultThreadEnvMode);
   const { defaultProjectRef, handleNewThread } = useHandleNewThread();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -45,15 +51,32 @@ export function MobileNewTaskSheet(props: {
     : defaultProjectRef
       ? scopedProjectKey(defaultProjectRef)
       : null;
+  const seedProject = useMemo(
+    () =>
+      projects.find(
+        (project) =>
+          scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) === seedKey,
+      ) ?? null,
+    [projects, seedKey],
+  );
+  const seedDefaultEnvMode = seedProject
+    ? resolveProjectContextDefaultThreadEnvMode(
+        projectContextSettings,
+        resolveProjectContextId(seedProject, projectContextSettings),
+        defaultEnvMode,
+      )
+    : defaultEnvMode;
 
   // Reset the form each time the sheet opens, defaulting to the seeded project.
   useEffect(() => {
     if (props.open) {
       setSelectedKey(seedKey);
       setTask("");
-      setNewWorktree(resolveSidebarNewThreadEnvMode({ defaultEnvMode }) === "worktree");
+      setNewWorktree(
+        resolveSidebarNewThreadEnvMode({ defaultEnvMode: seedDefaultEnvMode }) === "worktree",
+      );
     }
-  }, [props.open, seedKey, defaultEnvMode]);
+  }, [props.open, seedKey, seedDefaultEnvMode]);
 
   const selectedProject = useMemo(
     () =>
@@ -135,7 +158,19 @@ export function MobileNewTaskSheet(props: {
                           ? "border-primary/45 bg-primary/12"
                           : "border-border/70 bg-card/60 active:bg-accent"
                       }`}
-                      onClick={() => setSelectedKey(key)}
+                      onClick={() => {
+                        setSelectedKey(key);
+                        const projectDefaultEnvMode = resolveProjectContextDefaultThreadEnvMode(
+                          projectContextSettings,
+                          resolveProjectContextId(project, projectContextSettings),
+                          defaultEnvMode,
+                        );
+                        setNewWorktree(
+                          resolveSidebarNewThreadEnvMode({
+                            defaultEnvMode: projectDefaultEnvMode,
+                          }) === "worktree",
+                        );
+                      }}
                     >
                       <RepoAvatar name={project.name} size="md" />
                       <span className="min-w-0 flex-1">
