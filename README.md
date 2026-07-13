@@ -59,6 +59,18 @@ There's no public docs site yet, checkout the miscellaneous markdown files in [d
 - [Operations](./docs/operations/ci.md)
 - [Reference](./docs/reference/encyclopedia.md)
 
+## Maintaining this fork
+
+The personal fork is maintained with Forksmith. It records each fork Change,
+its intent, validation evidence, and the reconciliation plan against
+`upstream/main`; it is not a replacement for provider installation or normal
+upstream contribution workflows.
+
+Run `forksmith inspect --json` and `forksmith status --json` before fork
+maintenance, and follow the returned `next_actions`. Only
+`forksmith publish <run-id>` may publish managed refs. The complete operating
+model is in [Forksmith maintenance](./docs/operations/forksmith.md).
+
 ## If you REALLY want to contribute still.... read this first
 
 ### Install `vp`

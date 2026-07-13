@@ -6,6 +6,36 @@
   - If changing native mobile code, `vp run lint:mobile` must also pass.
 - Use `vp test` for the built-in Vite+ test command and `vp run test` when you specifically need the `test` package script.
 
+## Fork management with Forksmith
+
+This personal fork uses Forksmith as the durable authority for reconciliation,
+Change lineage, validation evidence, and publication.
+
+- `upstream/main` is read-only and supplies the snapshot for new fork work.
+- `forksmith/meta` owns Forksmith configuration, Change intent, and audit
+  metadata. Never edit it or its SQLite state directly.
+- `forksmith/integration` is the managed composition branch. `main` is its
+  publication mirror and must remain identical to `origin/main`.
+- Begin fork work with `forksmith help --json`, `forksmith inspect --json`, and
+  `forksmith status --json`, then follow the returned `next_actions` instead
+  of inventing a parallel Git topology.
+- Use `forksmith check --json`, `forksmith plan --json`, and
+  `forksmith sync --json` for upstream reconciliation. `check` is the explicit
+  upstream refresh boundary; `plan` is read-only.
+- Register each fork change with a stable Forksmith Change ID and an explicit
+  branch name such as `feat/<feature-name>/pr-1-<description>`. Its initial
+  implementation may be developed on that canonical branch; later work belongs
+  only in the push-disabled Forksmith draft or semantic-job clone.
+- Preserve existing divergent history through `forksmith change import` or
+  `forksmith change attach-legacy`. Equality with upstream is never proof that
+  a behavior was absorbed.
+- Never manually merge a Forksmith Change into `main`, move a canonical ref,
+  or push reconciliation work. Only `forksmith publish <run-id>` may publish
+  Forksmith-managed refs; `upstream` is always read-only.
+
+Read [docs/operations/forksmith.md](./docs/operations/forksmith.md) before
+starting, submitting, or publishing a fork Change.
+
 ## Project Snapshot
 
 T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
