@@ -24,11 +24,13 @@ required = true
 [[global.commands]]
 id = 'vp-typecheck-baseline'
 argv = [
-  'bash',
-  '-o',
-  'pipefail',
-  '-c',
-  '''pnpm exec vp run typecheck 2>&1 | sed -E '/^[0-9]{2}:[0-9]{2} \[(check|types)\]/d' ''',
+  'pnpm',
+  '--filter',
+  '!@t3tools/marketing',
+  '--recursive',
+  '--if-present',
+  'run',
+  'typecheck',
 ]
 working_directory = '.'
 timeout = '15m'
@@ -54,6 +56,19 @@ changed_paths_any = [
   'tsconfig*.json',
   '**/tsconfig*.json',
 ]
+
+[[global.commands]]
+id = 'marketing-typecheck-baseline'
+argv = ['pnpm', '--filter', '@t3tools/marketing', 'run', 'typecheck']
+working_directory = '.'
+timeout = '10m'
+inherit_environment = true
+scope = 'typecheck'
+required = true
+comparison = 'no-regression'
+
+[global.commands.applicability]
+changed_paths_any = ['apps/marketing/**']
 
 [[invariant_evidence]]
 id = 't3code-behavioral-regression-suite'
