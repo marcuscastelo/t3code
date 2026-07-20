@@ -6,7 +6,7 @@ argv = ['pnpm', 'install', '--frozen-lockfile', '--ignore-scripts']
 working_directory = '.'
 timeout = '15m'
 inherit_environment = true
-scope = 'dependency_setup'
+scope = 'build'
 required = true
 
 [[global.commands]]
