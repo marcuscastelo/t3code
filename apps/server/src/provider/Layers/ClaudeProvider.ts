@@ -21,6 +21,7 @@ import {
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   query as claudeQuery,
   type Options as ClaudeQueryOptions,
@@ -962,66 +963,68 @@ function captureClaudeCliUsage(
 ): Effect.Effect<string, ClaudeCliUsageProbeError> {
   let cleanup = noopCleanup;
   let stopped = false;
-  return Effect.tryPromise({
-    try: () =>
-      new Promise<string>((resolve, reject) => {
-        let done = false;
-        const chunks: string[] = [];
+  return Effect.flatMap(HostProcessPlatform, (platform) =>
+    Effect.tryPromise({
+      try: () =>
+        new Promise<string>((resolve, reject) => {
+          let done = false;
+          const chunks: string[] = [];
 
-        const finish = (result: string) => {
-          if (done) return;
-          done = true;
-          resolve(result);
-        };
-        const fail = (cause: unknown) => {
-          if (done) return;
-          done = true;
-          reject(cause);
-        };
+          const finish = (result: string) => {
+            if (done) return;
+            done = true;
+            resolve(result);
+          };
+          const fail = (cause: unknown) => {
+            if (done) return;
+            done = true;
+            reject(cause);
+          };
 
-        void import("node-pty")
-          .then((nodePty) => {
-            if (stopped) return;
-            const spawned = nodePty.spawn(claudeSettings.binaryPath, [], {
-              cols: 100,
-              rows: 32,
-              cwd:
-                typeof claudeEnvironment.HOME === "string" && claudeEnvironment.HOME.trim()
-                  ? claudeEnvironment.HOME
-                  : process.cwd(),
-              env: claudeEnvironment,
-              name: process.platform === "win32" ? "xterm-color" : "xterm-256color",
-            });
-            cleanup = () => {
-              stopped = true;
-              try {
-                spawned.kill();
-              } catch {
-                // Process may already be gone.
-              }
-            };
+          void import("node-pty")
+            .then((nodePty) => {
+              if (stopped) return;
+              const spawned = nodePty.spawn(claudeSettings.binaryPath, [], {
+                cols: 100,
+                rows: 32,
+                cwd:
+                  typeof claudeEnvironment.HOME === "string" && claudeEnvironment.HOME.trim()
+                    ? claudeEnvironment.HOME
+                    : process.cwd(),
+                env: claudeEnvironment,
+                name: platform === "win32" ? "xterm-color" : "xterm-256color",
+              });
+              cleanup = () => {
+                stopped = true;
+                try {
+                  spawned.kill();
+                } catch {
+                  // Process may already be gone.
+                }
+              };
 
-            spawned.write("/usage\r\r");
+              spawned.write("/usage\r\r");
 
-            spawned.onData((chunk) => {
-              chunks.push(chunk);
-              const output = chunks.join("");
-              if (usageCaptureHasWeeklyValue(output)) {
-                finish(output);
-              }
-            });
-            spawned.onExit(() => {
-              finish(chunks.join(""));
-            });
-          })
-          .catch(fail);
-      }),
-    catch: (cause) =>
-      new ClaudeCliUsageProbeError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
-      }),
-  }).pipe(Effect.ensuring(Effect.sync(() => cleanup())));
+              spawned.onData((chunk) => {
+                chunks.push(chunk);
+                const output = chunks.join("");
+                if (usageCaptureHasWeeklyValue(output)) {
+                  finish(output);
+                }
+              });
+              spawned.onExit(() => {
+                finish(chunks.join(""));
+              });
+            })
+            .catch(fail);
+        }),
+      catch: (cause) =>
+        new ClaudeCliUsageProbeError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    }).pipe(Effect.ensuring(Effect.sync(() => cleanup()))),
+  );
 }
 
 const probeClaudeCliRateLimits = (
