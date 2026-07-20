@@ -1,5 +1,91 @@
 schema_version = 1
 
-[global]
+[[global.commands]]
+id = 'pnpm-install-frozen'
+argv = ['pnpm', 'install', '--frozen-lockfile', '--ignore-scripts']
+working_directory = '.'
+timeout = '15m'
+inherit_environment = true
+scope = 'dependency_setup'
+required = true
+
+[[global.commands]]
+id = 'vp-check'
+argv = ['pnpm', 'exec', 'vp', 'check']
+working_directory = '.'
+timeout = '10m'
+inherit_environment = true
+scope = 'lint'
+required = true
+
+# Typechecking source is evaluated against the exact baseline only when a
+# source or workspace-manifest path changed. Documentation-only Changes keep a
+# sealed `not_applicable` result instead of hiding a known baseline diagnostic.
+[[global.commands]]
+id = 'vp-typecheck-baseline'
+argv = ['pnpm', 'exec', 'vp', 'run', 'typecheck']
+working_directory = '.'
+timeout = '15m'
+inherit_environment = true
+scope = 'typecheck'
+required = true
+comparison = 'no-regression'
+
+[global.commands.applicability]
+changed_paths_any = [
+  'apps/**/*.ts',
+  'apps/**/*.tsx',
+  'apps/**/*.js',
+  'apps/**/*.jsx',
+  'packages/**/*.ts',
+  'packages/**/*.tsx',
+  'packages/**/*.js',
+  'packages/**/*.jsx',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'tsconfig.json',
+  'tsconfig*.json',
+  '**/tsconfig*.json',
+]
+
+[[invariant_evidence]]
+id = 't3code-behavioral-regression-suite'
+covers = [
+  'provider limits remain observable without weakening provider isolation',
+  'imported session history retains durable ordering and identity',
+  'worklog entries remain inspectable without data loss',
+  'project context selection remains explicit and deterministic',
+  'hook execution respects configured lifecycle boundaries',
+  'stale prompts do not hide current request context',
+  'saved appearance preferences remain stable across sessions',
+  'pace deltas remain derived from the preserved provider-limit foundation',
+  'Codex root and bucket snapshots retain their intended precedence',
+  'thread synchronization retains device and turn ordering',
+  'running background work remains distinguishable from completed work',
+  'desktop controls keep the backend lifecycle explicit',
+  'the action resolves the intended remote base before updating a PR',
+  'project deletion preserves explicit force and retry semantics during assessment',
+  'reconnect behavior does not retain stale live-stream listeners during assessment',
+]
+kind = 'command'
+argv = ['pnpm', 'exec', 'vp', 'test']
+working_directory = '.'
+timeout = '30m'
+inherit_environment = true
+required = true
+
+[[invariant_evidence]]
+id = 'forksmith-adoption-contract'
+covers = [
+  'upstream remains read-only and no command other than forksmith publish pushes',
+  'all fork changes retain explicit intent, lineage, validation, and publication evidence',
+]
+kind = 'command'
+argv = ['bash', 'scripts/verify-forksmith-adoption-docs.sh']
+working_directory = '.'
+timeout = '30s'
+inherit_environment = false
+required = true
 
 [integration]

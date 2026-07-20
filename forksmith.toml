@@ -1,8 +1,8 @@
 schema_version = 1
 
 [repository]
-upstream_remote = 'upstream'
-upstream_ref = 'main'
+upstream_remote = 'forksmith-nightly-base'
+upstream_ref = 'current'
 fork_remote = 'origin'
 fork_mirror_ref = 'main'
 publish_fork_mirror = true
@@ -19,6 +19,13 @@ format = '{upstream_version}-{fork_label}.{generation}'
 
 [artifacts]
 output_globs = ['apps/web/dist/index.html']
+
+[[artifacts.build]]
+argv = ['pnpm', 'install', '--frozen-lockfile', '--ignore-scripts']
+working_directory = '.'
+timeout = '15m'
+inherit_environment = true
+required = true
 
 [[artifacts.build]]
 argv = ['pnpm', 'exec', 'vp', 'run', '--filter', '@t3tools/web', 'build']
@@ -42,7 +49,7 @@ inherit_environment = false
 required = false
 
 [artifacts.upstream_version]
-argv = ['git', 'describe', '--tags', '--always', 'upstream/main']
+argv = ['git', 'describe', '--tags', '--always', 'forksmith-nightly-base/current']
 working_directory = '.'
 timeout = '30s'
 inherit_environment = false
