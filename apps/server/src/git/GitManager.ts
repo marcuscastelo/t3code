@@ -592,16 +592,17 @@ export const make = Effect.gen(function* () {
                 : {}),
             })
             .pipe(
-              Effect.map((result): ProjectHookRunner.ProjectHookRunnerResult =>
-                result.status === "no-script"
-                  ? result
-                  : {
-                      status: "started",
-                      scripts: [result],
-                      payloadJsonPath: "",
-                      transcriptJsonPath: null,
-                      transcriptMarkdownPath: null,
-                    },
+              Effect.map(
+                (result): ProjectHookRunner.ProjectHookRunnerResult =>
+                  result.status === "no-script"
+                    ? result
+                    : {
+                        status: "started",
+                        scripts: [result],
+                        payloadJsonPath: "",
+                        transcriptJsonPath: null,
+                        transcriptMarkdownPath: null,
+                      },
               ),
               Effect.mapError(
                 (error) =>
