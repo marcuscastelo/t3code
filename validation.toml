@@ -10,8 +10,8 @@ scope = 'build'
 required = true
 
 [[global.commands]]
-id = 'pnpm-rebuild-electron'
-argv = ['pnpm', 'rebuild', 'electron']
+id = 'desktop-ensure-electron'
+argv = ['pnpm', '--filter', '@t3tools/desktop', 'run', 'ensure:electron']
 working_directory = '.'
 timeout = '5m'
 inherit_environment = true
@@ -19,8 +19,8 @@ scope = 'build'
 required = true
 
 [[global.commands]]
-id = 'electron-version-smoke'
-argv = ['pnpm', 'exec', 'electron', '--version']
+id = 'desktop-electron-version-smoke'
+argv = ['pnpm', '--filter', '@t3tools/desktop', 'exec', 'electron', '--version']
 working_directory = '.'
 timeout = '1m'
 inherit_environment = true
