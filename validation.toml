@@ -10,6 +10,24 @@ scope = 'build'
 required = true
 
 [[global.commands]]
+id = 'pnpm-rebuild-electron'
+argv = ['pnpm', 'rebuild', 'electron']
+working_directory = '.'
+timeout = '5m'
+inherit_environment = true
+scope = 'build'
+required = true
+
+[[global.commands]]
+id = 'electron-version-smoke'
+argv = ['pnpm', 'exec', 'electron', '--version']
+working_directory = '.'
+timeout = '1m'
+inherit_environment = true
+scope = 'build'
+required = true
+
+[[global.commands]]
 id = 'vp-check'
 argv = ['pnpm', 'exec', 'vp', 'check']
 working_directory = '.'
