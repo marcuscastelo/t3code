@@ -230,6 +230,7 @@ describe("providerRateLimits", () => {
     ).toMatchObject({
       expectedRemainingPercent: 50,
       deltaPercentPoints: 42,
+      deltaDurationMins: 126,
       status: "ahead",
     });
 
@@ -245,6 +246,7 @@ describe("providerRateLimits", () => {
     ).toMatchObject({
       expectedRemainingPercent: 50,
       deltaPercentPoints: -20,
+      deltaDurationMins: 60,
       status: "in_debt",
     });
 
@@ -260,6 +262,7 @@ describe("providerRateLimits", () => {
     ).toMatchObject({
       expectedRemainingPercent: 50,
       deltaPercentPoints: -1,
+      deltaDurationMins: 3,
       status: "on_pace",
     });
   });
