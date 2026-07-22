@@ -191,6 +191,11 @@ export const DesktopAppBrandingSchema = Schema.Struct({
   displayName: Schema.String,
 });
 
+export type DesktopAppearance = {
+  mode: DesktopTheme;
+  themeId: string;
+};
+
 export interface DesktopRuntimeInfo {
   hostArch: DesktopRuntimeArch;
   appArch: DesktopRuntimeArch;
@@ -999,7 +1004,9 @@ export interface DesktopBridge {
   setWslOnly: (enabled: boolean) => Promise<DesktopWslState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
+  /** @deprecated Use `setAppearance` instead. */
   setTheme: (theme: DesktopTheme) => Promise<void>;
+  setAppearance: (appearance: DesktopAppearance) => Promise<void>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
     position?: { x: number; y: number },
