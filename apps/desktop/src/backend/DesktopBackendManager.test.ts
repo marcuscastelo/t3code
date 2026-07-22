@@ -3,6 +3,7 @@ import {
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -21,6 +22,31 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
+
+vi.mock("electron", () => ({
+  BrowserWindow: {
+    getAllWindows: () => [],
+    getFocusedWindow: () => null,
+  },
+  Menu: {
+    buildFromTemplate: () => ({ popup: () => undefined }),
+    setApplicationMenu: () => undefined,
+  },
+  app: {},
+  nativeImage: {
+    createFromNamedImage: () => ({ isEmpty: () => true, resize: () => ({ isEmpty: () => true }) }),
+  },
+  nativeTheme: {
+    on: () => undefined,
+    removeListener: () => undefined,
+    shouldUseDarkColors: false,
+    themeSource: "system",
+  },
+  protocol: {},
+  shell: {
+    openExternal: async () => undefined,
+  },
+}));
 
 const decodeDesktopBackendBootstrap = Schema.decodeEffect(
   Schema.fromJsonString(DesktopBackendBootstrap),
