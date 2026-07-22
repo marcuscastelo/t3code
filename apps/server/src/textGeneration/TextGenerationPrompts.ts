@@ -120,6 +120,51 @@ export function buildPrContentPrompt(input: PrContentPromptInput) {
   return { prompt, outputSchema };
 }
 
+export interface PrUpdateContentPromptInput extends PrContentPromptInput {
+  currentTitle: string;
+  currentBody: string;
+}
+
+export function buildPrUpdateContentPrompt(input: PrUpdateContentPromptInput) {
+  const prompt = [
+    "You update GitHub pull request content after new commits land on the branch.",
+    "Return a JSON object with keys: title, body.",
+    "Rules:",
+    "- preserve accurate existing context",
+    "- add the new commits and changed files to the title/body where relevant",
+    "- title should be concise and specific",
+    "- body must be markdown and include headings '## Summary' and '## Testing'",
+    "- under Summary, provide short bullet points",
+    "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
+    ...policyInstruction(input.policy?.changeRequestInstructions),
+    "",
+    `Base branch or previous update: ${input.baseBranch}`,
+    `Head branch: ${input.headBranch}`,
+    "",
+    "Current title:",
+    limitSection(input.currentTitle, 1_000),
+    "",
+    "Current body:",
+    limitSection(input.currentBody, 20_000),
+    "",
+    "New commits:",
+    limitSection(input.commitSummary, 12_000),
+    "",
+    "New diff stat:",
+    limitSection(input.diffSummary, 12_000),
+    "",
+    "New diff patch:",
+    limitSection(input.diffPatch, 40_000),
+  ].join("\n");
+
+  const outputSchema = Schema.Struct({
+    title: Schema.String,
+    body: Schema.String,
+  });
+
+  return { prompt, outputSchema };
+}
+
 // ---------------------------------------------------------------------------
 // Branch name
 // ---------------------------------------------------------------------------

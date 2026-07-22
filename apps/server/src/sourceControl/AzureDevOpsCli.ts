@@ -237,6 +237,13 @@ export class AzureDevOpsCli extends Context.Service<
       readonly bodyFile: string;
     }) => Effect.Effect<void, AzureDevOpsCliError>;
 
+    readonly updatePullRequest: (input: {
+      readonly cwd: string;
+      readonly reference: string;
+      readonly title: string;
+      readonly bodyFile: string;
+    }) => Effect.Effect<void, AzureDevOpsCliError>;
+
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
     }) => Effect.Effect<string | null, AzureDevOpsCliError>;
@@ -497,6 +504,24 @@ export const make = Effect.gen(function* () {
           input.target?.refName ?? input.baseBranch,
           "--source-branch",
           SourceControlProvider.sourceBranch(input),
+          "--title",
+          input.title,
+          "--description",
+          `@${input.bodyFile}`,
+        ],
+      }).pipe(Effect.asVoid),
+    updatePullRequest: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "repos",
+          "pr",
+          "update",
+          "--only-show-errors",
+          "--detect",
+          "true",
+          "--id",
+          normalizeChangeRequestId(input.reference),
           "--title",
           input.title,
           "--description",
