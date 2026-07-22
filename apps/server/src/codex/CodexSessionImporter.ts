@@ -599,6 +599,12 @@ const makeCodexSessionImporter = Effect.gen(function* () {
                 updated_at = ${updatedAt}
             WHERE thread_id = ${input.threadId}
               AND status IN ('running', 'starting')
+              AND NOT EXISTS (
+                SELECT 1
+                FROM provider_session_runtime
+                WHERE provider_session_runtime.thread_id = ${input.threadId}
+                  AND provider_session_runtime.status IN ('running', 'starting')
+              )
           `;
         }),
       );
