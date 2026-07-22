@@ -203,6 +203,7 @@ import {
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
+import { BackgroundWorkIndicator } from "./BackgroundWorkIndicator";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
@@ -2828,6 +2829,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="p-2">
+      <BackgroundWorkIndicator />
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
