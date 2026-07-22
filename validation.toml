@@ -127,4 +127,11 @@ timeout = '30s'
 inherit_environment = false
 required = true
 
-[integration]
+[[integration.commands]]
+id = 't3code-integration-regression-suite'
+argv = ['pnpm', 'exec', 'vp', 'test']
+working_directory = '.'
+timeout = '30m'
+inherit_environment = true
+scope = 'integration'
+required = true
