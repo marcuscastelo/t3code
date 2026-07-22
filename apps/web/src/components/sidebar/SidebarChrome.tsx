@@ -19,6 +19,7 @@ import {
 } from "../ui/sidebar";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { BackgroundWorkIndicator } from "../BackgroundWorkIndicator";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -109,6 +110,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="p-2">
+      <BackgroundWorkIndicator />
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
