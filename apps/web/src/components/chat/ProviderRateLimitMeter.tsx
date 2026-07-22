@@ -75,10 +75,23 @@ function formatPacePercentPoints(value: number): string {
   return `${Math.round(absValue)}pp`;
 }
 
-function formatPaceLabel(deltaPercentPoints: number, status: "ahead" | "on_pace" | "in_debt") {
+function formatPaceDuration(minutes: number): string {
+  return `${(minutes / 60).toFixed(1).replace(/\.0$/, "")}h`;
+}
+
+function formatPaceDelta(deltaPercentPoints: number, deltaDurationMins: number): string {
+  return `${formatPacePercentPoints(deltaPercentPoints)} / ${formatPaceDuration(deltaDurationMins)}`;
+}
+
+function formatPaceLabel(
+  deltaPercentPoints: number,
+  deltaDurationMins: number,
+  status: "ahead" | "on_pace" | "in_debt",
+) {
   if (status === "on_pace") return "On pace";
-  if (status === "ahead") return `Ahead by ${formatPacePercentPoints(deltaPercentPoints)}`;
-  return `In debt by ${formatPacePercentPoints(deltaPercentPoints)}`;
+  if (status === "ahead")
+    return `Ahead by ${formatPaceDelta(deltaPercentPoints, deltaDurationMins)}`;
+  return `In debt by ${formatPaceDelta(deltaPercentPoints, deltaDurationMins)}`;
 }
 
 function windowMatches(
@@ -231,7 +244,7 @@ function WindowDetail(props: { window: DisplayRateLimitWindow; detectingLabel: s
                   : "text-muted-foreground",
             )}
           >
-            {formatPaceLabel(pace.deltaPercentPoints, pace.status)}
+            {formatPaceLabel(pace.deltaPercentPoints, pace.deltaDurationMins, pace.status)}
           </span>
         </div>
       ) : null}
