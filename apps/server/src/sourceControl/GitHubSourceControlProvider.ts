@@ -230,6 +230,30 @@ export const make = Effect.gen(function* () {
               }),
           ),
         ),
+    updateChangeRequest: (input) =>
+      github
+        .updatePullRequest({
+          cwd: input.cwd,
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "updateChangeRequest",
+                command: error.command,
+                cwd: input.cwd,
+                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.reference,
+                ),
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        ),
     getRepositoryCloneUrls: (input) =>
       github.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(

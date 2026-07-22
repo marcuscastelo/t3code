@@ -22,6 +22,7 @@ function toChangeRequest(summary: GitLabCli.GitLabMergeRequestSummary): ChangeRe
     provider: "gitlab",
     number: summary.number,
     title: summary.title,
+    ...(summary.body !== undefined ? { body: summary.body } : {}),
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
@@ -180,6 +181,30 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
+    updateChangeRequest: (input) =>
+      gitlab
+        .updateMergeRequest({
+          cwd: input.cwd,
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "gitlab",
+                operation: "updateChangeRequest",
+                command: error.command,
+                cwd: input.cwd,
+                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.reference,
+                ),
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        ),
     getRepositoryCloneUrls: (input) =>
       gitlab.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(

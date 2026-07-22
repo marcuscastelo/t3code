@@ -45,6 +45,7 @@ const BitbucketApiOperation = Schema.Literals([
   "listPullRequests",
   "createRepository",
   "createPullRequest",
+  "updatePullRequest",
   "probeAuth",
   "checkoutPullRequest",
 ]);
@@ -276,6 +277,13 @@ export class BitbucketApi extends Context.Service<
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
       readonly target?: SourceControlProvider.SourceControlRefSelector;
+      readonly title: string;
+      readonly bodyFile: string;
+    }) => Effect.Effect<void, BitbucketApiError>;
+    readonly updatePullRequest: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProvider.SourceControlProviderContext;
+      readonly reference: string;
       readonly title: string;
       readonly bodyFile: string;
     }) => Effect.Effect<void, BitbucketApiError>;
@@ -797,6 +805,28 @@ export const make = Effect.gen(function* () {
               `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
             ),
           ).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+          BitbucketPullRequestSchema,
+        );
+      }),
+    updatePullRequest: (input) =>
+      Effect.gen(function* () {
+        const repository = yield* resolveRepository(input);
+        const description = yield* fileSystem.readFileString(input.bodyFile).pipe(
+          Effect.mapError(
+            (cause) =>
+              new BitbucketRequestError({
+                operation: "updatePullRequest",
+                cause,
+              }),
+          ),
+        );
+        yield* executeJson(
+          "updatePullRequest",
+          HttpClientRequest.put(
+            apiUrl(
+              `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests/${encodeURIComponent(input.reference)}`,
+            ),
+          ).pipe(HttpClientRequest.bodyJsonUnsafe({ title: input.title, description })),
           BitbucketPullRequestSchema,
         );
       }),
