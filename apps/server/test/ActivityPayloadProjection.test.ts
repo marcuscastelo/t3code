@@ -103,6 +103,15 @@ const fixtures = [
     },
     ignored: "top-level bulk",
   }),
+  makeActivity("content-array", "dynamic_tool_call", {
+    content: [{ type: "text", text: "complete structured response" }],
+    rawOutput: { exitCode: 0 },
+  }),
+  makeActivity("raw-fallback", "dynamic_tool_call", {
+    rawOutput: {
+      metadata: { outcome: "complete", nested: ["one", "two"] },
+    },
+  }),
   makeActivity("collab", "collab_agent_tool_call", {
     kind: "delegate",
     rawOutput: {
@@ -172,7 +181,10 @@ describe("projectActivityPayload", () => {
         command: "fallback data",
         toolCallId: "tool-command",
         kind: "execute",
-        rawOutput: { content: "first useful line" },
+        rawOutput: {
+          content: "\n```\nfirst useful line\nsecond line",
+          stdout: "unused stdout",
+        },
       },
     });
 
@@ -184,7 +196,7 @@ describe("projectActivityPayload", () => {
   });
 
   it("passes MCP tool data through unchanged", () => {
-    expect(projectActivityPayload(fixtures[4]!)).toBe(fixtures[4]);
+    expect(projectActivityPayload(fixtures[6]!)).toBe(fixtures[6]);
   });
 
   it("keeps current web and mobile derived output identical for every tool item type", () => {

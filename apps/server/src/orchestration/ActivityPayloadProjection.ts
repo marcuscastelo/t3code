@@ -104,51 +104,32 @@ function projectCommandData(data: Record<string, unknown>): Record<string, unkno
   return Object.keys(projectedItem).length > 0 ? projectedItem : undefined;
 }
 
-function summarizeToolTextOutput(value: string): string | null {
-  const lines: string[] = [];
-  for (const rawLine of value.split(/\r?\n/u)) {
-    const line = rawLine.replace(/\s+/g, " ").trim();
-    if (line.length > 0) {
-      lines.push(line);
-    }
-  }
-
-  const firstLine = lines.find((line) => line !== "```");
-  if (firstLine) {
-    return firstLine.length <= 84 ? firstLine : `${firstLine.slice(0, 83).trimEnd()}…`;
-  }
-  if (lines.length > 1) {
-    return `${lines.length.toLocaleString()} lines`;
-  }
-  return null;
-}
-
 function projectRawOutput(value: unknown): Record<string, unknown> | undefined {
   const rawOutput = asRecord(value);
   if (!rawOutput) {
     return undefined;
   }
 
+  const projected: Record<string, unknown> = {};
   if (typeof rawOutput.totalFiles === "number" && Number.isFinite(rawOutput.totalFiles)) {
-    return {
-      totalFiles: rawOutput.totalFiles,
-      ...(rawOutput.truncated === true ? { truncated: true } : {}),
-    };
+    projected.totalFiles = rawOutput.totalFiles;
+    if (rawOutput.truncated === true) {
+      projected.truncated = true;
+    }
+  }
+  for (const key of ["content", "output", "result", "text", "stdout", "stderr"]) {
+    if (rawOutput[key] !== undefined && rawOutput[key] !== null) {
+      projected[key] = rawOutput[key];
+    }
+  }
+  if ("exitCode" in rawOutput) {
+    projected.exitCode = rawOutput.exitCode;
   }
 
-  const content = asTrimmedString(rawOutput.content);
-  if (content) {
-    const summary = summarizeToolTextOutput(content);
-    return summary ? { content: summary } : undefined;
-  }
-
-  const stdout = asTrimmedString(rawOutput.stdout);
-  if (stdout) {
-    const summary = summarizeToolTextOutput(stdout);
-    return summary ? { content: summary } : undefined;
-  }
-
-  return undefined;
+  // The web worklog reads explicit response fields verbatim. When none are
+  // present it renders the remaining object as JSON, so that fallback must
+  // retain the complete object to avoid silently changing copyable details.
+  return Object.keys(projected).length > 0 ? projected : rawOutput;
 }
 
 /**
@@ -185,6 +166,9 @@ export function projectActivityPayload(
   }
   if ("kind" in data) {
     projectedData.kind = data.kind;
+  }
+  if ("content" in data) {
+    projectedData.content = data.content;
   }
 
   const rawOutput = projectRawOutput(data.rawOutput);
