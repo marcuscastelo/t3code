@@ -2855,14 +2855,7 @@ function ChatViewContent(props: ChatViewProps) {
         activeProject.scripts.map((script) => script.id),
       );
       const nextScript = buildProjectScript(nextId, input);
-      const nextScripts = input.runOnWorktreeCreate
-        ? [
-            ...activeProject.scripts.map((script) =>
-              script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
-            ),
-            nextScript,
-          ]
-        : [...activeProject.scripts, nextScript];
+      const nextScripts = [...activeProject.scripts, nextScript];
 
       return persistProjectScripts({
         projectId: activeProject.id,
@@ -2890,11 +2883,7 @@ function ChatViewContent(props: ChatViewProps) {
 
       const updatedScript = buildProjectScript(existingScript.id, input);
       const nextScripts = activeProject.scripts.map((script) =>
-        script.id === scriptId
-          ? updatedScript
-          : input.runOnWorktreeCreate
-            ? { ...script, runOnWorktreeCreate: false }
-            : script,
+        script.id === scriptId ? updatedScript : script,
       );
 
       return persistProjectScripts({

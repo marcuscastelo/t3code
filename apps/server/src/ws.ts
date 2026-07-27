@@ -100,10 +100,11 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
-import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as ProjectHookRunner from "./project/Services/ProjectHookRunner.ts";
+import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -137,19 +138,6 @@ function normalizeGitMetadataPath(
 
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
-}
-
-/** Preserve the setup runner's broader pre-refactor message normalization. */
-function legacySetupFailureDescription(cause: unknown): string {
-  if (
-    typeof cause === "object" &&
-    cause !== null &&
-    "message" in cause &&
-    typeof cause.message === "string"
-  ) {
-    return cause.message;
-  }
-  return String(cause);
 }
 
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {
@@ -251,19 +239,6 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
-    default:
-      return unexpectedCompatibilityError(error);
-  }
-}
-
-function projectSetupScriptCompatibilityDetail(
-  error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError,
-): string {
-  switch (error._tag) {
-    case "ProjectSetupScriptOperationError":
-      return legacySetupFailureDescription(error.cause);
-    case "ProjectSetupScriptProjectNotFoundError":
-      return "Project was not found for setup script execution.";
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -446,7 +421,52 @@ const makeWsRpcLayer = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-      const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const projectHookRunner = yield* Effect.serviceOption(ProjectHookRunner.ProjectHookRunner);
+      const projectSetupScriptRunner = yield* Effect.serviceOption(
+        ProjectSetupScriptRunner.ProjectSetupScriptRunner,
+      );
+      const runProjectHook = (
+        input: ProjectHookRunner.ProjectHookRunnerInput,
+      ): Effect.Effect<
+        ProjectHookRunner.ProjectHookRunnerResult,
+        ProjectHookRunner.ProjectHookRunnerError
+      > =>
+        Option.isSome(projectHookRunner)
+          ? projectHookRunner.value.runForThread(input)
+          : input.event === "worktree.created" &&
+              input.worktreePath &&
+              Option.isSome(projectSetupScriptRunner)
+            ? projectSetupScriptRunner.value
+                .runForThread({
+                  threadId: input.threadId,
+                  ...(input.projectId ? { projectId: input.projectId } : {}),
+                  ...(input.projectCwd ? { projectCwd: input.projectCwd } : {}),
+                  worktreePath: input.worktreePath,
+                  ...(input.preferredTerminalId
+                    ? { preferredTerminalId: input.preferredTerminalId }
+                    : {}),
+                })
+                .pipe(
+                  Effect.map(
+                    (result): ProjectHookRunner.ProjectHookRunnerResult =>
+                      result.status === "no-script"
+                        ? result
+                        : {
+                            status: "started",
+                            scripts: [result],
+                            payloadJsonPath: "",
+                            transcriptJsonPath: null,
+                            transcriptMarkdownPath: null,
+                          },
+                  ),
+                  Effect.mapError(
+                    (error) =>
+                      new ProjectHookRunner.ProjectHookRunnerError({
+                        message: ProjectSetupScriptRunner.projectSetupScriptErrorMessage(error),
+                      }),
+                  ),
+                )
+            : Effect.succeed({ status: "no-script" });
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
@@ -558,7 +578,11 @@ const makeWsRpcLayer = (
 
       const appendSetupScriptActivity = (input: {
         readonly threadId: ThreadId;
-        readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
+        readonly kind:
+          | "setup-script.requested"
+          | "setup-script.started"
+          | "setup-script.failed"
+          | "hook.failed";
         readonly summary: string;
         readonly createdAt: string;
         readonly payload: Record<string, unknown>;
@@ -881,34 +905,6 @@ const makeWsRpcLayer = (
                 )
               : Effect.void;
 
-          const recordSetupScriptLaunchFailure = (input: {
-            readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
-            readonly requestedAt: string;
-            readonly worktreePath: string;
-          }) => {
-            const detail = projectSetupScriptCompatibilityDetail(input.error);
-            return appendSetupScriptActivity({
-              threadId: command.threadId,
-              kind: "setup-script.failed",
-              summary: "Setup script failed to start",
-              createdAt: input.requestedAt,
-              payload: {
-                detail,
-                worktreePath: input.worktreePath,
-              },
-              tone: "error",
-            }).pipe(
-              Effect.ignoreCause({ log: false }),
-              Effect.flatMap(() =>
-                Effect.logWarning("bootstrap turn start failed to launch setup script", {
-                  threadId: command.threadId,
-                  worktreePath: input.worktreePath,
-                  detail,
-                }),
-              ),
-            );
-          };
-
           const recordSetupScriptStarted = (input: {
             readonly requestedAt: string;
             readonly worktreePath: string;
@@ -965,35 +961,61 @@ const makeWsRpcLayer = (
               }
               const worktreePath = targetWorktreePath;
               const requestedAt = yield* nowIso;
-              yield* projectSetupScriptRunner
-                .runForThread({
+              yield* runProjectHook({
+                event: "worktree.created",
+                hookRunId: `${command.commandId}:worktree.created`,
+                threadId: command.threadId,
+                ...(targetProjectId ? { projectId: targetProjectId } : {}),
+                ...(targetProjectCwd ? { projectCwd: targetProjectCwd } : {}),
+                worktreePath,
+                payload: {
                   threadId: command.threadId,
-                  ...(targetProjectId ? { projectId: targetProjectId } : {}),
-                  ...(targetProjectCwd ? { projectCwd: targetProjectCwd } : {}),
+                  projectId: targetProjectId ?? null,
+                  projectCwd: targetProjectCwd ?? null,
                   worktreePath,
-                })
-                .pipe(
-                  Effect.matchEffect({
-                    onFailure: (error) =>
-                      recordSetupScriptLaunchFailure({
-                        error,
-                        requestedAt,
+                },
+              }).pipe(
+                Effect.matchEffect({
+                  onFailure: (error) =>
+                    appendSetupScriptActivity({
+                      threadId: command.threadId,
+                      kind: "setup-script.failed",
+                      summary: "Setup script failed to start",
+                      createdAt: requestedAt,
+                      payload: {
+                        detail: error.message,
                         worktreePath,
-                      }),
-                    onSuccess: (setupResult) => {
-                      if (setupResult.status !== "started") {
-                        return Effect.void;
-                      }
-                      return recordSetupScriptStarted({
-                        requestedAt,
-                        worktreePath,
-                        scriptId: setupResult.scriptId,
-                        scriptName: setupResult.scriptName,
-                        terminalId: setupResult.terminalId,
-                      });
-                    },
-                  }),
-                );
+                      },
+                      tone: "error",
+                    }).pipe(
+                      Effect.ignoreCause({ log: false }),
+                      Effect.flatMap(() =>
+                        Effect.logWarning("project worktree hook failed", {
+                          threadId: command.threadId,
+                          worktreePath,
+                          detail: error.message,
+                        }),
+                      ),
+                    ),
+                  onSuccess: (hookResult) => {
+                    if (hookResult.status !== "started") {
+                      return Effect.void;
+                    }
+                    return Effect.forEach(
+                      hookResult.scripts,
+                      (script) =>
+                        recordSetupScriptStarted({
+                          requestedAt,
+                          worktreePath,
+                          scriptId: script.scriptId,
+                          scriptName: script.scriptName,
+                          terminalId: script.terminalId,
+                        }),
+                      { concurrency: 1, discard: true },
+                    );
+                  },
+                }),
+              );
             });
 
           const bootstrapProgram = Effect.gen(function* () {
@@ -1235,6 +1257,80 @@ const makeWsRpcLayer = (
           ),
         );
 
+      const readEventAtSequence = (sequence: number) =>
+        Stream.take(orchestrationEngine.readEvents(Math.max(0, sequence - 1)), 1).pipe(
+          Stream.runCollect,
+          Effect.map((chunk) => Array.from(chunk)[0] ?? null),
+          Effect.catch(() => Effect.succeed(null)),
+        );
+
+      const runThreadArchivedHook = (input: {
+        readonly command: Extract<OrchestrationCommand, { type: "thread.archive" }>;
+        readonly result: { readonly sequence: number };
+      }) =>
+        Effect.gen(function* () {
+          const archivedEvent = yield* readEventAtSequence(input.result.sequence);
+          if (archivedEvent?.type !== "thread.archived") {
+            return;
+          }
+          const snapshot = yield* projectionSnapshotQuery.getSnapshot();
+          const thread = snapshot.threads.find(
+            (candidate) => candidate.id === input.command.threadId,
+          );
+          if (!thread) {
+            return;
+          }
+          const project = snapshot.projects.find((candidate) => candidate.id === thread.projectId);
+          if (!project) {
+            return;
+          }
+          const hookResult = yield* runProjectHook({
+            event: "thread.archived",
+            hookRunId: archivedEvent.eventId,
+            threadId: thread.id,
+            projectId: project.id,
+            projectCwd: project.workspaceRoot,
+            worktreePath: thread.worktreePath,
+            payload: archivedEvent,
+            transcript: {
+              event: archivedEvent,
+              project,
+              thread,
+            },
+          }).pipe(Effect.result);
+
+          if (hookResult._tag === "Failure") {
+            const detail = hookResult.failure.message;
+            yield* Effect.logWarning("thread archive hook failed to start", {
+              threadId: thread.id,
+              detail,
+            });
+            yield* appendSetupScriptActivity({
+              threadId: thread.id,
+              kind: "hook.failed",
+              summary: "Project hook failed to start",
+              createdAt: yield* nowIso,
+              payload: {
+                hookEvent: "thread.archived",
+                sourceEventId: archivedEvent.eventId,
+                sourceEventType: archivedEvent.type,
+                detail,
+              },
+              tone: "error",
+            }).pipe(Effect.ignoreCause({ log: true }));
+          }
+        }).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.failCause(cause);
+            }
+            return Effect.logWarning("thread archive hook failed", {
+              threadId: input.command.threadId,
+              cause: Cause.pretty(cause),
+            });
+          }),
+        );
+
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
@@ -1288,6 +1384,10 @@ const makeWsRpcLayer = (
                     }),
                   ),
                 );
+                yield* runThreadArchivedHook({
+                  command: normalizedCommand,
+                  result,
+                });
               }
               return result;
             }).pipe(
