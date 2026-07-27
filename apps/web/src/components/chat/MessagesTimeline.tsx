@@ -44,6 +44,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  CopyIcon,
   EyeIcon,
   GlobeIcon,
   HammerIcon,
@@ -59,6 +60,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -1928,6 +1930,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const { workEntry, workspaceRoot } = props;
   const activity = use(TimelineRowActivityCtx);
   const [expanded, setExpanded] = useState(false);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
@@ -2071,6 +2074,17 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
+          <div className="mb-1 flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => copyToClipboard(expandedBody)}
+            >
+              {isCopied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+              {isCopied ? "Copied" : "Copy details"}
+            </Button>
+          </div>
           <pre className="max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
             {expandedBody}
           </pre>
