@@ -241,6 +241,41 @@ function SidebarThreadDetailPrewarmer({ threadRef }: { readonly threadRef: Scope
   return null;
 }
 
+const PROJECT_NOT_EMPTY_DELETE_ERROR_FRAGMENT = "cannot be deleted without force=true";
+
+function isProjectNotEmptyDeleteError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(PROJECT_NOT_EMPTY_DELETE_ERROR_FRAGMENT);
+}
+
+function buildProjectDeleteConfirmationMessage(
+  member: SidebarProjectGroupMember,
+  threadCount: number,
+): string {
+  const hiddenThreadWarning =
+    "This permanently clears any archived thread history in this project.";
+  if (threadCount > 0) {
+    return [
+      `Remove project "${member.title}" and delete its ${threadCount} thread${
+        threadCount === 1 ? "" : "s"
+      }?`,
+      `Path: ${member.workspaceRoot}`,
+      ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
+      "This permanently clears conversation history for those threads.",
+      "This removes only this project entry.",
+      "This action cannot be undone.",
+    ].join("\n");
+  }
+
+  return [
+    `Remove project "${member.title}"?`,
+    `Path: ${member.workspaceRoot}`,
+    ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
+    hiddenThreadWarning,
+    "This removes only this project entry.",
+    "This action cannot be undone.",
+  ].join("\n");
+}
+
 function clampSidebarThreadPreviewCount(value: number): SidebarThreadPreviewCount {
   return Math.min(
     MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
@@ -1494,27 +1529,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                       thread.projectId === memberProjectRef.projectId,
                   );
                   const confirmed = await api.dialogs.confirm(
-                    latestProjectThreads.length > 0
-                      ? [
-                          `Remove project "${member.title}" and delete its ${latestProjectThreads.length} thread${
-                            latestProjectThreads.length === 1 ? "" : "s"
-                          }?`,
-                          `Path: ${member.workspaceRoot}`,
-                          ...(member.environmentLabel
-                            ? [`Environment: ${member.environmentLabel}`]
-                            : []),
-                          "This permanently clears conversation history for those threads.",
-                          "This removes only this project entry.",
-                          "This action cannot be undone.",
-                        ].join("\n")
-                      : [
-                          `Remove project "${member.title}"?`,
-                          `Path: ${member.workspaceRoot}`,
-                          ...(member.environmentLabel
-                            ? [`Environment: ${member.environmentLabel}`]
-                            : []),
-                          "This removes only this project entry.",
-                        ].join("\n"),
+                    buildProjectDeleteConfirmationMessage(member, latestProjectThreads.length),
                   );
                   if (!confirmed) {
                     return;
@@ -1557,12 +1572,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
-      const message = [
-        `Remove project "${member.title}"?`,
-        `Path: ${member.workspaceRoot}`,
-        ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
-        "This removes only this project entry.",
-      ].join("\n");
+      const message = buildProjectDeleteConfirmationMessage(member, 0);
       const confirmed = await api.dialogs.confirm(message);
       if (!confirmed) {
         return;
@@ -1570,12 +1580,33 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       const result = await removeProject(member);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Unknown error removing project.";
+        let finalError = squashAtomCommandFailure(result);
+        if (isProjectNotEmptyDeleteError(finalError)) {
+          const latestProjectThreads = Array.from(sidebarThreadByKeyRef.current.values()).filter(
+            (thread) =>
+              thread.environmentId === memberProjectRef.environmentId &&
+              thread.projectId === memberProjectRef.projectId,
+          );
+          const forceConfirmed = await api.dialogs.confirm(
+            buildProjectDeleteConfirmationMessage(member, Math.max(latestProjectThreads.length, 1)),
+          );
+          if (forceConfirmed) {
+            const forceResult = await removeProject(member, { force: true });
+            if (forceResult._tag === "Success" || isAtomCommandInterrupted(forceResult)) {
+              return;
+            }
+            finalError = squashAtomCommandFailure(forceResult);
+          } else {
+            return;
+          }
+        }
+
+        const message =
+          finalError instanceof Error ? finalError.message : "Unknown error removing project.";
         console.error("Failed to remove project", {
           projectId: member.id,
           environmentId: member.environmentId,
-          ...safeErrorLogAttributes(error),
+          ...safeErrorLogAttributes(finalError),
         });
         toastManager.add(
           stackedThreadToast({
