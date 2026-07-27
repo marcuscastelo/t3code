@@ -86,6 +86,18 @@ Keep this table current when creating new feature branches, adding features, mer
 | Project contexts/workspaces with defaults and classification rules         | `origin/feature/app-project-contexts`                           | Clean, V3                    |
 | Fork workflow docs / MCP tooling notes                                     | `origin/marucs-code`                                            | No dedicated clean PR branch |
 
+## Maintaining this fork
+
+The personal fork is maintained with Forksmith. It records each fork Change,
+its intent, validation evidence, and the reconciliation plan against the
+configured `forksmith-nightly-base/current` source; it is not a replacement for
+provider installation or normal upstream contribution workflows.
+
+Run `forksmith inspect --json` and `forksmith status --json` before fork
+maintenance, and follow the returned `next_actions`. Only
+`forksmith publish <run-id>` may publish managed refs. The complete operating
+model is in [Forksmith maintenance](./docs/operations/forksmith.md).
+
 ## If you REALLY want to contribute still.... read this first
 
 ### Install `vp`
