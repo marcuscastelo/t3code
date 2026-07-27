@@ -53,6 +53,7 @@ export const discovery = {
 function toChangeRequest(summary: {
   readonly number: number;
   readonly title: string;
+  readonly body?: string;
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
@@ -63,6 +64,7 @@ function toChangeRequest(summary: {
     provider: "azure-devops",
     number: summary.number,
     title: summary.title,
+    ...(summary.body !== undefined ? { body: summary.body } : {}),
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
@@ -152,6 +154,30 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
+    updateChangeRequest: (input) =>
+      azure
+        .updatePullRequest({
+          cwd: input.cwd,
+          reference: input.reference,
+          title: input.title,
+          bodyFile: input.bodyFile,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "azure-devops",
+                operation: "updateChangeRequest",
+                command: error.command,
+                cwd: input.cwd,
+                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.reference,
+                ),
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        ),
     getRepositoryCloneUrls: (input) =>
       azure.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(

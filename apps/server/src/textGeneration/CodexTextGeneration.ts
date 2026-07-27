@@ -21,6 +21,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildPrUpdateContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
@@ -97,6 +98,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle",
     value: unknown,
@@ -116,6 +118,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     _operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle",
     attachments: TextGeneration.BranchNameGenerationInput["attachments"],
@@ -158,6 +161,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     operation:
       | "generateCommitMessage"
       | "generatePrContent"
+      | "generatePrUpdateContent"
       | "generateBranchName"
       | "generateThreadTitle";
     cwd: string;
@@ -348,6 +352,19 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       };
     });
 
+  const generatePrUpdateContent: TextGeneration.TextGeneration["Service"]["generatePrUpdateContent"] =
+    Effect.fn("CodexTextGeneration.generatePrUpdateContent")(function* (input) {
+      const { prompt, outputSchema } = buildPrUpdateContentPrompt(input);
+      const generated = yield* runCodexJson({
+        operation: "generatePrUpdateContent",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return { title: sanitizePrTitle(generated.title), body: generated.body.trim() };
+    });
+
   const generateBranchName: TextGeneration.TextGeneration["Service"]["generateBranchName"] =
     Effect.fn("CodexTextGeneration.generateBranchName")(function* (input) {
       const { imagePaths } = yield* materializeImageAttachments(
@@ -401,6 +418,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
   return {
     generateCommitMessage,
     generatePrContent,
+    generatePrUpdateContent,
     generateBranchName,
     generateThreadTitle,
   } satisfies TextGeneration.TextGeneration["Service"];

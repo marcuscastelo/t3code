@@ -20,6 +20,7 @@ export interface NormalizedAzureDevOpsPullRequestRecord {
 const AzureDevOpsPullRequestSchema = Schema.Struct({
   pullRequestId: PositiveInt,
   title: TrimmedNonEmptyString,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
   url: Schema.optional(Schema.String),
   repository: Schema.optional(
     Schema.Struct({
@@ -135,6 +136,7 @@ function normalizeAzureDevOpsPullRequestRecord(
   return {
     number: raw.pullRequestId,
     title: raw.title,
+    ...(raw.description ? { body: raw.description } : {}),
     url: normalizeAzureDevOpsPullRequestUrl(raw),
     baseRefName: normalizeRefName(raw.targetRefName),
     headRefName: normalizeRefName(raw.sourceRefName),
