@@ -49,6 +49,15 @@ export interface ProviderRegistryShape {
   ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**
+   * Actively refresh account limit data for one instance. Drivers can run
+   * a heavier provider-specific probe here; drivers without one fall back to
+   * their normal targeted refresh.
+   */
+  readonly refreshInstanceAccountRateLimits: (
+    instanceId: ProviderInstanceId,
+  ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /**
    * Resolve the maintenance capabilities owned by one live provider instance.
    * Falls back to manual-only capabilities when the instance is not live.
    */
