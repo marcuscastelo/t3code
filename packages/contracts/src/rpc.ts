@@ -23,6 +23,8 @@ import {
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
   VcsCreateWorktreeResult,
+  VcsValidateWorktreeAttachInput,
+  VcsValidateWorktreeAttachResult,
   VcsInitInput,
   VcsListRefsInput,
   VcsListRefsResult,
@@ -57,6 +59,8 @@ import {
   OrchestrationReplayEventsError,
   OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
+  WorktreePromoteThreadInput,
+  WorktreePromoteThreadResult,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -171,6 +175,7 @@ export const WS_METHODS = {
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
+  vcsValidateWorktreeAttach: "vcs.validateWorktreeAttach",
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
@@ -180,6 +185,9 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+
+  // Worktree methods
+  worktreePromoteThread: "worktree.promoteThread",
 
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
@@ -460,6 +468,12 @@ export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePu
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
+export const WsWorktreePromoteThreadRpc = Rpc.make(WS_METHODS.worktreePromoteThread, {
+  payload: WorktreePromoteThreadInput,
+  success: WorktreePromoteThreadResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 export const WsVcsListRefsRpc = Rpc.make(WS_METHODS.vcsListRefs, {
   payload: VcsListRefsInput,
   success: VcsListRefsResult,
@@ -470,6 +484,12 @@ export const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
   payload: VcsCreateWorktreeInput,
   success: VcsCreateWorktreeResult,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+export const WsVcsValidateWorktreeAttachRpc = Rpc.make(WS_METHODS.vcsValidateWorktreeAttach, {
+  payload: VcsValidateWorktreeAttachInput,
+  success: VcsValidateWorktreeAttachResult,
+  error: Schema.Union([GitCommandError, VcsError, EnvironmentAuthorizationError]),
 });
 
 export const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
@@ -742,8 +762,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
+  WsWorktreePromoteThreadRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
+  WsVcsValidateWorktreeAttachRpc,
   WsVcsRemoveWorktreeRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,

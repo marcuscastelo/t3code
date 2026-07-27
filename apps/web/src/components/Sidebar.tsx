@@ -206,6 +206,14 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { ProjectContextSwitcher } from "./ProjectContextSwitcher";
+import {
+  buildProjectContextSummaries,
+  createProjectContext,
+  filterProjectsByActiveProjectContext,
+  resolveActiveProjectContextId,
+  selectProjectContextSettings,
+} from "../projectContexts";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -3031,6 +3039,8 @@ export default function Sidebar() {
   const sidebarThreadSortOrder = useClientSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const projectContextSettings = useClientSettings(selectProjectContextSettings);
+  const activeProjectContextId = resolveActiveProjectContextId(projectContextSettings);
   const sidebarThreadPreviewCount = useClientSettings((s) => s.sidebarThreadPreviewCount);
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
@@ -3099,13 +3109,44 @@ export default function Sidebar() {
       ],
     });
   }, [projectOrder, projects]);
+  const contextProjects = useMemo(
+    () => filterProjectsByActiveProjectContext(orderedProjects, projectContextSettings),
+    [orderedProjects, projectContextSettings],
+  );
+  const projectContextSummaries = useMemo(
+    () =>
+      buildProjectContextSummaries({
+        projects: orderedProjects,
+        threads: sidebarThreads,
+        settings: projectContextSettings,
+      }),
+    [orderedProjects, projectContextSettings, sidebarThreads],
+  );
+  const handleProjectContextChange = useCallback(
+    (contextId: typeof activeProjectContextId) =>
+      updateSettings({ activeProjectContextId: contextId }),
+    [updateSettings],
+  );
+  const handleCreateProjectContext = useCallback(
+    (name: string) => {
+      const nextContext = createProjectContext({
+        name,
+        existingContexts: projectContextSettings.projectContexts,
+      });
+      updateSettings({
+        projectContexts: [...projectContextSettings.projectContexts, nextContext],
+        activeProjectContextId: nextContext.id,
+      });
+    },
+    [projectContextSettings.projectContexts, updateSettings],
+  );
 
   // Build a mapping from physical project key → logical project key for
   // cross-environment grouping.  Projects that share a repositoryIdentity
   // canonicalKey are treated as one logical project in the sidebar.
   const physicalToLogicalKey = useMemo(() => {
     return buildPhysicalToLogicalProjectKeyMap({
-      projects: orderedProjects,
+      projects: contextProjects,
       settings: projectGroupingSettings,
       primaryEnvironmentId,
     });
@@ -3132,7 +3173,7 @@ export default function Sidebar() {
   }, [
     environmentLabelById,
     desktopLocalEnvironmentIds,
-    orderedProjects,
+    contextProjects,
     projectGroupingSettings,
     primaryEnvironmentId,
   ]);
@@ -3631,6 +3672,16 @@ export default function Sidebar() {
         <SettingsSidebarNav pathname={pathname} />
       ) : (
         <>
+          <div className="px-3 pt-2">
+            <ProjectContextSwitcher
+              contexts={projectContextSettings.projectContexts}
+              summaries={projectContextSummaries}
+              activeContextId={activeProjectContextId}
+              onSelectContext={handleProjectContextChange}
+              onCreateContext={handleCreateProjectContext}
+              onManageContexts={() => void navigate({ to: "/settings/workspaces" })}
+            />
+          </div>
           <SidebarProjectsContent
             showArm64IntelBuildWarning={showArm64IntelBuildWarning}
             arm64IntelBuildWarningDescription={arm64IntelBuildWarningDescription}

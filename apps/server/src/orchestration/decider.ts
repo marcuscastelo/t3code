@@ -3,6 +3,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type WorktreeOwnership,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -140,6 +141,13 @@ function threadHasQueuedTurnStart(
     latestUserMessageAtMs > latestTurnAtMs &&
     Math.abs(queuedAgeMs) <= QUEUED_TURN_START_GRACE_MS
   );
+}
+
+function normalizeWorktreeOwnership(
+  worktreePath: string | null,
+  worktreeOwnership: WorktreeOwnership | null | undefined,
+): WorktreeOwnership | null {
+  return worktreeOwnership !== undefined ? worktreeOwnership : worktreePath ? "managed" : null;
 }
 
 function withEventBase(
@@ -372,6 +380,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          worktreeOwnership: normalizeWorktreeOwnership(
+            command.worktreePath,
+            command.worktreeOwnership,
+          ),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -659,6 +671,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.worktreeOwnership !== undefined || command.worktreePath !== undefined
+            ? {
+                worktreeOwnership: normalizeWorktreeOwnership(
+                  command.worktreePath ?? null,
+                  command.worktreeOwnership,
+                ),
+              }
+            : {}),
           updatedAt: occurredAt,
         },
       };
