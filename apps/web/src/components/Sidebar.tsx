@@ -205,7 +205,6 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
-import { SidebarProviderUpdatePill } from "./sidebar/SidebarProviderUpdatePill";
 import { ProjectContextSwitcher } from "./ProjectContextSwitcher";
 import {
   buildProjectContextSummaries,
